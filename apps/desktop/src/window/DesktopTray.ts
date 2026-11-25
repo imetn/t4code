@@ -1,14 +1,20 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
+import * as Semaphore from "effect/Semaphore";
 import * as Electron from "electron";
 import { msg } from "gt-i18n";
 import type { DesktopTrayState } from "@t3tools/contracts";
 
+import * as DesktopAssets from "../app/DesktopAssets.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import { makeComponentLogger } from "../app/DesktopObservability.ts";
+import * as DesktopState from "../app/DesktopState.ts";
+import * as ElectronApp from "../electron/ElectronApp.ts";
 import { m, onLocaleChange } from "../i18n/messages.ts";
+import * as DesktopClientSettings from "../settings/DesktopClientSettings.ts";
 import * as DesktopWindow from "./DesktopWindow.ts";
 
 const T4_TRAY_TEMPLATE_1X_BASE64 =
@@ -27,7 +33,7 @@ const DEFAULT_TRAY_STATE: DesktopTrayState = {
 
 const { logWarning: logTrayWarning } = makeComponentLogger("desktop-tray");
 
-function createTrayTemplateImage(): Electron.NativeImage {
+function createMacTrayTemplateImage(): Electron.NativeImage {
   const image = Electron.nativeImage.createEmpty();
   image.addRepresentation({
     scaleFactor: 1,
@@ -62,10 +68,15 @@ function truncateMenuLabel(value: string, maxLength = 52): string {
   return `${normalized.slice(0, maxLength - 1)}…`;
 }
 
+function isTrayAlive(target: Electron.Tray | null): target is Electron.Tray {
+  return target !== null && (typeof target.isDestroyed !== "function" || !target.isDestroyed());
+}
+
 export class DesktopTray extends Context.Service<
   DesktopTray,
   {
-    readonly configure: Effect.Effect<void>;
+    readonly initialize: Effect.Effect<void>;
+    readonly configure: (keepRunningInTray: boolean) => Effect.Effect<void>;
     readonly updateState: (state: DesktopTrayState) => Effect.Effect<void>;
     readonly dispose: Effect.Effect<void>;
   }
@@ -74,14 +85,17 @@ export class DesktopTray extends Context.Service<
 /** @public */
 export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
+  const assets = yield* DesktopAssets.DesktopAssets;
+  const desktopState = yield* DesktopState.DesktopState;
   const desktopWindow = yield* DesktopWindow.DesktopWindow;
-  const context = yield* Effect.context<DesktopWindow.DesktopWindow>();
+  const electronApp = yield* ElectronApp.ElectronApp;
+  const clientSettings = yield* DesktopClientSettings.DesktopClientSettings;
+  const context = yield* Effect.context<never>();
   const runPromise = Effect.runPromiseWith(context);
-  const runFork = Effect.runForkWith(context);
 
-  const stateRef = yield* Ref.make<DesktopTrayState>(DEFAULT_TRAY_STATE);
+  const trayStateRef = yield* Ref.make<DesktopTrayState>(DEFAULT_TRAY_STATE);
+  const configureMutex = yield* Semaphore.make(1);
   let tray: Electron.Tray | null = null;
-  let subscribedLocale = false;
 
   const dispatchAction = (action: string) => {
     void runPromise(
@@ -103,28 +117,23 @@ export const make = Effect.gen(function* () {
     );
   };
 
-  const destroyTray = () => {
-    if (tray !== null && !tray.isDestroyed()) {
-      tray.destroy();
-    }
-    tray = null;
+  const quitApp = () => {
+    void runPromise(electronApp.quit);
   };
 
-  const renderTray = Effect.gen(function* () {
-    if (environment.platform !== "darwin") return;
-    const state = yield* Ref.get(stateRef);
-    if (!state.enabled) {
-      destroyTray();
-      return;
+  const destroyTray = Effect.sync(() => {
+    const previous = tray;
+    tray = null;
+    if (isTrayAlive(previous)) {
+      previous.destroy();
     }
+  });
 
-    if (tray === null || tray.isDestroyed()) {
-      tray = new Electron.Tray(createTrayTemplateImage());
-      tray.setToolTip(environment.displayName);
-    }
+  const cleanup = Ref.set(desktopState.closeToTray, false).pipe(Effect.andThen(destroyTray));
 
-    tray.setTitle(formatTrayTitle(state), { fontType: "monospacedDigit" });
+  yield* Effect.addFinalizer(() => cleanup);
 
+  const buildMenuTemplate = (state: DesktopTrayState): Electron.MenuItemConstructorOptions[] => {
     const statusSummary =
       state.workingCount === 0 && state.attentionCount === 0
         ? m(msg("{appName}: Idle"), { appName: environment.displayName })
@@ -190,28 +199,186 @@ export const make = Effect.gen(function* () {
       },
       { type: "separator" },
       {
-        role: "quit",
         label: m(msg("Quit {appName}"), { appName: environment.displayName }),
+        click: quitApp,
       },
     );
 
-    tray.setContextMenu(Electron.Menu.buildFromTemplate(menuTemplate));
+    return menuTemplate;
+  };
+
+  const applyTrayPresentation = (targetTray: Electron.Tray, state: DesktopTrayState) => {
+    if (environment.platform === "darwin") {
+      targetTray.setTitle(formatTrayTitle(state), { fontType: "monospacedDigit" });
+    }
+    targetTray.setContextMenu(Electron.Menu.buildFromTemplate(buildMenuTemplate(state)));
+  };
+
+  const syncMacTray = Effect.gen(function* () {
+    const state = yield* Ref.get(trayStateRef);
+    if (!state.enabled) {
+      yield* destroyTray;
+      return;
+    }
+
+    let creating = false;
+    let currentTray: Electron.Tray;
+    if (isTrayAlive(tray)) {
+      currentTray = tray;
+    } else {
+      creating = true;
+      currentTray = yield* Effect.sync(() => {
+        const nextTray = new Electron.Tray(createMacTrayTemplateImage());
+        tray = nextTray;
+        return nextTray;
+      });
+    }
+
+    yield* Effect.sync(() => {
+      if (creating) {
+        currentTray.setToolTip(environment.displayName);
+      }
+      applyTrayPresentation(currentTray, state);
+    }).pipe(
+      Effect.catchCause((cause) =>
+        (creating
+          ? destroyTray.pipe(
+              Effect.catchCause((cleanupCause) =>
+                logTrayWarning("failed to destroy the unfinished tray", { cause: cleanupCause }),
+              ),
+            )
+          : Effect.void
+        ).pipe(
+          Effect.andThen(logTrayWarning("failed to configure the menu bar tray", { cause })),
+        ),
+      ),
+    );
+  }).pipe(
+    Effect.catchCause((cause) =>
+      destroyTray.pipe(
+        Effect.catchCause((cleanupCause) =>
+          logTrayWarning("failed to destroy the unfinished tray", { cause: cleanupCause }),
+        ),
+        Effect.andThen(logTrayWarning("failed to configure the menu bar tray", { cause })),
+      ),
+    ),
+  );
+
+  const applyCloseToTrayEnabled = Effect.gen(function* () {
+    if (environment.platform === "darwin" || isTrayAlive(tray)) return;
+    const iconPaths = yield* assets.iconPaths;
+    // Tray icons need a real image; a missing or undecodable asset leaves the
+    // feature off so window close keeps its normal quit behavior.
+    const created = yield* Effect.sync(() => {
+      if (environment.platform === "win32") {
+        const icoPath = Option.getOrNull(iconPaths.ico);
+        return icoPath === null ? null : new Electron.Tray(icoPath);
+      }
+      const pngPath = Option.getOrNull(iconPaths.png);
+      if (pngPath === null) return null;
+      const image = Electron.nativeImage.createFromPath(pngPath).resize({ width: 32, height: 32 });
+      return image.isEmpty() ? null : new Electron.Tray(image);
+    });
+    if (created === null) {
+      yield* logTrayWarning("no tray icon image is available; close to tray stays off");
+      return;
+    }
+    tray = created;
+    const state = yield* Ref.get(trayStateRef);
+    yield* Effect.sync(() => {
+      created.setToolTip(environment.displayName);
+      applyTrayPresentation(created, state);
+      created.on("click", activateApp);
+    });
+    yield* Ref.set(desktopState.closeToTray, true);
+  }).pipe(
+    Effect.catchCause((cause) =>
+      Ref.set(desktopState.closeToTray, false).pipe(
+        Effect.andThen(
+          destroyTray.pipe(
+            Effect.catchCause((cleanupCause) =>
+              logTrayWarning("failed to destroy the unfinished tray", { cause: cleanupCause }),
+            ),
+          ),
+        ),
+        Effect.andThen(logTrayWarning("failed to configure the system tray", { cause })),
+      ),
+    ),
+  );
+
+  const applyCloseToTrayDisabled = Effect.gen(function* () {
+    if (environment.platform === "darwin") return;
+    if (tray === null) return;
+    yield* Ref.set(desktopState.closeToTray, false);
+    yield* destroyTray;
   });
 
+  const refreshActiveTray = Effect.gen(function* () {
+    if (!isTrayAlive(tray)) return;
+    const currentTray = tray;
+    const state = yield* Ref.get(trayStateRef);
+    yield* Effect.sync(() => applyTrayPresentation(currentTray, state));
+  }).pipe(
+    Effect.catchCause((cause) => logTrayWarning("failed to refresh the system tray", { cause })),
+  );
+
+  yield* Effect.acquireRelease(
+    Effect.sync(() =>
+      onLocaleChange(() => {
+        void runPromise(configureMutex.withPermits(1)(refreshActiveTray));
+      }),
+    ),
+    (unsubscribe) => Effect.sync(unsubscribe),
+  );
+
   return DesktopTray.of({
-    configure: Effect.gen(function* () {
-      if (environment.platform !== "darwin") return;
-      yield* renderTray;
-      if (!subscribedLocale) {
-        subscribedLocale = true;
-        onLocaleChange(() => runFork(renderTray));
-      }
+    initialize: clientSettings.get.pipe(
+      Effect.flatMap((stored) => {
+        if (environment.platform === "darwin") {
+          const enabled = Option.isSome(stored) ? stored.value.menuBarIconEnabled : true;
+          return configureMutex.withPermits(1)(
+            Ref.update(trayStateRef, (current) => ({ ...current, enabled })).pipe(
+              Effect.andThen(syncMacTray),
+            ),
+          );
+        }
+        return Option.isSome(stored) && stored.value.keepRunningInTray
+          ? configureMutex.withPermits(1)(applyCloseToTrayEnabled)
+          : Effect.void;
+      }),
+      Effect.catch((error) =>
+        logTrayWarning("could not read client settings for the tray", {
+          message: error.message,
+        }),
+      ),
+      Effect.withSpan("desktop.tray.initialize"),
+    ),
+    configure: Effect.fn("desktop.tray.configure")(function* (keepRunningInTray) {
+      if (environment.platform === "darwin") return;
+      yield* configureMutex
+        .withPermits(1)(keepRunningInTray ? applyCloseToTrayEnabled : applyCloseToTrayDisabled)
+        .pipe(
+          Effect.catchCause((cause) => logTrayWarning("failed to update the system tray", { cause })),
+        );
     }),
     updateState: Effect.fn("desktop.tray.updateState")(function* (nextState) {
-      yield* Ref.set(stateRef, nextState);
-      yield* renderTray;
+      yield* configureMutex.withPermits(1)(
+        Effect.gen(function* () {
+          yield* Ref.set(trayStateRef, nextState);
+          if (environment.platform === "darwin") {
+            yield* syncMacTray;
+          } else if (isTrayAlive(tray)) {
+            const currentTray = tray;
+            yield* Effect.sync(() => applyTrayPresentation(currentTray, nextState)).pipe(
+              Effect.catchCause((cause) =>
+                logTrayWarning("failed to update the system tray menu", { cause }),
+              ),
+            );
+          }
+        }),
+      );
     }),
-    dispose: Effect.sync(destroyTray),
+    dispose: cleanup,
   });
 });
 

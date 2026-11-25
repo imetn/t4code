@@ -229,7 +229,8 @@ const runStubbedDesktop = (stub: StubbedDesktop) =>
           Layer.mock(DesktopSshPasswordPrompts.DesktopSshPasswordPrompts, {}),
           Layer.mock(DesktopTelemetryPublisher.DesktopTelemetryPublisher, {}),
           Layer.mock(DesktopTray.DesktopTray, {
-            configure: Effect.void,
+            initialize: stub.record("tray"),
+            configure: () => Effect.void,
             updateState: () => Effect.void,
             dispose: Effect.void,
           }),
@@ -315,7 +316,7 @@ it.effect.each([false, true])(
       // The backend spawns before menus, and its token is minted without waiting for the renderer.
       assert.deepEqual(
         events.filter((event) => event !== "token"),
-        ["identity", "ready", "identity", "backend", "menu", "window"],
+        ["identity", "ready", "identity", "backend", "menu", "tray", "window"],
       );
       assert.isAbove(events.indexOf("token"), events.indexOf("backend"));
       assert.isFalse(yield* Deferred.isDone(registrationStopped));

@@ -315,6 +315,7 @@ const bootstrap = Effect.fn("desktop.bootstrap")(function* (backendStarted: bool
   const desktopSettings = yield* DesktopAppSettings.DesktopAppSettings;
   const desktopWindow = yield* DesktopWindow.DesktopWindow;
   const snapShot = yield* DesktopSnapShot.DesktopSnapShot;
+  const tray = yield* DesktopTray.DesktopTray;
   const appActivation = yield* DesktopAppActivation.DesktopAppActivation;
   const settings = yield* desktopSettings.get;
   const startAppActivation = appActivation.start.pipe(
@@ -326,6 +327,7 @@ const bootstrap = Effect.fn("desktop.bootstrap")(function* (backendStarted: bool
   }
 
   yield* snapShot.initialize;
+  yield* tray.initialize;
   // Only the user's own login shell PATH shows every t3 a new terminal runs; a fresh install has
   // no cached one. Without it, the command is left to Settings.
   const installCli = (yield* DesktopCliCommand.DesktopCliCommand).installOnFirstLaunch;
@@ -366,7 +368,6 @@ const bootstrap = Effect.fn("desktop.bootstrap")(function* (backendStarted: bool
 const startup = Effect.gen(function* () {
   const appIdentity = yield* DesktopAppIdentity.DesktopAppIdentity;
   const applicationMenu = yield* DesktopApplicationMenu.DesktopApplicationMenu;
-  const desktopTray = yield* DesktopTray.DesktopTray;
   const electronApp = yield* ElectronApp.ElectronApp;
   const lifecycle = yield* DesktopLifecycle.DesktopLifecycle;
   const linuxUrlHandler = yield* DesktopLinuxUrlHandler.DesktopLinuxUrlHandler;
@@ -443,7 +444,6 @@ const startup = Effect.gen(function* () {
   );
   yield* previewPasskeys.configure;
   yield* applicationMenu.configure;
-  yield* desktopTray.configure;
   // Portal identity is prepared pre-ready; MIME helpers must not gate the backend or window.
   yield* linuxUrlHandler.register.pipe(Effect.forkScoped);
   yield* bootstrap(backendStarted).pipe(
