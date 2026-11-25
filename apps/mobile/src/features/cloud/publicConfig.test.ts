@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { resolveCloudPublicConfig } from "./publicConfig";
+import { hasTracingPublicConfig, resolveCloudPublicConfig } from "./publicConfig";
 
 vi.mock("expo-constants", () => ({
   default: {
@@ -31,5 +31,22 @@ describe("resolveCloudPublicConfig", () => {
         tracesToken: null,
       },
     });
+  });
+
+  it("permanently strips outbound observability tracing config even when extra provides it", () => {
+    const config = resolveCloudPublicConfig({
+      observability: {
+        tracesUrl: "https://api.axiom.co/v1/traces",
+        tracesDataset: "mobile-traces",
+        tracesToken: "xaat-test",
+      },
+    });
+
+    expect(config.observability).toEqual({
+      tracesUrl: null,
+      tracesDataset: null,
+      tracesToken: null,
+    });
+    expect(hasTracingPublicConfig(config)).toBe(false);
   });
 });

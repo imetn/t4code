@@ -21,33 +21,25 @@ const tracesTo = (policy?: ManagedPolicyDocument) =>
     Effect.map(Option.isSome),
   );
 
-it.effect("a policy with telemetry off stops relay tracing to T3 Connect", () =>
+it.effect("relay tracing is permanently disabled regardless of managed policy", () =>
   Effect.gen(function* () {
-    assert.isTrue(yield* tracesTo());
+    assert.isFalse(yield* tracesTo());
     assert.isFalse(
       yield* tracesTo({
         schemaVersion: 1,
         organization: "Example Corp",
-        limits: { telemetry: false },
+        limits: { telemetry: true },
       }),
     );
   }),
 );
 
-it.effect("relay tracing waits for the desktop shell's telemetry opt-out", () => {
+it.effect("never sends outbound relay tracing requests even when enabled via environment", () => {
   const fetchFn = vi.fn<typeof fetch>(async () => new Response(null, { status: 202 }));
-  const environment: NodeJS.ProcessEnv = { T3CODE_DESKTOP_SHELL_DISCOVERY_PENDING: "1" };
+  const environment: NodeJS.ProcessEnv = { T3CODE_TELEMETRY_ENABLED: "true" };
   return Effect.void.pipe(
     Effect.withSpan("relay.request"),
     RelayTracing.withRelayClientTracing,
-    Effect.andThen(
-      Effect.sync(() => {
-        assert.isFalse(allowedFor(environment, undefined));
-        // What desktop shell discovery does once ~/.zshrc turns telemetry off.
-        environment.T3CODE_TELEMETRY_ENABLED = "false";
-        delete environment.T3CODE_DESKTOP_SHELL_DISCOVERY_PENDING;
-      }),
-    ),
     Layer.effectDiscard,
     Layer.provide(
       relayLayer(
@@ -65,15 +57,14 @@ it.effect("relay tracing waits for the desktop shell's telemetry opt-out", () =>
   );
 });
 
-it("reports the server's relay tracing policy to clients", () => {
-  assert.isTrue(allowedFor({}, undefined));
-  assert.isFalse(allowedFor({ T3CODE_TELEMETRY_ENABLED: "false" }, undefined));
-  assert.isFalse(allowedFor({ CI: "true" }, undefined));
-  assert.isTrue(allowedFor({ CI: "true", T3CODE_TELEMETRY_ENABLED: "true" }, undefined));
+it("always reports relay tracing as disallowed to clients", () => {
+  assert.isFalse(allowedFor({}, undefined));
+  assert.isFalse(allowedFor({ T3CODE_TELEMETRY_ENABLED: "true" }, undefined));
+  assert.isFalse(allowedFor({ CI: "true", T3CODE_TELEMETRY_ENABLED: "true" }, undefined));
   assert.isFalse(
     allowedFor(
       { T3CODE_TELEMETRY_ENABLED: "true" },
-      { organization: "Example Corp", lockedSettings: [], limits: { telemetry: false } },
+      { organization: "Example Corp", lockedSettings: [], limits: { telemetry: true } },
     ),
   );
 });
