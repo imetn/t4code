@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { hasCloudPublicConfig } from "./publicConfig.ts";
+import {
+  hasCloudPublicConfig,
+  relayTelemetryEnabled,
+  resolveCloudPublicConfig,
+  resolveRelayTracingConfig,
+  setServerRelayTelemetry,
+} from "./publicConfig.ts";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -73,6 +79,21 @@ describe("hasCloudPublicConfig", () => {
       vi.stubGlobal("window", { location: new URL("file:///app/index.html"), desktopBridge: {} });
 
       expect(hasCloudPublicConfig()).toBe(true);
+    });
+  });
+
+  it("permanently disables relay telemetry and tracing config even when env vars are set", () => {
+    vi.stubEnv("VITE_RELAY_OTLP_TRACES_URL", "https://api.axiom.co/v1/traces");
+    vi.stubEnv("VITE_RELAY_OTLP_TRACES_DATASET", "relay-traces");
+    vi.stubEnv("VITE_RELAY_OTLP_TRACES_TOKEN", "xaat-test");
+    setServerRelayTelemetry(true);
+
+    expect(relayTelemetryEnabled()).toBe(false);
+    expect(resolveRelayTracingConfig()).toBeNull();
+    expect(resolveCloudPublicConfig().relayTracing).toEqual({
+      tracesUrl: null,
+      tracesDataset: null,
+      tracesToken: null,
     });
   });
 });
