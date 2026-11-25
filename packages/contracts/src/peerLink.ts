@@ -29,6 +29,7 @@ export type PeerLinkStatus = typeof PeerLinkStatus.Type;
 export const PeerLinkSummary = Schema.Struct({
   ...PeerLink.fields,
   status: PeerLinkStatus,
+  latencyMs: Schema.optional(Schema.NullOr(Schema.Number)),
 });
 export type PeerLinkSummary = typeof PeerLinkSummary.Type;
 

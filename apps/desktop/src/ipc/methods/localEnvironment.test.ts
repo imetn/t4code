@@ -16,6 +16,7 @@ import * as DesktopWindow from "../../window/DesktopWindow.ts";
 import {
   getHostEnvironmentId,
   getLocalEnvironmentEnabled,
+  probeRelay,
   setLocalEnvironmentEnabled,
 } from "./localEnvironment.ts";
 
@@ -85,4 +86,21 @@ describe("local environment IPC", () => {
       ]);
     }).pipe(Effect.provide(layer));
   });
+
+  it.effect("rejects non-HTTPS relay probe URLs without making a request", () =>
+    Effect.gen(function* () {
+      assert.deepEqual(yield* probeRelay.handler("http://relay.example.com"), {
+        ok: false,
+        latencyMs: null,
+        status: null,
+        reason: "invalid-url",
+      });
+      assert.deepEqual(yield* probeRelay.handler("https://relay.example.com/path"), {
+        ok: false,
+        latencyMs: null,
+        status: null,
+        reason: "invalid-url",
+      });
+    }),
+  );
 });

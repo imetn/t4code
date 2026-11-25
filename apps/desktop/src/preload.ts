@@ -176,6 +176,7 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   },
   setCustomCloudConfig: (config) =>
     ipcRenderer.invoke(IpcChannels.SET_CUSTOM_CLOUD_CONFIG_CHANNEL, config),
+  probeRelay: (relayUrl) => ipcRenderer.invoke(IpcChannels.PROBE_RELAY_CHANNEL, relayUrl),
   getHostEnvironmentId: () => ipcRenderer.invoke(IpcChannels.GET_HOST_ENVIRONMENT_ID_CHANNEL),
   getClientSettings: () => ipcRenderer.invoke(IpcChannels.GET_CLIENT_SETTINGS_CHANNEL),
   setClientSettings: (settings) =>

@@ -1423,9 +1423,11 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "custom-relay-url",
-    title: msg("Custom relay URL"),
+    title: msg("Self-hosted relay"),
     to: "/settings/connections",
-    searchTerms: [msg("relay self hosted custom server t3 connect tunnel origin https")],
+    searchTerms: [
+      msg("custom relay url clerk oauth latency ping self hosted server t3 connect tunnel origin https"),
+    ],
   },
   {
     id: "network-access",

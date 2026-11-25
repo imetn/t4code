@@ -49,6 +49,7 @@ export const GET_CUSTOM_CLERK_PUBLISHABLE_KEY_CHANNEL = "desktop:get-custom-cler
 export const GET_CUSTOM_CLERK_CLI_OAUTH_CLIENT_ID_CHANNEL =
   "desktop:get-custom-clerk-cli-oauth-client-id";
 export const SET_CUSTOM_CLOUD_CONFIG_CHANNEL = "desktop:set-custom-cloud-config";
+export const PROBE_RELAY_CHANNEL = "desktop:probe-relay";
 export const GET_HOST_ENVIRONMENT_ID_CHANNEL = "desktop:get-host-environment-id";
 export const GET_LOCAL_ENVIRONMENT_BEARER_TOKEN_CHANNEL =
   "desktop:get-local-environment-bearer-token";

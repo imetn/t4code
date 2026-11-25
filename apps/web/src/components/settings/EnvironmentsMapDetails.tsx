@@ -21,6 +21,7 @@ import { accessConfig } from "../auth/ConnectAgentSurface";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { formatAccessTimestamp } from "./ConnectionsSettings.logic";
+import { latencyToneClassName } from "./CustomRelayUrlSetting.logic";
 import { EnvironmentRow, EnvironmentTransportLabel } from "./EnvironmentRow";
 import {
   type FleetEnvironmentNode,
@@ -305,12 +306,20 @@ function LinkButton({
           )}
         >
           <HealthGlyph health={edge.health} />
-          {attention
-            ? healthLabel(edge.health, gt)
-            : gt("Expires {date}", {
-                date: formatAccessTimestamp(DateTime.formatIso(edge.link.expiresAt)),
-                $context: "the date a link between two machines stops working",
-              })}
+          {attention ? (
+            healthLabel(edge.health, gt)
+          ) : edge.link.latencyMs != null ? (
+            <span
+              className={cn("font-mono tabular-nums", latencyToneClassName(edge.link.latencyMs))}
+            >
+              {gt("{ms} ms", { ms: edge.link.latencyMs })}
+            </span>
+          ) : (
+            gt("Expires {date}", {
+              date: formatAccessTimestamp(DateTime.formatIso(edge.link.expiresAt)),
+              $context: "the date a link between two machines stops working",
+            })
+          )}
         </span>
       </button>
     </li>
@@ -839,12 +848,22 @@ function LinkDetails({
         </dt>
         <dd
           className={cn(
-            "flex items-center gap-1.5",
+            "flex flex-wrap items-center gap-1.5",
             linkNeedsAttention(health) ? healthTone(health) : "text-foreground",
           )}
         >
           <HealthGlyph health={health} />
-          {peerLinkStatusText(health, gt)}
+          <span>{peerLinkStatusText(health, gt)}</span>
+          {health.kind === "reachable" && link.latencyMs != null ? (
+            <>
+              <span aria-hidden className="text-muted-foreground">
+                ·
+              </span>
+              <span className={cn("font-mono tabular-nums", latencyToneClassName(link.latencyMs))}>
+                {gt("{ms} ms", { ms: link.latencyMs })}
+              </span>
+            </>
+          ) : null}
         </dd>
         <dt className={term}>
           {gt("Expires", { $context: "label before the date a link expires" })}

@@ -627,16 +627,35 @@ const make = Effect.gen(function* () {
     link: PeerLink,
     now: DateTime.Utc,
   ): Effect.fn.Return<PeerLinkSummary> {
-    if (DateTime.isLessThanOrEqualTo(link.expiresAt, now)) return { ...link, status: "expired" };
+    if (DateTime.isLessThanOrEqualTo(link.expiresAt, now)) {
+      return { ...link, status: "expired", latencyMs: null };
+    }
     // A race over no addresses never settles.
-    if (link.urls.length === 0) return { ...link, status: "unreachable" };
+    if (link.urls.length === 0) {
+      return { ...link, status: "unreachable", latencyMs: null };
+    }
     const answered = yield* Effect.raceAll(
       link.urls.map((url) =>
-        answersAs(url, link.environmentId).pipe(Effect.flatMap(Effect.fromOption)),
+        Effect.gen(function* () {
+          const startedAt = performance.now();
+          const peer = yield* answersAs(url, link.environmentId).pipe(
+            Effect.flatMap(Effect.fromOption),
+          );
+          return {
+            peer,
+            latencyMs: Math.max(0, Math.round(performance.now() - startedAt)),
+          };
+        }),
       ),
     ).pipe(Effect.timeoutOption(LIST_PROBE_TIMEOUT), Effect.orElseSucceed(Option.none));
-    if (Option.isNone(answered)) return { ...link, status: "unreachable" };
-    return { ...(yield* withLabel(link, answered.value.label)), status: "reachable" };
+    if (Option.isNone(answered)) {
+      return { ...link, status: "unreachable", latencyMs: null };
+    }
+    return {
+      ...(yield* withLabel(link, answered.value.peer.label)),
+      status: "reachable",
+      latencyMs: answered.value.latencyMs,
+    };
   });
 
   const list: PeerLinks["Service"]["list"] = Effect.gen(function* () {
