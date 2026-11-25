@@ -156,8 +156,13 @@
       ],
     },
     "infra/relay": {
-      // Alchemy loads src/worker.ts as the Worker entry and reads its default export.
-      "entry": ["alchemy.run.ts!", "src/persistence/schema.ts!", "src/worker.ts!"],
+      // Alchemy loads src/worker.ts as the Worker entry; src/standalone.ts is the self-hosted Node server entry.
+      "entry": [
+        "alchemy.run.ts!",
+        "src/persistence/schema.ts!",
+        "src/standalone.ts!",
+        "src/worker.ts!",
+      ],
     },
     "packages/*": {
       // These workspace packages are private to this monorepo.

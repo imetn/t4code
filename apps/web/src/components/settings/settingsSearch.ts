@@ -513,6 +513,20 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: [msg("top bottom running working threads sidebar position order")],
   },
   {
+    id: "remember-project-model-and-mode",
+    title: msg("Remember model & mode per project"),
+    to: "/settings/general",
+    searchTerms: [msg("remember last model provider mode plan full access per project new thread")],
+  },
+  {
+    id: "menu-bar-icon",
+    title: msg("Menu bar icon"),
+    to: "/settings/general",
+    desktopOnly: true,
+    macOnly: true,
+    searchTerms: [msg("macOS tray status bar top menu bar icon working count")],
+  },
+  {
     id: "boring-sidebar",
     title: msg("Boring sidebar (group by project)"),
     to: "/settings/labs",
@@ -1387,6 +1401,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/connections",
     searchTerms: [msg("turn off on disable enable local server agents remote only restart")],
     desktopOnly: true,
+  },
+  {
+    id: "custom-relay-url",
+    title: msg("Custom relay URL"),
+    to: "/settings/connections",
+    searchTerms: [msg("relay self hosted custom server t3 connect tunnel origin https")],
   },
   {
     id: "network-access",

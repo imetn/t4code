@@ -250,6 +250,7 @@ interface SharedBootstrapInput {
   readonly bootstrapSecret: string;
   readonly observabilitySettings: BackendObservabilitySettings;
   readonly hostScope: string;
+  readonly customRelayUrl: string | null;
 }
 
 // Matches the server's DESKTOP_HOST_SCOPE_ENV.
@@ -581,6 +582,7 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
         T3CODE_DESKTOP_SHELL_DISCOVERY_PENDING: "1",
         T3CODE_CLI_PATH: Option.getOrUndefined(input.cliPath),
         [DESKTOP_HOST_SCOPE_ENV]: input.hostScope,
+        ...(input.customRelayUrl ? { T3CODE_RELAY_URL: input.customRelayUrl } : {}),
       },
       extendEnv: true,
       bootstrap,
@@ -692,6 +694,10 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
       forwardedEnv[name] = value;
       forwardedEnvNames.push(name);
     }
+  }
+  if (input.customRelayUrl && !env.T3CODE_RELAY_URL) {
+    forwardedEnv.T3CODE_RELAY_URL = input.customRelayUrl;
+    forwardedEnvNames.push("T3CODE_RELAY_URL");
   }
 
   const parentEnvWithoutT3Home: Record<string, string | undefined> = {};
@@ -837,11 +843,14 @@ export const make = Effect.gen(function* () {
       Effect.provideService(FileSystem.FileSystem, fileSystem),
       Effect.provideService(DesktopEnvironment.DesktopEnvironment, environment),
     );
+    const persistedSettings = yield* settings.get;
+    const hostEnv = yield* HostProcess.Environment;
     return {
       bootstrapToken,
       bootstrapSecret,
       observabilitySettings,
       hostScope: yield* hostScope,
+      customRelayUrl: hostEnv.T3CODE_RELAY_URL?.trim() ? null : persistedSettings.customRelayUrl,
     } satisfies SharedBootstrapInput;
   });
 

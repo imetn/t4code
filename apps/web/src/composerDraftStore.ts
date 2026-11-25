@@ -4,6 +4,7 @@ import {
   rememberComposerImageBytes,
 } from "./components/chat/composerAttachmentFiles";
 import { elementContextToPreviewAnnotation } from "./lib/elementContext";
+import { recordProjectLastSession } from "./lib/projectLastSessionMemory";
 import {
   ResponseContextRecord,
   ElementContextDetails,
@@ -3529,6 +3530,20 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               nextDraftsByThreadKey[threadKey] = nextDraft;
             }
 
+            const draftSession = state.draftThreadsByThreadKey[threadKey];
+            if (draftSession && options?.persistSticky === true) {
+              const selected = nextMap[instanceKey];
+              if (selected) {
+                recordProjectLastSession(
+                  [
+                    draftSession.logicalProjectKey,
+                    `${draftSession.environmentId}:${draftSession.projectId}`,
+                  ],
+                  { modelSelection: selected },
+                );
+              }
+            }
+
             return {
               draftsByThreadKey: nextDraftsByThreadKey,
               ...(options?.persistSticky === true
@@ -3566,6 +3581,16 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             } else {
               nextDraftsByThreadKey[threadKey] = nextDraft;
             }
+            const draftSession = state.draftThreadsByThreadKey[threadKey];
+            if (draftSession && nextRuntimeMode !== null) {
+              recordProjectLastSession(
+                [
+                  draftSession.logicalProjectKey,
+                  `${draftSession.environmentId}:${draftSession.projectId}`,
+                ],
+                { runtimeMode: nextRuntimeMode },
+              );
+            }
             return { draftsByThreadKey: nextDraftsByThreadKey };
           });
         },
@@ -3594,6 +3619,16 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               delete nextDraftsByThreadKey[threadKey];
             } else {
               nextDraftsByThreadKey[threadKey] = nextDraft;
+            }
+            const draftSession = state.draftThreadsByThreadKey[threadKey];
+            if (draftSession && nextInteractionMode !== null) {
+              recordProjectLastSession(
+                [
+                  draftSession.logicalProjectKey,
+                  `${draftSession.environmentId}:${draftSession.projectId}`,
+                ],
+                { interactionMode: nextInteractionMode },
+              );
             }
             return { draftsByThreadKey: nextDraftsByThreadKey };
           });

@@ -5,6 +5,7 @@ import {
   type DesktopUpdateChannel,
 } from "@t3tools/contracts";
 import { fromLenientJson } from "@t3tools/shared/schemaJson";
+import { normalizeSecureRelayUrl } from "@t3tools/shared/relayUrl";
 import { resolveSymlinkTarget } from "@t3tools/shared/symlink";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
@@ -28,6 +29,7 @@ import { desktopUpdateChannelOf } from "@t3tools/shared/cliRelease";
 import { isValidDistroName } from "../wsl/wslPathParsing.ts";
 
 export interface DesktopSettings {
+  readonly customRelayUrl: string | null;
   readonly localEnvironmentEnabled: boolean;
   readonly linuxPasswordStore: LinuxPasswordStorePreference;
   readonly mainWindowBounds: DesktopWindowBounds | null;
@@ -69,6 +71,7 @@ export const DEFAULT_MAIN_WINDOW_SIZE = {
 } as const;
 
 export const DEFAULT_DESKTOP_SETTINGS: DesktopSettings = {
+  customRelayUrl: null,
   localEnvironmentEnabled: true,
   linuxPasswordStore: DEFAULT_LINUX_PASSWORD_STORE,
   mainWindowBounds: null,
@@ -96,6 +99,7 @@ const optionalReadableKey = <S extends Schema.Top>(schema: S) =>
   Schema.optionalKey(schema.pipe(Schema.catchDecoding(() => Effect.succeedNone)));
 
 const DesktopSettingsDocument = Schema.Struct({
+  customRelayUrl: optionalReadableKey(Schema.NullOr(Schema.String)),
   localEnvironmentEnabled: optionalReadableKey(Schema.Boolean),
   linuxPasswordStore: optionalReadableKey(Schema.Unknown),
   mainWindowBounds: optionalReadableKey(Schema.NullOr(DesktopWindowBoundsDocument)),
@@ -153,6 +157,9 @@ export class DesktopAppSettings extends Context.Service<
   {
     readonly load: Effect.Effect<DesktopSettings>;
     readonly get: Effect.Effect<DesktopSettings>;
+    readonly setCustomRelayUrl: (
+      url: string | null,
+    ) => Effect.Effect<DesktopSettingsChange, DesktopSettingsWriteError>;
     readonly setLocalEnvironmentEnabled: (
       enabled: boolean,
     ) => Effect.Effect<DesktopSettingsChange, DesktopSettingsWriteError>;
@@ -204,6 +211,10 @@ function normalizeWslDistro(value: unknown): string | null {
   return typeof value === "string" && isValidDistroName(value) ? value : null;
 }
 
+function normalizeCustomRelayUrl(value: unknown): string | null {
+  return typeof value === "string" ? normalizeSecureRelayUrl(value) : null;
+}
+
 export function normalizeMainWindowBounds(value: unknown): DesktopWindowBounds | null {
   return Option.getOrNull(decodeDesktopWindowBounds(value));
 }
@@ -225,6 +236,7 @@ function normalizeDesktopSettingsDocument(
     (parsed.wslBackendEnabled === undefined && parsed.wslMode === "wsl");
 
   return {
+    customRelayUrl: normalizeCustomRelayUrl(parsed.customRelayUrl),
     localEnvironmentEnabled: parsed.localEnvironmentEnabled !== false,
     linuxPasswordStore: normalizeLinuxPasswordStorePreference(parsed.linuxPasswordStore),
     mainWindowBounds,
@@ -248,6 +260,10 @@ function toDesktopSettingsDocument(
   defaults: DesktopSettings,
 ): DesktopSettingsDocument {
   const document: Mutable<DesktopSettingsDocument> = {};
+
+  if (settings.customRelayUrl !== defaults.customRelayUrl) {
+    document.customRelayUrl = settings.customRelayUrl;
+  }
 
   if (settings.localEnvironmentEnabled !== defaults.localEnvironmentEnabled) {
     document.localEnvironmentEnabled = settings.localEnvironmentEnabled;
@@ -374,6 +390,13 @@ function setWslOnly(settings: DesktopSettings, enabled: boolean): DesktopSetting
         ...settings,
         wslOnly: enabled,
       };
+}
+
+function setCustomRelayUrl(settings: DesktopSettings, url: string | null): DesktopSettings {
+  const normalized = normalizeCustomRelayUrl(url);
+  return settings.customRelayUrl === normalized
+    ? settings
+    : { ...settings, customRelayUrl: normalized };
 }
 
 function setLocalEnvironmentEnabled(settings: DesktopSettings, enabled: boolean): DesktopSettings {
@@ -592,6 +615,11 @@ export const make = Effect.gen(function* () {
 
       return yield* persist((settings) => setWslOnly(settings, enabled));
     }),
+    setCustomRelayUrl: Effect.fn("desktop.settings.setCustomRelayUrl")(function* (url) {
+      yield* Effect.annotateCurrentSpan({ hasCustomRelayUrl: url !== null });
+
+      return yield* persist((settings) => setCustomRelayUrl(settings, url));
+    }),
     setLocalEnvironmentEnabled: Effect.fn("desktop.settings.setLocalEnvironmentEnabled")(
       function* (enabled) {
         yield* Effect.annotateCurrentSpan({ enabled });
@@ -656,6 +684,9 @@ export const layerTest = (initialSettings: DesktopSettings = DEFAULT_DESKTOP_SET
         }),
         setWslOnly: Effect.fn("DesktopAppSettings.setWslOnly")(function (enabled) {
           return update((settings) => setWslOnly(settings, enabled));
+        }),
+        setCustomRelayUrl: Effect.fn("DesktopAppSettings.setCustomRelayUrl")(function (url) {
+          return update((settings) => setCustomRelayUrl(settings, url));
         }),
         setLocalEnvironmentEnabled: Effect.fn("DesktopAppSettings.setLocalEnvironmentEnabled")(
           function (enabled) {

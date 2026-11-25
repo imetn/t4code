@@ -85,11 +85,23 @@ export function resolveSidebarRouteReveal<T extends RevealableThread>(input: {
   readonly routeKeyInPlace: boolean;
   readonly isSearching: boolean;
   readonly scopedProjectKeys: ReadonlySet<string> | null;
+  readonly scopedEnvironmentIds?: ReadonlySet<T["environmentId"]> | null;
   readonly delegatedUnderParent: ReadonlySet<string>;
   readonly findThread: (key: string) => T | undefined;
-}): { readonly pendingKey: string | null; readonly widensScope: boolean } {
-  const { reveal, routeKey, isSearching, scopedProjectKeys, delegatedUnderParent, findThread } =
-    input;
+}): {
+  readonly pendingKey: string | null;
+  readonly widensScope: boolean;
+  readonly widensEnvironmentScope: boolean;
+} {
+  const {
+    reveal,
+    routeKey,
+    isSearching,
+    scopedProjectKeys,
+    scopedEnvironmentIds = null,
+    delegatedUnderParent,
+    findThread,
+  } = input;
   const pendingKey = pendingSidebarRouteReveal(reveal, routeKey, input.routeKeyInPlace);
   // Search results replace the thread list; the reveal waits for it to return.
   const thread = pendingKey === null || isSearching ? undefined : findThread(pendingKey);
@@ -98,5 +110,10 @@ export function resolveSidebarRouteReveal<T extends RevealableThread>(input: {
     scopedProjectKeys !== null &&
     filterSidebarV2VisibleThreads([thread], scopedProjectKeys, delegatedUnderParent).length === 0 &&
     filterSidebarV2VisibleThreads([thread], null, delegatedUnderParent).length === 1;
-  return { pendingKey, widensScope };
+  const widensEnvironmentScope =
+    thread !== undefined &&
+    scopedEnvironmentIds !== null &&
+    !scopedEnvironmentIds.has(thread.environmentId) &&
+    filterSidebarV2VisibleThreads([thread], null, delegatedUnderParent).length === 1;
+  return { pendingKey, widensScope, widensEnvironmentScope };
 }

@@ -2,7 +2,12 @@ import { msg } from "gt-react";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { m } from "~/i18n/messages";
 import { RegistryContext } from "@effect/atom-react";
-import { scopedThreadKey } from "@t3tools/client-runtime/environment";
+import {
+  scopedProjectKey,
+  scopedThreadKey,
+  scopeProjectRef,
+} from "@t3tools/client-runtime/environment";
+import { recordProjectLastSession } from "../../lib/projectLastSessionMemory";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -36,6 +41,10 @@ export function useApplyThreadModelPick() {
       input: { threadId: target.threadId, modelSelection: pick },
     });
     if (result._tag === "Success") {
+      recordProjectLastSession(
+        [scopedProjectKey(scopeProjectRef(thread.environmentId, thread.projectId))],
+        { modelSelection: pick },
+      );
       useComposerDraftStore.getState().releaseModelSelection(target, pick);
     } else if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
       const error = squashAtomCommandFailure(result);

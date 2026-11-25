@@ -1,3 +1,4 @@
+import { normalizeSecureRelayUrl } from "@t3tools/shared/relayUrl";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Schema from "effect/Schema";
@@ -27,6 +28,33 @@ export const setLocalEnvironmentEnabled = makeIpcMethod({
     const change = yield* appSettings.setLocalEnvironmentEnabled(enabled);
     if (change.changed) {
       yield* lifecycle.relaunch(`localEnvironmentEnabled=${enabled}`);
+    }
+  }),
+});
+
+export const getCustomRelayUrl = makeSyncIpcMethod({
+  channel: IpcChannels.GET_CUSTOM_RELAY_URL_CHANNEL,
+  result: Schema.NullOr(Schema.String),
+  handler: Effect.fn("desktop.ipc.localEnvironment.getCustomRelayUrl")(function* () {
+    const appSettings = yield* DesktopAppSettings.DesktopAppSettings;
+    return (yield* appSettings.get).customRelayUrl;
+  }),
+});
+
+export const setCustomRelayUrl = makeIpcMethod({
+  channel: IpcChannels.SET_CUSTOM_RELAY_URL_CHANNEL,
+  payload: Schema.NullOr(Schema.String),
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.localEnvironment.setCustomRelayUrl")(function* (url) {
+    const appSettings = yield* DesktopAppSettings.DesktopAppSettings;
+    const lifecycle = yield* DesktopLifecycle.DesktopLifecycle;
+    const normalized = url === null || url.trim() === "" ? null : normalizeSecureRelayUrl(url);
+    if (url !== null && url.trim() !== "" && normalized === null) {
+      return yield* Effect.die(new Error("Relay URL must be an HTTPS origin."));
+    }
+    const change = yield* appSettings.setCustomRelayUrl(normalized);
+    if (change.changed) {
+      yield* lifecycle.relaunch("customRelayUrl");
     }
   }),
 });

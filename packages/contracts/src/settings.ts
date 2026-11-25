@@ -82,7 +82,7 @@ const DEFAULT_SIDEBAR_THREAD_SORT_ORDER: SidebarThreadSortOrder = "updated_at";
 
 export const SidebarWorkingShelfPosition = Schema.Literals(["top", "bottom"]);
 export type SidebarWorkingShelfPosition = typeof SidebarWorkingShelfPosition.Type;
-export const DEFAULT_SIDEBAR_WORKING_SHELF_POSITION: SidebarWorkingShelfPosition = "top";
+const DEFAULT_SIDEBAR_WORKING_SHELF_POSITION: SidebarWorkingShelfPosition = "top";
 
 export const SidebarProjectGroupingMode = Schema.Literals([
   "repository",
@@ -570,6 +570,10 @@ export const ClientSettingsSchema = Schema.Struct({
   sidebarWorkingShelfPosition: SidebarWorkingShelfPosition.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_WORKING_SHELF_POSITION)),
   ),
+  rememberProjectModelAndMode: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(true)),
+  ),
+  menuBarIconEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   sidebarProjectGroupingMode: SidebarProjectGroupingMode.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_PROJECT_GROUPING_MODE)),
   ),
@@ -2179,6 +2183,8 @@ export const ClientSettingsPatch = Schema.Struct({
   threadDetailsItems: Schema.optionalKey(Schema.Record(Schema.String, Schema.Boolean)),
   sidebarWorkingShelfEnabled: Schema.optionalKey(Schema.Boolean),
   sidebarWorkingShelfPosition: Schema.optionalKey(SidebarWorkingShelfPosition),
+  rememberProjectModelAndMode: Schema.optionalKey(Schema.Boolean),
+  menuBarIconEnabled: Schema.optionalKey(Schema.Boolean),
   sidebarProjectGroupingMode: Schema.optionalKey(SidebarProjectGroupingMode),
   sidebarProjectGroupingOverrides: Schema.optionalKey(
     Schema.Record(TrimmedNonEmptyString, SidebarProjectGroupingMode),

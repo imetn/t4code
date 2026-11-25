@@ -1,6 +1,7 @@
 export const PICK_FOLDER_CHANNEL = "desktop:pick-folder";
 export const TO_LOCAL_BACKEND_PATH_CHANNEL = "desktop:to-local-backend-path";
 export const SET_NOTIFICATION_BADGE_CHANNEL = "desktop:set-notification-badge";
+export const UPDATE_TRAY_STATE_CHANNEL = "desktop:update-tray-state";
 export const PICK_PROJECT_FAVICON_CHANNEL = "desktop:pick-project-favicon";
 export const PICK_THEME_FILES_CHANNEL = "desktop:pick-theme-files";
 export const SET_THEME_CHANNEL = "desktop:set-theme";
@@ -43,6 +44,8 @@ export const GET_PRIMARY_PASTE_ENABLED_CHANNEL = "desktop:get-primary-paste-enab
 export const GET_LOCAL_ENVIRONMENT_BOOTSTRAPS_CHANNEL = "desktop:get-local-environment-bootstraps";
 export const GET_LOCAL_ENVIRONMENT_ENABLED_CHANNEL = "desktop:get-local-environment-enabled";
 export const SET_LOCAL_ENVIRONMENT_ENABLED_CHANNEL = "desktop:set-local-environment-enabled";
+export const GET_CUSTOM_RELAY_URL_CHANNEL = "desktop:get-custom-relay-url";
+export const SET_CUSTOM_RELAY_URL_CHANNEL = "desktop:set-custom-relay-url";
 export const GET_HOST_ENVIRONMENT_ID_CHANNEL = "desktop:get-host-environment-id";
 export const GET_LOCAL_ENVIRONMENT_BEARER_TOKEN_CHANNEL =
   "desktop:get-local-environment-bearer-token";

@@ -223,6 +223,7 @@ describe("DesktopSettings", () => {
         );
 
         assert.deepEqual(yield* settings.load, {
+          customRelayUrl: null,
           linuxPasswordStore: "auto",
           localEnvironmentEnabled: true,
           mainWindowBounds: { x: 120, y: 80, width: 1280, height: 900 },
@@ -376,6 +377,7 @@ describe("DesktopSettings", () => {
         });
 
         assert.deepEqual(yield* settings.load, {
+          customRelayUrl: null,
           linuxPasswordStore: "auto",
           localEnvironmentEnabled: true,
           mainWindowBounds: null,
@@ -405,6 +407,7 @@ describe("DesktopSettings", () => {
         });
 
         assert.deepEqual(yield* settings.load, {
+          customRelayUrl: null,
           linuxPasswordStore: "auto",
           localEnvironmentEnabled: true,
           mainWindowBounds: null,
@@ -433,6 +436,12 @@ describe("DesktopSettings", () => {
 
         const distro = yield* settings.setWslDistro("Ubuntu-22.04");
         assert.isTrue(distro.changed);
+        const relay = yield* settings.setCustomRelayUrl("https://relay.example.com/");
+        assert.isTrue(relay.changed);
+        assert.equal(relay.settings.customRelayUrl, "https://relay.example.com");
+        const invalidRelay = yield* settings.setCustomRelayUrl("http://insecure.example.com");
+        assert.isTrue(invalidRelay.changed);
+        assert.isNull(invalidRelay.settings.customRelayUrl);
         assert.equal(distro.settings.wslDistro, "Ubuntu-22.04");
 
         const reloaded = yield* settings.load;

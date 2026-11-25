@@ -120,6 +120,28 @@ export const DesktopAppBrandingSchema = Schema.Struct({
   displayName: Schema.String,
 });
 
+export const DesktopTrayThreadStatusSchema = Schema.Literals(["working", "attention", "active"]);
+export type DesktopTrayThreadStatus = typeof DesktopTrayThreadStatusSchema.Type;
+
+export const DesktopTrayThreadSummarySchema = Schema.Struct({
+  environmentId: EnvironmentId,
+  threadId: Schema.String.check(Schema.isMaxLength(256)),
+  title: Schema.String.check(Schema.isMaxLength(200)),
+  projectName: Schema.String.check(Schema.isMaxLength(120)),
+  environmentLabel: Schema.String.check(Schema.isMaxLength(80)),
+  status: DesktopTrayThreadStatusSchema,
+});
+export type DesktopTrayThreadSummary = typeof DesktopTrayThreadSummarySchema.Type;
+
+export const DesktopTrayStateSchema = Schema.Struct({
+  enabled: Schema.Boolean,
+  workingCount: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 10_000 })),
+  attentionCount: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 10_000 })),
+  activeCount: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 10_000 })),
+  threads: Schema.Array(DesktopTrayThreadSummarySchema).check(Schema.isMaxLength(12)),
+});
+export type DesktopTrayState = typeof DesktopTrayStateSchema.Type;
+
 export const DesktopSnapShotMode = Schema.Literals(["direct", "portal", "unavailable"]);
 export type DesktopSnapShotMode = typeof DesktopSnapShotMode.Type;
 
@@ -1140,6 +1162,8 @@ export interface DesktopBridge {
   getLocalEnvironmentBootstraps: () => readonly DesktopEnvironmentBootstrap[];
   getLocalEnvironmentEnabled: () => boolean;
   setLocalEnvironmentEnabled: (enabled: boolean) => Promise<void>;
+  getCustomRelayUrl?: () => string | null;
+  setCustomRelayUrl?: (url: string | null) => Promise<void>;
   /** The environment ID recorded in this app's T3 home, such as its own machine's background service. */
   getHostEnvironmentId?: () => Promise<string | null>;
   getLocalEnvironmentBearerToken: () => Promise<string>;
@@ -1214,6 +1238,7 @@ export interface DesktopBridge {
   checkSystemPermission: (pane: SystemSettingsPane) => Promise<boolean>;
   probeRemoteEditors: () => Promise<readonly EditorId[]>;
   pasteAsText: () => Promise<void>;
+  updateTrayState?: (state: DesktopTrayState) => Promise<void>;
   onMenuAction: (listener: (action: string) => void) => () => void;
   onSnapShotEvent: (listener: (event: DesktopSnapShotEvent) => void) => () => void;
   onQuitShortcut: (listener: (event: QuitShortcutHintEvent) => void) => () => void;

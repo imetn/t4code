@@ -4,10 +4,12 @@ import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SqlError from "effect/sql/SqlError";
 import { DEFAULT_MANAGED_TUNNEL_LIMIT, T3CHAT_PLAN_TUNNEL_LIMITS } from "@t3tools/contracts/relay";
 
+import * as RelayConfiguration from "../Config.ts";
 import * as RelayDb from "../db.ts";
 import {
   relayEnvironmentLinks,
@@ -116,6 +118,11 @@ export class ManagedTunnelLimits extends Context.Service<
 const make = Effect.gen(function* () {
   const db = yield* RelayDb.RelayDb;
   const t3Chat = yield* T3ChatAccounts.T3ChatAccounts;
+  const relayConfig = yield* Effect.serviceOption(RelayConfiguration.RelayConfiguration);
+  const defaultTunnelLimit = Option.match(relayConfig, {
+    onNone: () => DEFAULT_MANAGED_TUNNEL_LIMIT,
+    onSome: (config) => config.maxManagedTunnels ?? DEFAULT_MANAGED_TUNNEL_LIMIT,
+  });
 
   // Asked only at the cap, so most links never call T3 Chat. Any failure keeps the lower cap.
   const t3ChatTunnelLimit = (userId: string) =>
@@ -170,7 +177,7 @@ const make = Effect.gen(function* () {
           );
 
         const override = yield* loadOverride(input.userId);
-        const baseMaxTunnels = override ?? DEFAULT_MANAGED_TUNNEL_LIMIT;
+        const baseMaxTunnels = override ?? defaultTunnelLimit;
 
         const pendingCutoff = DateTime.formatIso(
           DateTime.subtract(yield* DateTime.now, {

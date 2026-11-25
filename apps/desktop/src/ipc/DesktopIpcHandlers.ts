@@ -9,11 +9,14 @@ import {
 } from "./methods/appleSpeech.ts";
 import * as DesktopIpc from "./DesktopIpc.ts";
 import { installNotificationBadge } from "./methods/notificationBadge.ts";
+import { updateTrayState } from "./methods/tray.ts";
 import { getClientSettings, setClientSettings } from "./methods/clientSettings.ts";
 import { getConnectionCatalog, setConnectionCatalog } from "./methods/connectionCatalog.ts";
 import {
+  getCustomRelayUrl,
   getHostEnvironmentId,
   getLocalEnvironmentEnabled,
+  setCustomRelayUrl,
   setLocalEnvironmentEnabled,
 } from "./methods/localEnvironment.ts";
 import {
@@ -115,10 +118,13 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handleSync(getLocalEnvironmentBootstraps);
   yield* ipc.handleSync(getLocalEnvironmentEnabled);
   yield* ipc.handle(setLocalEnvironmentEnabled);
+  yield* ipc.handleSync(getCustomRelayUrl);
+  yield* ipc.handle(setCustomRelayUrl);
   yield* ipc.handle(getHostEnvironmentId);
   yield* ipc.handle(getLocalEnvironmentBearerToken);
 
   yield* ipc.handle(startFileDrag);
+  yield* ipc.handle(updateTrayState);
   yield* ipc.handle(restartAudioService);
   yield* ipc.handle(getClientSettings);
   yield* ipc.handle(setClientSettings);

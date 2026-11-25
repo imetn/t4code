@@ -551,6 +551,13 @@ export function useSettingsRestore(onRestored?: () => void) {
     DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfPosition
       ? [gt("Working section position")]
       : []),
+    ...(settings.rememberProjectModelAndMode !==
+    DEFAULT_UNIFIED_SETTINGS.rememberProjectModelAndMode
+      ? [gt("Remember model & mode per project")]
+      : []),
+    ...(settings.menuBarIconEnabled !== DEFAULT_UNIFIED_SETTINGS.menuBarIconEnabled
+      ? [gt("Menu bar icon")]
+      : []),
     ...(settings.sidebarAutoSettleAfterDays !== DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays
       ? [gt("Auto-settle inactive threads")]
       : []),
@@ -744,6 +751,8 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarProjectSortOrder: DEFAULT_UNIFIED_SETTINGS.sidebarProjectSortOrder,
       sidebarWorkingShelfEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled,
       sidebarWorkingShelfPosition: DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfPosition,
+      rememberProjectModelAndMode: DEFAULT_UNIFIED_SETTINGS.rememberProjectModelAndMode,
+      menuBarIconEnabled: DEFAULT_UNIFIED_SETTINGS.menuBarIconEnabled,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
       sidebarAutoSettleKeepPullRequests: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleKeepPullRequests,
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
@@ -1022,10 +1031,7 @@ export function GeneralSettingsPanel() {
                 }
               }}
             >
-              <SelectTrigger
-                className={SETTINGS_PICKER_TRIGGER_CLASSNAME}
-                aria-label={gt("Working section position")}
-              >
+              <SelectTrigger className="w-32" aria-label={gt("Working section position")}>
                 <SelectValue>
                   {settings.sidebarWorkingShelfPosition === "top" ? gt("Top") : gt("Bottom")}
                 </SelectValue>
@@ -1037,6 +1043,70 @@ export function GeneralSettingsPanel() {
             </Select>
           }
         />
+        <SettingsRow
+          {...setting("remember-project-model-and-mode")}
+          description={
+            <T>
+              Automatically restore the last used model, interaction mode, and access mode when
+              starting a new thread in a project.
+            </T>
+          }
+          resetAction={
+            settings.rememberProjectModelAndMode !==
+            DEFAULT_UNIFIED_SETTINGS.rememberProjectModelAndMode ? (
+              <SettingResetButton
+                ariaLabel={gt("Reset remember model and mode per project to default")}
+                onClick={() =>
+                  updateSettings({
+                    rememberProjectModelAndMode:
+                      DEFAULT_UNIFIED_SETTINGS.rememberProjectModelAndMode,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.rememberProjectModelAndMode}
+              onCheckedChange={(checked) =>
+                updateSettings({ rememberProjectModelAndMode: Boolean(checked) })
+              }
+              aria-label={gt("Remember model & mode per project")}
+            />
+          }
+        />
+        {isElectron && isMacPlatform(navigator.platform) ? (
+          <SettingsRow
+            {...setting("menu-bar-icon")}
+            description={
+              <T>
+                Show a T4 Code icon in the macOS menu bar with live working counts and quick thread
+                switching.
+              </T>
+            }
+            resetAction={
+              settings.menuBarIconEnabled !== DEFAULT_UNIFIED_SETTINGS.menuBarIconEnabled ? (
+                <SettingResetButton
+                  ariaLabel={gt("Reset menu bar icon to default")}
+                  onClick={() =>
+                    updateSettings({
+                      menuBarIconEnabled: DEFAULT_UNIFIED_SETTINGS.menuBarIconEnabled,
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <Switch
+                checked={settings.menuBarIconEnabled}
+                onCheckedChange={(checked) =>
+                  updateSettings({ menuBarIconEnabled: Boolean(checked) })
+                }
+                aria-label={gt("Menu bar icon")}
+              />
+            }
+          />
+        ) : null}
       </SettingsSection>
 
       <SettingsSection id="confirmations" title={gt("Confirmations")}>

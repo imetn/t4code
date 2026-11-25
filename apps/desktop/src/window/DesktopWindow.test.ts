@@ -296,6 +296,7 @@ function layerTest(input: {
     setWslOnly: () => Effect.die("unexpected WSL-only toggle"),
     setLocalEnvironmentEnabled: () => Effect.die("unexpected local environment toggle"),
     applyWslWindowsFallback: Effect.die("unexpected WSL Windows fallback"),
+    setCustomRelayUrl: () => Effect.die("unexpected custom relay URL update"),
     applyWslWindowsFallbackInMemory: Effect.die("unexpected WSL Windows fallback"),
   } satisfies DesktopAppSettings.DesktopAppSettings["Service"]);
 

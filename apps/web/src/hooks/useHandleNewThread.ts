@@ -46,6 +46,7 @@ import {
 } from "../lib/chatThreadActions";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { peekT3ProjectFile, readT3ProjectFile } from "../lib/t3ProjectFileDefaults";
+import { readProjectLastSession } from "../lib/projectLastSessionMemory";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentSummaries } from "../state/presentation";
 import { environmentServerConfigsAtom } from "../state/server";
@@ -200,6 +201,33 @@ export function createNewThreadHandler(router: AnyRouter) {
         candidate.id === projectRef.projectId &&
         candidate.environmentId === projectRef.environmentId,
     );
+    const logicalProjectKeyForMemory = project
+      ? deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings)
+      : scopedProjectKey(projectRef);
+    const rememberProjectSession = getClientSettings().rememberProjectModelAndMode;
+    const carrySourceProjectRef = carrySourceShell
+      ? scopeProjectRef(carrySourceShell.environmentId, carrySourceShell.projectId)
+      : carrySourceDraft
+        ? scopeProjectRef(carrySourceDraft.environmentId, carrySourceDraft.projectId)
+        : null;
+    const isCarrySameProject =
+      carrySourceProjectRef !== null &&
+      scopedProjectKey(carrySourceProjectRef) === scopedProjectKey(projectRef);
+    const rememberedProjectSession = rememberProjectSession
+      ? readProjectLastSession({
+          projectKeys: [logicalProjectKeyForMemory, scopedProjectKey(projectRef)],
+          targetProjectRef: projectRef,
+          fallbackThreads: readThreadShells(),
+        })
+      : null;
+    const effectiveCarryModelSelection =
+      isCarrySameProject || !rememberProjectSession
+        ? carryModelSelection
+        : (rememberedProjectSession?.modelSelection ?? carryModelSelection);
+    const effectiveCarryInteractionMode =
+      isCarrySameProject || !rememberProjectSession
+        ? carryInteractionMode
+        : (rememberedProjectSession?.interactionMode ?? carryInteractionMode);
     const projectSettings = resolveProjectSettings(
       targetServerSettings,
       project?.id ?? null,
@@ -209,7 +237,8 @@ export function createNewThreadHandler(router: AnyRouter) {
     const fallbackResolution = resolveNewThreadModelSelection({
       defaultSelection:
         configuredDefaultModelSelection ??
-        (carryModelSelection || useComposerDraftStore.getState().stickyActiveProvider !== null
+        (effectiveCarryModelSelection ||
+        useComposerDraftStore.getState().stickyActiveProvider !== null
           ? null
           : resolveProjectDefaultProviderModelSelection(
               environmentServerConfigs.get(projectRef.environmentId)?.providers ?? [],
@@ -225,11 +254,20 @@ export function createNewThreadHandler(router: AnyRouter) {
     const projectDefaultModelSelection = fallbackResolution.fallback
       ? fallbackResolution.selection
       : configuredDefaultModelSelection;
-    const defaultRuntimeMode = projectSettings.settings.defaultRuntimeMode;
+    const carryRuntimeMode =
+      carrySourceComposer?.runtimeMode ??
+      carrySourceShell?.runtimeMode ??
+      carrySourceDraft?.runtimeMode ??
+      null;
+    const defaultRuntimeMode = rememberProjectSession
+      ? ((isCarrySameProject ? carryRuntimeMode : null) ??
+        rememberedProjectSession?.runtimeMode ??
+        projectSettings.settings.defaultRuntimeMode)
+      : projectSettings.settings.defaultRuntimeMode;
     const resolveModelSelectionOverride = (destinationDraftId: DraftId) =>
       resolveNewThreadModelSelectionOverride({
         projectDefaultSelection: projectDefaultModelSelection ?? null,
-        carrySelection: carryModelSelection,
+        carrySelection: effectiveCarryModelSelection,
         carrySourceDraftId:
           currentRouteTarget?.kind === "draft" ? currentRouteTarget.draftId : null,
         destinationDraftId,
@@ -362,7 +400,9 @@ export function createNewThreadHandler(router: AnyRouter) {
           setDraftThreadContext(emptyStoredDraftThread.draftId, {
             ...workspaceContext,
             ...(!isDraftAlreadyOpen ? { runtimeMode: defaultRuntimeMode } : {}),
-            ...(carryInteractionMode ? { interactionMode: carryInteractionMode } : {}),
+            ...(effectiveCarryInteractionMode
+              ? { interactionMode: effectiveCarryInteractionMode }
+              : {}),
           });
         }
         const storedDraft = getComposerDraft(emptyStoredDraftThread.draftId);
@@ -387,7 +427,9 @@ export function createNewThreadHandler(router: AnyRouter) {
             threadId: emptyStoredDraftThread.threadId,
             ...workspaceContext,
             ...(!isDraftAlreadyOpen ? { runtimeMode: defaultRuntimeMode } : {}),
-            ...(carryInteractionMode ? { interactionMode: carryInteractionMode } : {}),
+            ...(effectiveCarryInteractionMode
+              ? { interactionMode: effectiveCarryInteractionMode }
+              : {}),
           },
         );
         const opened = {
@@ -455,7 +497,9 @@ export function createNewThreadHandler(router: AnyRouter) {
         envMode: initialEnvMode,
         startFromOrigin: options?.startFromOrigin ?? startFromOriginFor(initialEnvMode),
         runtimeMode: defaultRuntimeMode,
-        ...(carryInteractionMode ? { interactionMode: carryInteractionMode } : {}),
+        ...(effectiveCarryInteractionMode
+          ? { interactionMode: effectiveCarryInteractionMode }
+          : {}),
       });
       applyStickyState(draftId);
       const modelSelectionOverride = resolveModelSelectionOverride(draftId);

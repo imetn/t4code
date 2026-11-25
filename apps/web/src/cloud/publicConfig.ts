@@ -42,15 +42,51 @@ function normalizeSecureUrl(value: string): string | null {
   }
 }
 
+const CUSTOM_RELAY_URL_STORAGE_KEY = "t3code:custom-relay-url";
+
+export function resolveDefaultRelayUrl(): string | null {
+  return normalizeSecureRelayUrl(
+    (import.meta.env.VITE_T3CODE_RELAY_URL as string | undefined) ?? "",
+  );
+}
+
+export function readCustomRelayUrlOverride(): string | null {
+  if (typeof window === "undefined") return null;
+  const desktopOverride = window.desktopBridge?.getCustomRelayUrl?.();
+  if (typeof desktopOverride === "string") {
+    return normalizeSecureRelayUrl(desktopOverride);
+  }
+  if (window.desktopBridge) {
+    return null;
+  }
+  try {
+    const stored = window.localStorage.getItem(CUSTOM_RELAY_URL_STORAGE_KEY);
+    return stored ? normalizeSecureRelayUrl(stored) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeWebCustomRelayUrlOverride(url: string | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (url === null) {
+      window.localStorage.removeItem(CUSTOM_RELAY_URL_STORAGE_KEY);
+    } else {
+      window.localStorage.setItem(CUSTOM_RELAY_URL_STORAGE_KEY, url);
+    }
+  } catch {
+    // Ignore restricted storage contexts.
+  }
+}
+
 export function resolveCloudPublicConfig(): CloudPublicConfig {
   return {
     clerkPublishableKey: trimNonEmpty(
       import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined,
     ),
     clerkJwtTemplate: trimNonEmpty(import.meta.env.VITE_CLERK_JWT_TEMPLATE as string | undefined),
-    relayUrl: normalizeSecureRelayUrl(
-      (import.meta.env.VITE_T3CODE_RELAY_URL as string | undefined) ?? "",
-    ),
+    relayUrl: readCustomRelayUrlOverride() ?? resolveDefaultRelayUrl(),
     relayTracing: {
       tracesUrl: normalizeSecureUrl(
         (import.meta.env.VITE_RELAY_OTLP_TRACES_URL as string | undefined) ?? "",

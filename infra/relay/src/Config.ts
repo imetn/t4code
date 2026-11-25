@@ -61,8 +61,13 @@ export class RelayConfiguration extends Context.Service<
     readonly apns: ApnsCredentials | null;
     readonly fcmServiceAccount?: Redacted.Redacted<string>;
     readonly clerkSecretKey: Redacted.Redacted<string>;
+    readonly clerkJwtKey?: string;
     readonly clerkPublishableKey: string;
     readonly clerkJwtAudience: string;
+    /** Override the default managed tunnel limit for self-hosted private relays. */
+    readonly maxManagedTunnels?: number;
+    /** Optional Clerk user ID allowlist for private self-hosted relays; empty/unset allows all authenticated users. */
+    readonly allowedUserIds?: ReadonlyArray<string>;
     /** Verifies Clerk `user.deleted` webhooks; unset leaves the webhook route disabled. */
     readonly clerkWebhookSigningSecret?: Redacted.Redacted<string>;
     readonly apnsDeliveryJobSigningSecret: Redacted.Redacted<string>;

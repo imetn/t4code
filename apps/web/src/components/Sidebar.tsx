@@ -365,6 +365,7 @@ type SidebarOptimisticDrop = {
 interface SidebarThreadPartitionInput {
   readonly threads: readonly EnvironmentThreadShell[];
   readonly scopedProjectKeys: ReadonlySet<string> | null;
+  readonly scopedEnvironmentIds: ReadonlySet<EnvironmentId> | null;
   /** Tasks linked environments run for a listed thread; they show under it. */
   readonly delegatedUnderParent: ReadonlySet<string>;
   readonly serverConfigs: ReadonlyMap<EnvironmentId, EnvironmentServerConfig>;
@@ -432,6 +433,7 @@ function routeThreadOnly(
 function useSidebarThreads(input: {
   readonly projectScopeKey: string | null;
   readonly scopedProjectKeys: ReadonlySet<string> | null;
+  readonly scopedEnvironmentIds: ReadonlySet<EnvironmentId> | null;
   readonly serverConfigs: ReadonlyMap<EnvironmentId, EnvironmentServerConfig>;
   readonly connectedEnvironmentIds: readonly EnvironmentId[];
   readonly optimisticDrop: SidebarOptimisticDrop | null;
@@ -447,6 +449,7 @@ function useSidebarThreads(input: {
   const {
     projectScopeKey,
     scopedProjectKeys,
+    scopedEnvironmentIds,
     serverConfigs,
     connectedEnvironmentIds,
     optimisticDrop,
@@ -502,6 +505,7 @@ function useSidebarThreads(input: {
   const partition = partitionSidebarThreads({
     threads,
     scopedProjectKeys,
+    scopedEnvironmentIds,
     delegatedUnderParent,
     serverConfigs,
     connectedEnvironmentIds,
@@ -513,9 +517,15 @@ function useSidebarThreads(input: {
 
   const { pinnedThreads, activeThreads, workingThreads, snoozedThreads, settledThreads } =
     partition;
+  const olderSettledEnvironmentIds =
+    scopedEnvironmentIds === null
+      ? [...serverConfigs.keys()]
+      : [...serverConfigs.keys()].filter((environmentId) =>
+          scopedEnvironmentIds.has(environmentId),
+        );
   // Older settled threads load in pages; the shelf lists them only as far as they are loaded.
   const olderSettledShelf = useOlderSettledShelf({
-    scopes: olderSettledScopes([...serverConfigs.keys()], scopedProjectKeys),
+    scopes: olderSettledScopes(olderSettledEnvironmentIds, scopedProjectKeys),
     expanded: settledShelfExpanded,
     visibleCount: settledVisibleCount,
   });
@@ -643,6 +653,7 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
   const {
     threads,
     scopedProjectKeys,
+    scopedEnvironmentIds,
     delegatedUnderParent,
     serverConfigs,
     optimisticDrop,
@@ -650,7 +661,12 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
     sortActiveBySend,
   } = input;
   const preciseNow = new Date().toISOString();
-  const visible = filterSidebarV2VisibleThreads(threads, scopedProjectKeys, delegatedUnderParent);
+  const visible = filterSidebarV2VisibleThreads(
+    threads,
+    scopedProjectKeys,
+    delegatedUnderParent,
+    scopedEnvironmentIds,
+  );
   const inboxObservation = inboxReturns.observe(workingShelfEnabled ? threads : null);
   const pinned: EnvironmentThreadShell[] = [];
   const active: EnvironmentThreadShell[] = [];
@@ -1036,6 +1052,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const projectGroupsRef = useRef(projectGroups);
   const persistedProjectScopeKeys = useUiStateStore((store) => store.sidebarProjectScopeKeys);
   const setPersistedProjectScopeKeys = useUiStateStore((store) => store.setSidebarProjectScopeKeys);
+  const persistedEnvironmentScopeIds = useUiStateStore((store) => store.sidebarEnvironmentScopeIds);
+  const setPersistedEnvironmentScopeIds = useUiStateStore(
+    (store) => store.setSidebarEnvironmentScopeIds,
+  );
   const [projectScopeMenuState, dispatchProjectScopeMenu] = useReducer(
     reduceSidebarProjectScopeMenuState,
     { open: false, query: "" },
@@ -1107,6 +1127,20 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     setPersistedProjectScopeKeys(keys);
     scrollSidebarToTop(sidebarContentRef.current);
   };
+  const setEnvironmentScopeIds = (environmentIds: readonly string[]) => {
+    clearSelection();
+    setPersistedEnvironmentScopeIds(environmentIds);
+    scrollSidebarToTop(sidebarContentRef.current);
+  };
+  const availableEnvironments = [...environmentLabelById.entries()].map(([id, label]) => ({
+    id,
+    label,
+  }));
+  const chosenEnvironmentScopeIds = persistedEnvironmentScopeIds.filter((id): id is EnvironmentId =>
+    environmentLabelById.has(id as EnvironmentId),
+  );
+  const chosenScopedEnvironmentIds =
+    chosenEnvironmentScopeIds.length === 0 ? null : new Set(chosenEnvironmentScopeIds);
   // A scope whose project is gone reads as all projects once every snapshot has
   // loaded. The stored keys are left alone, so the scope returns with its project.
   // An archived project's scope reads as all projects, matching the menu.
@@ -1156,33 +1190,62 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   // scrolled away; a remount starts at the top, so each mount scrolls to the open
   // thread once. Render decides the widening, so the first frame of the new route
   // already lists the row; the active row's ref callback scrolls to it.
-  const { widensScope: revealWidensScope } = resolveSidebarRouteReveal({
-    reveal: routeReveal,
-    routeKey: routeRowThreadKey,
-    routeKeyInPlace,
-    isSearching: isSearchingThreads,
-    scopedProjectKeys: chosenScopeProjectKeys,
-    delegatedUnderParent,
-    findThread: (key) => threads.find((candidate) => threadShellKey(candidate) === key),
-  });
+  const { widensScope: revealWidensScope, widensEnvironmentScope: revealWidensEnvironmentScope } =
+    resolveSidebarRouteReveal({
+      reveal: routeReveal,
+      routeKey: routeRowThreadKey,
+      routeKeyInPlace,
+      isSearching: isSearchingThreads,
+      scopedProjectKeys: chosenScopeProjectKeys,
+      scopedEnvironmentIds: chosenScopedEnvironmentIds,
+      delegatedUnderParent,
+      findThread: (key) => threads.find((candidate) => threadShellKey(candidate) === key),
+    });
   const projectScopeKeys = revealWidensScope ? [] : chosenProjectScopeKeys;
-  const projectScopeKey = projectScopeKeys.length === 0 ? null : projectScopeKeys.join("\n");
+  const environmentScopeIds = revealWidensEnvironmentScope ? [] : chosenEnvironmentScopeIds;
+  const scopedEnvironmentIds = revealWidensEnvironmentScope ? null : chosenScopedEnvironmentIds;
+  const projectScopeKey =
+    projectScopeKeys.length === 0 && environmentScopeIds.length === 0
+      ? null
+      : `${projectScopeKeys.join("\n")}\0${environmentScopeIds.join(",")}`;
   const toggleProjectScopeKey = (key: string) =>
     setProjectScopeKeys(
       projectScopeKeys.includes(key)
         ? projectScopeKeys.filter((candidate) => candidate !== key)
         : [...projectScopeKeys, key],
     );
+  const toggleEnvironmentScopeId = (environmentId: EnvironmentId, multiSelect: boolean) => {
+    if (multiSelect) {
+      setEnvironmentScopeIds(
+        environmentScopeIds.includes(environmentId)
+          ? environmentScopeIds.filter((candidate) => candidate !== environmentId)
+          : [...environmentScopeIds, environmentId],
+      );
+      return;
+    }
+    setEnvironmentScopeIds(
+      environmentScopeIds.length === 1 && environmentScopeIds[0] === environmentId
+        ? []
+        : [environmentId],
+    );
+  };
   // The widened scope outlives the reveal, so it is written back to the persisted
   // scope. Route changes arrive from history, links and the palette, and only this
   // component holds the project groups that decide a widening, so no single
   // navigation handler can make the write.
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- writes a route reveal's widened project scope back to the persisted sidebar scope and clears selection
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- writes a route reveal's widened project/environment scope back to the persisted sidebar scope and clears selection
   useEffect(() => {
-    if (!revealWidensScope) return;
+    if (!revealWidensScope && !revealWidensEnvironmentScope) return;
     clearSelection();
-    setPersistedProjectScopeKeys([]);
-  }, [clearSelection, revealWidensScope, setPersistedProjectScopeKeys]);
+    if (revealWidensScope) setPersistedProjectScopeKeys([]);
+    if (revealWidensEnvironmentScope) setPersistedEnvironmentScopeIds([]);
+  }, [
+    clearSelection,
+    revealWidensEnvironmentScope,
+    revealWidensScope,
+    setPersistedEnvironmentScopeIds,
+    setPersistedProjectScopeKeys,
+  ]);
   const revealActiveRow = useActiveRowReveal(routeReveal, routeRowThreadKey, routeKeyInPlace);
   const [departingThreadKey, setDepartingThreadKey] = useState<string | null>(null);
   if (departingThreadKey !== null && departingThreadKey !== routeThreadKey) {
@@ -1212,8 +1275,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const scopedProjectGroups = revealWidensScope ? [] : chosenProjectGroups;
   const scopedProjectRefs = scopedProjectGroups.flatMap((project) => project.memberProjectRefs);
   const scopedProjectKeys = revealWidensScope ? null : chosenScopeProjectKeys;
+  const searchEnvironmentIds =
+    scopedEnvironmentIds === null
+      ? connectedEnvironmentIds
+      : connectedEnvironmentIds.filter((environmentId) => scopedEnvironmentIds.has(environmentId));
   const threadSearch = useThreadSearch(
-    connectedEnvironmentIds,
+    searchEnvironmentIds,
     threadSearchQuery,
     scopedProjectGroups.length === 0
       ? {}
@@ -1231,6 +1298,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         draftTerminalLabel(session, draftTerminalLabels) === null &&
         !composerDraftHasUserContent(store.draftsByThreadKey[draftKey])
       ) {
+        continue;
+      }
+      if (scopedEnvironmentIds !== null && !scopedEnvironmentIds.has(session.environmentId)) {
         continue;
       }
       if (
@@ -1378,6 +1448,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   } = useSidebarThreads({
     projectScopeKey,
     scopedProjectKeys,
+    scopedEnvironmentIds,
     serverConfigs,
     connectedEnvironmentIds,
     optimisticDrop,
@@ -3348,6 +3419,53 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               activeSearchResultIndex={activeSearchResultIndex}
               onClearSearch={clearThreadSearch}
             />
+            {availableEnvironments.length > 1 ? (
+              <div
+                role="group"
+                aria-label={gt("Filter by environment")}
+                className="mt-1.5 flex items-center gap-1 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              >
+                <Button
+                  type="button"
+                  size="micro"
+                  variant={environmentScopeIds.length === 0 ? "secondary" : "ghost"}
+                  className="shrink-0"
+                  onClick={() => setEnvironmentScopeIds([])}
+                >
+                  <T>All</T>
+                </Button>
+                {availableEnvironments.map((environment) => {
+                  const isSelected = environmentScopeIds.includes(environment.id);
+                  const workingCount = listedThreads.reduce(
+                    (count, thread) =>
+                      thread.environmentId === environment.id &&
+                      thread.archivedAt === null &&
+                      isThreadWorking(thread)
+                        ? count + 1
+                        : count,
+                    0,
+                  );
+                  return (
+                    <Button
+                      key={environment.id}
+                      type="button"
+                      size="micro"
+                      variant={isSelected ? "secondary" : "ghost"}
+                      aria-pressed={isSelected}
+                      className="shrink-0"
+                      onClick={(event) => toggleEnvironmentScopeId(environment.id, event.shiftKey)}
+                    >
+                      <span className="max-w-24 truncate">{environment.label}</span>
+                      {workingCount > 0 ? (
+                        <span className="inline-flex size-4 items-center justify-center rounded-full bg-info/15 text-3xs font-semibold text-info tabular-nums">
+                          {workingCount}
+                        </span>
+                      ) : null}
+                    </Button>
+                  );
+                })}
+              </div>
+            ) : null}
           </SidebarGroup>
         }
       >
@@ -3767,10 +3885,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                 key="settled-shelf-header"
                                 marker="settled-header"
                                 className={cn(
-                                  ((workingShelfPosition === "top" ? 0 : workingThreads.length) +
+                                  (workingShelfPosition === "top" ? 0 : workingThreads.length) +
                                     snoozedThreads.length ===
-                                    0) &&
-                                    "mt-auto",
+                                    0 && "mt-auto",
                                 )}
                                 label={gt("Settled", { $context: "sidebar section" })}
                                 count={settledCount}

@@ -1607,7 +1607,7 @@ describe("resolveSidebarRouteReveal", () => {
         delegatedUnderParent: new Set(),
         findThread,
       }),
-    ).toEqual({ pendingKey: hiddenKey, widensScope: true });
+    ).toEqual({ pendingKey: hiddenKey, widensScope: true, widensEnvironmentScope: false });
   });
 
   it("never widens for a thread whose reveal already completed", () => {
@@ -1622,7 +1622,7 @@ describe("resolveSidebarRouteReveal", () => {
         delegatedUnderParent: new Set(),
         findThread,
       }),
-    ).toEqual({ pendingKey: null, widensScope: false });
+    ).toEqual({ pendingKey: null, widensScope: false, widensEnvironmentScope: false });
   });
 
   it("widens again for a thread reopened before the thread between them listed its row", () => {
@@ -1640,7 +1640,11 @@ describe("resolveSidebarRouteReveal", () => {
         findThread,
       });
     resolve("environment-test:unlisted");
-    expect(resolve(hiddenKey)).toEqual({ pendingKey: hiddenKey, widensScope: true });
+    expect(resolve(hiddenKey)).toEqual({
+      pendingKey: hiddenKey,
+      widensScope: true,
+      widensEnvironmentScope: false,
+    });
   });
 
   it("holds a pending reveal without widening while searching", () => {
@@ -1654,7 +1658,7 @@ describe("resolveSidebarRouteReveal", () => {
         delegatedUnderParent: new Set(),
         findThread,
       }),
-    ).toEqual({ pendingKey: hiddenKey, widensScope: false });
+    ).toEqual({ pendingKey: hiddenKey, widensScope: false, widensEnvironmentScope: false });
   });
 });
 

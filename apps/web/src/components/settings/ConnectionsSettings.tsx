@@ -45,6 +45,7 @@ import { useAccessEnvironment } from "./useAccessEnvironment";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { ManagedByOrganization } from "../ManagedPolicy";
 import { LocalEnvironmentSetting } from "./LocalEnvironmentSetting";
+import { CustomRelayUrlSetting } from "./CustomRelayUrlSetting";
 import { useSearchableSetting } from "./settingsSearch";
 import { ConnectDeviceApprovalSettings } from "./ConnectDeviceApprovalSettings";
 import {
@@ -1845,11 +1846,10 @@ function ConnectionsSettingsContent({
 
   return (
     <SettingsPageContainer>
-      {desktopBridge ? (
-        <SettingsSection id="this-app" title={gt("This app")}>
-          <LocalEnvironmentSetting />
-        </SettingsSection>
-      ) : null}
+      <SettingsSection id="this-app" title={gt("This app")}>
+        {desktopBridge ? <LocalEnvironmentSetting /> : null}
+        <CustomRelayUrlSetting />
+      </SettingsSection>
       <SettingsSection
         {...searchableSetting("remote-environments")}
         title={gt("Environments")}

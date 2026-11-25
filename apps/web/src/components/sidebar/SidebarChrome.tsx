@@ -1,4 +1,10 @@
-import { ArrowLeftIcon, ArrowRightIcon, ChartNoAxesColumnIcon, SettingsIcon } from "lucide-react";
+import {
+  ArrowLeftIcon,
+  ArrowRightIcon,
+  ChartNoAxesColumnIcon,
+  KanbanIcon,
+  SettingsIcon,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import { T, useGT } from "gt-react";
 import { memo } from "react";
@@ -256,6 +262,11 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
     void navigate({ to: "/settings" });
   };
 
+  const handleBoardClick = () => {
+    closeMobileSidebar();
+    void navigate({ to: "/board" });
+  };
+
   const handleUsageClick = () => {
     if (isMobile) {
       setOpenMobile(false);
@@ -285,6 +296,11 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             icon={<SettingsIcon />}
             label={gt("Settings")}
             onClick={handleSettingsClick}
+          />
+          <SidebarUtilityItem
+            icon={<KanbanIcon />}
+            label={gt("Task board")}
+            onClick={handleBoardClick}
           />
           {pullRequestsSupported ? (
             <SidebarUtilityItem

@@ -325,6 +325,16 @@ export const layerClientAuth = Layer.effect(
           });
           return yield* relayAuthInvalidError("invalid_bearer");
         }
+        if (
+          config.allowedUserIds &&
+          config.allowedUserIds.length > 0 &&
+          !config.allowedUserIds.includes(verified.sub)
+        ) {
+          yield* Effect.annotateCurrentSpan({
+            "relay.auth.denied_reason": "user_not_allowed",
+          });
+          return yield* relayAuthInvalidError("not_authorized");
+        }
         yield* Effect.annotateCurrentSpan({
           "relay.auth.mode": verified.mode,
           "relay.auth.subject": verified.sub,
@@ -378,6 +388,7 @@ export const layerEnvironmentAuth = Layer.effect(
 export const layerDpopClientAuth = Layer.effect(
   RelayDpopClientAuth,
   Effect.gen(function* () {
+    const config = yield* RelayConfiguration.RelayConfiguration;
     const relayTokens = yield* RelayTokens.RelayTokens;
     return {
       relayDpop: Effect.fn("relay.auth.dpop_client")(function* (httpEffect, { credential }) {
@@ -390,6 +401,16 @@ export const layerDpopClientAuth = Layer.effect(
         const verified = yield* relayTokens.verifyDpopAccessToken({ token });
         if (!verified) {
           return yield* relayAuthInvalidError("invalid_bearer");
+        }
+        if (
+          config.allowedUserIds &&
+          config.allowedUserIds.length > 0 &&
+          !config.allowedUserIds.includes(verified.sub)
+        ) {
+          yield* Effect.annotateCurrentSpan({
+            "relay.auth.denied_reason": "user_not_allowed",
+          });
+          return yield* relayAuthInvalidError("not_authorized");
         }
         yield* Effect.annotateCurrentSpan({
           "relay.auth.mode": "dpop",
@@ -1695,12 +1716,25 @@ function verifyClerkBearerToken(
   config: RelayConfiguration.RelayConfiguration["Service"],
   token: string,
 ) {
+  const secretKey = Redacted.value(config.clerkSecretKey).trim();
+  const useJwtKey =
+    secretKey.length === 0 &&
+    typeof config.clerkJwtKey === "string" &&
+    config.clerkJwtKey.length > 0;
   return Effect.tryPromise({
     try: () =>
-      verifyToken(token, {
-        secretKey: Redacted.value(config.clerkSecretKey),
-        audience: config.clerkJwtAudience,
-      }),
+      verifyToken(
+        token,
+        useJwtKey
+          ? {
+              jwtKey: config.clerkJwtKey,
+              audience: config.clerkJwtAudience,
+            }
+          : {
+              secretKey,
+              audience: config.clerkJwtAudience,
+            },
+      ),
     catch: (cause) => new ClerkTokenVerificationFailed({ cause }),
   }).pipe(
     Effect.withSpan("verify_clerk_bearer_token", {
@@ -1713,10 +1747,16 @@ function verifyClerkOAuthBearerToken(
   config: RelayConfiguration.RelayConfiguration["Service"],
   token: string,
 ) {
+  const secretKey = Redacted.value(config.clerkSecretKey).trim();
+  if (secretKey.length === 0) {
+    return Effect.fail(
+      new ClerkTokenVerificationFailed({ cause: "oauth_requires_clerk_secret_key" }),
+    );
+  }
   return Effect.tryPromise({
     try: async () => {
       const client = createClerkClient({
-        secretKey: Redacted.value(config.clerkSecretKey),
+        secretKey,
         publishableKey: config.clerkPublishableKey,
       });
       const state = await client.authenticateRequest(

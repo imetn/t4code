@@ -70,6 +70,7 @@ import {
   FolderGit2Icon,
   FolderIcon,
   FolderPlusIcon,
+  KanbanIcon,
   MessageSquareDashedIcon,
   LinkIcon,
   MessageSquareIcon,
@@ -1775,6 +1776,17 @@ function OpenCommandPaletteDialog(props: {
       },
     });
   }
+
+  actionItems.push({
+    kind: "action",
+    value: "action:task-board",
+    searchTerms: ["board", "kanban", "tasks", "task board", "orca", "overview", "status"],
+    title: gt("Open task board"),
+    icon: <KanbanIcon className={ITEM_ICON_CLASS} />,
+    run: async () => {
+      await navigate({ to: "/board" });
+    },
+  });
 
   actionItems.push({
     kind: "action",

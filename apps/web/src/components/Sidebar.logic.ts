@@ -602,6 +602,7 @@ export function filterSidebarV2VisibleThreads<
   threads: readonly T[],
   scopedProjectKeys: ReadonlySet<string> | null,
   delegatedUnderParent: ReadonlySet<string>,
+  scopedEnvironmentIds: ReadonlySet<EnvironmentId> | null = null,
 ): T[] {
   return threads.filter(
     (thread) =>
@@ -611,6 +612,7 @@ export function filterSidebarV2VisibleThreads<
         thread.lineage,
         delegatedUnderParent,
       ) &&
+      (scopedEnvironmentIds === null || scopedEnvironmentIds.has(thread.environmentId)) &&
       (scopedProjectKeys === null ||
         scopedProjectKeys.has(`${thread.environmentId}:${thread.projectId}`)),
   );

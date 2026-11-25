@@ -308,6 +308,31 @@ function registerAppShellCommands(router: AnyRouter, shellElement: Element): () 
       if (!/^\/settings(\/|$)/.test(router.state.location.pathname))
         void router.navigate({ to: "/settings" });
     }),
+    registerMenuAction("open-board", () => {
+      if (router.state.location.pathname !== "/board") void router.navigate({ to: "/board" });
+    }),
+    registerMenuAction("open-usage", () => {
+      if (router.state.location.pathname !== "/usage") void router.navigate({ to: "/usage" });
+    }),
+    registerMenuAction("new-thread", () => {
+      void router.navigate({ to: "/new" });
+    }),
+    ...(typeof window !== "undefined" && typeof window.desktopBridge?.onMenuAction === "function"
+      ? [
+          window.desktopBridge.onMenuAction((action) => {
+            if (!action.startsWith("tray:open-thread:")) return;
+            const parts = action.slice("tray:open-thread:".length).split(":");
+            if (parts.length !== 2) return;
+            const environmentId = decodeURIComponent(parts[0] ?? "");
+            const threadId = decodeURIComponent(parts[1] ?? "");
+            if (!environmentId || !threadId) return;
+            void router.navigate({
+              to: "/$environmentId/$threadId",
+              params: { environmentId, threadId },
+            });
+          }),
+        ]
+      : []),
   ];
   return () => {
     for (const dispose of disposers) dispose();
