@@ -1,7 +1,9 @@
 import {
   type EnvironmentId,
+  type OrchestrationV2ThreadHandoff,
   type PeerLinkSummary,
   type PeerLinkThreadInput,
+  type ThreadId,
   WS_METHODS,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
@@ -9,6 +11,8 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 import { AsyncResult, Atom, type AtomRegistry } from "effect/reactivity";
+import { mFallback, msg } from "gt-i18n";
+import type { MFunctionType } from "gt-i18n/types";
 
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 import {
@@ -234,4 +238,98 @@ export function linkThroughRoutes(input: {
     }
   }
   return routes;
+}
+
+export function createThreadHandoffEnvironmentAtoms<R, E>(
+  runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
+) {
+  return {
+    /**
+     * Linked environments this thread can move to right now; kept fresh so a
+     * peer coming online or gaining the project shows up on the next open.
+     */
+    options: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:thread-handoff:options",
+      tag: WS_METHODS.threadHandoffOptions,
+      staleTimeMs: 15_000,
+    }),
+    start: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:thread-handoff:start",
+      tag: WS_METHODS.threadHandoffStart,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.threadId]),
+      },
+    }),
+    cancel: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:thread-handoff:cancel",
+      tag: WS_METHODS.threadHandoffCancel,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.threadId]),
+      },
+    }),
+  };
+}
+
+export interface ThreadHandoffNotice {
+  readonly tone: "info" | "error";
+  readonly title: string;
+  readonly detail: string | null;
+  /** The thread is already moving or moved, so the composer must refuse new sends. */
+  readonly blocksSend: boolean;
+  /** Pending waits for the running turn; failed stays visible until dismissed or retried. */
+  readonly canCancel: boolean;
+  /** The remote thread to open once the handoff has departed. */
+  readonly openTarget: {
+    readonly environmentId: EnvironmentId;
+    readonly threadId: ThreadId;
+    readonly label: string;
+  } | null;
+}
+
+export function threadHandoffNotice(
+  handoff: OrchestrationV2ThreadHandoff | null | undefined,
+  resolve: MFunctionType = mFallback,
+): ThreadHandoffNotice | null {
+  if (!handoff) return null;
+  const label = handoff.label || handoff.environmentId;
+  switch (handoff.state) {
+    case "pending":
+      return {
+        tone: "info",
+        title: resolve(msg("Moving to {label} when this turn ends", { label })),
+        detail: resolve(msg("Send a message to keep it here instead.")),
+        blocksSend: false,
+        canCancel: true,
+        openTarget: null,
+      };
+    case "departing":
+      return {
+        tone: "info",
+        title: resolve(msg("Moving to {label}…", { label })),
+        detail: null,
+        blocksSend: true,
+        canCancel: false,
+        openTarget: null,
+      };
+    case "departed":
+      return {
+        tone: "info",
+        title: resolve(msg("This thread continues on {label}", { label })),
+        detail: resolve(msg("This copy is read-only.")),
+        blocksSend: true,
+        canCancel: false,
+        openTarget: { environmentId: handoff.environmentId, threadId: handoff.threadId, label },
+      };
+    case "failed":
+      return {
+        tone: "error",
+        title: resolve(msg("Could not move to {label}", { label })),
+        detail: handoff.lastError,
+        blocksSend: false,
+        canCancel: true,
+        openTarget: null,
+      };
+  }
 }

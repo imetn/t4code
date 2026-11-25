@@ -25,6 +25,7 @@ import type { EnvironmentThreadSearchMatch } from "@t3tools/client-runtime/state
 import {
   formatWorkingDurationLabel,
   resolveThreadWorkingStartedAt,
+  threadRuntimeIsActive,
 } from "@t3tools/client-runtime/state/models";
 import {
   AuthOrchestrationOperateScope,
@@ -787,6 +788,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   readonly pinningSupported: boolean;
   readonly autoSettleOptOutSupported: boolean;
   readonly titleRegenerationSupported: boolean;
+  readonly handoffSupported?: boolean;
   readonly reorderSupported?: boolean;
   readonly onMoveThread?: (
     thread: EnvironmentThreadShell,
@@ -1071,6 +1073,13 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     [gt, props.autoSettleOptOutSupported, thread.autoSettleDisabledAt],
   );
   const canTurnIntoProject = canTurnThreadIntoProject(thread);
+  // The targets are read in the sheet it opens; a native menu is built ahead of time.
+  // The server refuses to move a thread while any of its turns is live or queued.
+  const canContinueOn =
+    props.handoffSupported === true &&
+    canOperateThread &&
+    (thread.handoff === null || thread.handoff.state === "failed") &&
+    !threadRuntimeIsActive(thread.runtime);
   const titleMenuItems = useMemo<MenuAction[]>(
     () => [
       {
@@ -1085,6 +1094,9 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         },
         m,
       ),
+      ...(canContinueOn
+        ? [{ id: "continue-on", title: gt("Continue on…"), image: "arrow.up.right" }]
+        : []),
       ...(thread.latestRun?.completedAt != null && threadCanArchive(thread.runtime)
         ? [{ id: "mark-unread", title: gt("Mark unread"), image: "envelope.badge" }]
         : []),
@@ -1100,6 +1112,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         : []),
     ],
     [
+      canContinueOn,
       canTurnIntoProject,
       gt,
       m,
@@ -1235,6 +1248,12 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       if (nativeEvent.event === "archive") handleArchive();
       if (nativeEvent.event === "rename") handleRename();
       if (nativeEvent.event === "regenerate-title") handleRegenerateTitle();
+      if (nativeEvent.event === "continue-on") {
+        navigation.navigate("ThreadHandoff", {
+          environmentId: thread.environmentId,
+          threadId: thread.id,
+        });
+      }
       if (nativeEvent.event === "turn-into-project") void turnThreadIntoProject(thread);
       if (nativeEvent.event === "mark-unread") {
         void markThreadUnread({

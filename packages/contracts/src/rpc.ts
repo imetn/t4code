@@ -33,6 +33,7 @@ import {
   PeerLinkThreadInput,
   PeerLinkThreadItemInput,
   PeerLinkThreadReadError,
+  ThreadHandoffError,
 } from "./peerLink.ts";
 import {
   ChatGptReconnectProfileInput,
@@ -45,7 +46,14 @@ import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as RpcMiddleware from "effect/rpc/RpcMiddleware";
-import { IsoDateTime, NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import {
+  EnvironmentId,
+  IsoDateTime,
+  NonNegativeInt,
+  ProjectId,
+  ThreadId,
+  TrimmedNonEmptyString,
+} from "./baseSchemas.ts";
 import { SecretSourceCheckResult } from "./settingsSecretValue.ts";
 import { SecretReference } from "./secretReference.ts";
 import {
@@ -288,6 +296,7 @@ import {
   OrchestrationV2CommandOutputError,
   OrchestrationV2GetThreadProjectionError,
   OrchestrationV2RpcSchemas,
+  OrchestrationV2ThreadHandoff,
   OrchestrationV2ThreadHistoryPage,
   OrchestrationV2ThreadLaunchError,
 } from "./orchestrationV2.ts";
@@ -609,6 +618,9 @@ export const WS_METHODS = {
   peerLinksThreadItem: "peerLinks.threadItem",
   peerLinksPairClient: "peerLinks.pairClient",
   peerLinksPairLink: "peerLinks.pairLink",
+  threadHandoffOptions: "threadHandoff.options",
+  threadHandoffStart: "threadHandoff.start",
+  threadHandoffCancel: "threadHandoff.cancel",
   serverGetSettings: "server.getSettings",
   serverUpdateSettings: "server.updateSettings",
   serverDiscoverSourceControl: "server.discoverSourceControl",
@@ -1017,6 +1029,39 @@ const WsPeerLinksPairLinkRpc = Rpc.make(WS_METHODS.peerLinksPairLink, {
 const WsPeerLinksAnswerRequestRpc = Rpc.make(WS_METHODS.peerLinksAnswerRequest, {
   payload: PeerLinkRequestAnswerInput,
   error: Schema.Union([PeerLinkRequestError, EnvironmentAuthorizationError]),
+});
+
+const WsThreadHandoffOptionsRpc = Rpc.make(WS_METHODS.threadHandoffOptions, {
+  payload: Schema.Struct({ threadId: ThreadId }),
+  success: Schema.Struct({
+    options: Schema.Array(
+      Schema.Struct({
+        environmentId: EnvironmentId,
+        label: Schema.String,
+        projectId: Schema.NullOr(ProjectId),
+        reason: Schema.NullOr(Schema.String),
+      }),
+    ),
+  }),
+  error: Schema.Union([ThreadHandoffError, EnvironmentAuthorizationError]),
+});
+
+const WsThreadHandoffStartRpc = Rpc.make(WS_METHODS.threadHandoffStart, {
+  payload: Schema.Struct({
+    threadId: ThreadId,
+    environmentId: EnvironmentId,
+    projectId: Schema.optional(ProjectId),
+    whenTurnEnds: Schema.optional(Schema.Boolean),
+    continuationPrompt: Schema.optional(Schema.String),
+  }),
+  success: OrchestrationV2ThreadHandoff,
+  error: Schema.Union([ThreadHandoffError, EnvironmentAuthorizationError]),
+});
+
+const WsThreadHandoffCancelRpc = Rpc.make(WS_METHODS.threadHandoffCancel, {
+  payload: Schema.Struct({ threadId: ThreadId }),
+  success: Schema.Struct({}),
+  error: Schema.Union([ThreadHandoffError, EnvironmentAuthorizationError]),
 });
 
 // No in-tree caller; installed Swift TestFlight builds still request it.
@@ -2532,6 +2577,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsPeerLinksThreadItemRpc,
   WsPeerLinksPairClientRpc,
   WsPeerLinksPairLinkRpc,
+  WsThreadHandoffOptionsRpc,
+  WsThreadHandoffStartRpc,
+  WsThreadHandoffCancelRpc,
   WsServerDiscoverSourceControlRpc,
   WsServerCheckSecretSourceRpc,
   WsServerSearchAcpRegistryRpc,

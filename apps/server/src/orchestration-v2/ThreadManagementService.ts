@@ -556,6 +556,7 @@ export interface ThreadManagementServiceShape {
     void,
     Orchestrator.OrchestratorV2Error | ThreadManagementProviderInstanceDisabledError
   >;
+  readonly getLatestEventSequence: Orchestrator.OrchestratorV2["Service"]["getLatestEventSequence"];
   readonly getThreadEventSequence: Orchestrator.OrchestratorV2["Service"]["getThreadEventSequence"];
   readonly recoverDelegatedTask: Orchestrator.OrchestratorV2["Service"]["recoverDelegatedTask"];
   readonly cancelDelegatedTask: Orchestrator.OrchestratorV2["Service"]["cancelDelegatedTask"];
@@ -2012,6 +2013,7 @@ const make = Effect.gen(function* () {
     stopWorkflow,
     forceStopThread,
     awaitBackgroundTasks,
+    getLatestEventSequence: orchestrator.getLatestEventSequence,
     getThreadEventSequence: orchestrator.getThreadEventSequence,
     recoverDelegatedTask: orchestrator.recoverDelegatedTask,
     cancelDelegatedTask: orchestrator.cancelDelegatedTask,

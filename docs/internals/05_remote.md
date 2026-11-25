@@ -44,6 +44,15 @@ side lists and revokes it in Sharing & access like any other session, and owns i
 - **Clients read linked threads as standard thread streams.**
   [`PeerThreadRelay`](../../apps/server/src/peer/PeerThreadRelay.ts) proxies the same stream format
   read-only so there is no second transcript schema to maintain.
+- **A thread moves with exactly one live copy.**
+  [`ThreadHandoff`](../../apps/server/src/peer/handoff/ThreadHandoff.ts) marks the thread
+  `departing`, which the orchestrator refuses new turns for, packs its git work with
+  [`HandoffGit`](../../apps/server/src/peer/handoff/HandoffGit.ts), uploads the bundle through the
+  other side's signed attachment route, and calls its `t3_thread_import`. Only then is the thread
+  `departed` here. Any failure marks it `failed`, which takes turns again. Import ids derive from
+  the handoff, so a move that a restart cut short is retried by the startup sweep without creating a
+  second thread there. An agent's move of its own thread waits as `pending` until its run ends, and
+  any message to the thread in between cancels it.
 
 ## Hosted web is a client
 

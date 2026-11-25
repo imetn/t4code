@@ -17,6 +17,7 @@ import {
 } from "@t3tools/contracts";
 import { useRouter } from "@tanstack/react-router";
 import { msg } from "gt-react";
+import { useEffect, useRef } from "react";
 
 import { pickSnoozePreset, resolveSnoozePresets } from "../components/Sidebar.snooze";
 import {
@@ -25,6 +26,12 @@ import {
   threadActionRequiresOperate,
   type ThreadActionMenuId,
 } from "../components/threadActionMenu.logic";
+import {
+  readThreadHandoffSupported,
+  readThreadHandoffTargets,
+  startThreadHandoff,
+  type ThreadHandoffMenuTarget,
+} from "../components/threadHandoffMenu";
 import { titleRegenerationToast } from "../components/threadTitleRegenerationToast";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { copyThreadReference } from "../lib/copyThreadReference";
@@ -117,8 +124,19 @@ export function useThreadActionMenu(input: {
     onError: (error) => failureToast(m(msg("Failed to copy thread ID")), error),
   });
 
+  // Waiting for move targets can outlast the open that asked for them: a newer
+  // open, a close, or a switch to another thread each make the pending one stale.
+  const latestOpenRef = useRef(0);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- invalidates a pending async menu open when switching threads or unmounting
+  useEffect(() => {
+    if (threadRef === null) return;
+    return () => {
+      latestOpenRef.current += 1;
+    };
+  }, [threadRef]);
+
   /** The thread's menu as of now, and a runner for its actions. Null until the thread loads. */
-  const readMenu = () => {
+  const readMenu = (handoffTargets: ReadonlyArray<ThreadHandoffMenuTarget> = []) => {
     if (threadRef === null) return null;
     const thread = readThreadShell(threadRef);
     if (!thread) return null;
@@ -152,6 +170,7 @@ export function useThreadActionMenu(input: {
       snoozePresets,
       canShareWithGuest,
       canTurnIntoProject: canTurnThreadIntoProject(threadRef),
+      handoffTargets,
     });
     const run = async (action: ThreadActionMenuId) => {
       const api = readLocalApi();
@@ -165,6 +184,14 @@ export function useThreadActionMenu(input: {
         failureToast(
           m(msg("Thread action unavailable")),
           new Error(m(msg("This connection cannot change threads."))),
+        );
+        return;
+      }
+      if (action.startsWith("continue-on:")) {
+        await startThreadHandoff(
+          threadRef.environmentId,
+          threadRef.threadId,
+          action.slice("continue-on:".length),
         );
         return;
       }
@@ -372,17 +399,28 @@ export function useThreadActionMenu(input: {
   };
 
   const openMenu = (position: { x: number; y: number }, source?: ContextMenuSource) => {
+    if (threadRef === null) return;
+    const open = ++latestOpenRef.current;
     void (async () => {
       const api = readLocalApi();
-      if (!api || threadRef === null) return;
-      const menu = readMenu();
-      if (!menu) {
+      if (!api) return;
+      const thread = readThreadShell(threadRef);
+      if (!thread) {
         failureToast(
           m(msg("Thread actions unavailable")),
           new Error(m(msg("This thread has not loaded yet."))),
         );
         return;
       }
+      // Only an environment that can move threads makes the menu wait for targets.
+      const handoffTargets =
+        readThreadHandoffSupported(threadRef.environmentId) &&
+        (thread.handoff == null || thread.handoff.state === "failed")
+          ? await readThreadHandoffTargets(threadRef.environmentId, threadRef.threadId)
+          : [];
+      if (open !== latestOpenRef.current) return;
+      const menu = readMenu(handoffTargets);
+      if (!menu) return;
       const clicked = await settlePromise(() => api.contextMenu.show(menu.items, position, source));
       if (clicked._tag === "Failure" || clicked.value === null) return;
       await menu.run(clicked.value);
@@ -390,6 +428,7 @@ export function useThreadActionMenu(input: {
   };
 
   const closeMenu = () => {
+    latestOpenRef.current += 1;
     void readLocalApi()?.contextMenu.close();
   };
 
