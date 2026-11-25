@@ -5,7 +5,7 @@ import "@fontsource-variable/inter";
 import "./index.css";
 
 import { trackKeyboardLayout } from "./keyboardLayout";
-import { hasCloudPublicConfig } from "./cloud/publicConfig";
+import { hasCloudPublicConfig, resolveCloudPublicConfig } from "./cloud/publicConfig";
 import { isElectron } from "./env";
 import { startAppServices } from "./appInit";
 import { AppRoot } from "./AppRoot";
@@ -17,7 +17,7 @@ import.meta.hot?.dispose(stopTrackingKeyboardLayout);
 
 const router = startAppServices();
 
-const clerkPublishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined;
+const clerkPublishableKey = resolveCloudPublicConfig().clerkPublishableKey ?? undefined;
 
 const app = <AppRoot router={router} />;
 

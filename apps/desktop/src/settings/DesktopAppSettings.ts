@@ -5,6 +5,7 @@ import {
   type DesktopUpdateChannel,
 } from "@t3tools/contracts";
 import { fromLenientJson } from "@t3tools/shared/schemaJson";
+import { clerkFrontendApiHostnameFromPublishableKey } from "@t3tools/shared/relayAuth";
 import { normalizeSecureRelayUrl } from "@t3tools/shared/relayUrl";
 import { resolveSymlinkTarget } from "@t3tools/shared/symlink";
 import * as Context from "effect/Context";
@@ -30,6 +31,8 @@ import { isValidDistroName } from "../wsl/wslPathParsing.ts";
 
 export interface DesktopSettings {
   readonly customRelayUrl: string | null;
+  readonly customClerkPublishableKey: string | null;
+  readonly customClerkCliOAuthClientId: string | null;
   readonly localEnvironmentEnabled: boolean;
   readonly linuxPasswordStore: LinuxPasswordStorePreference;
   readonly mainWindowBounds: DesktopWindowBounds | null;
@@ -72,6 +75,8 @@ export const DEFAULT_MAIN_WINDOW_SIZE = {
 
 export const DEFAULT_DESKTOP_SETTINGS: DesktopSettings = {
   customRelayUrl: null,
+  customClerkPublishableKey: null,
+  customClerkCliOAuthClientId: null,
   localEnvironmentEnabled: true,
   linuxPasswordStore: DEFAULT_LINUX_PASSWORD_STORE,
   mainWindowBounds: null,
@@ -100,6 +105,8 @@ const optionalReadableKey = <S extends Schema.Top>(schema: S) =>
 
 const DesktopSettingsDocument = Schema.Struct({
   customRelayUrl: optionalReadableKey(Schema.NullOr(Schema.String)),
+  customClerkPublishableKey: optionalReadableKey(Schema.NullOr(Schema.String)),
+  customClerkCliOAuthClientId: optionalReadableKey(Schema.NullOr(Schema.String)),
   localEnvironmentEnabled: optionalReadableKey(Schema.Boolean),
   linuxPasswordStore: optionalReadableKey(Schema.Unknown),
   mainWindowBounds: optionalReadableKey(Schema.NullOr(DesktopWindowBoundsDocument)),
@@ -157,9 +164,11 @@ export class DesktopAppSettings extends Context.Service<
   {
     readonly load: Effect.Effect<DesktopSettings>;
     readonly get: Effect.Effect<DesktopSettings>;
-    readonly setCustomRelayUrl: (
-      url: string | null,
-    ) => Effect.Effect<DesktopSettingsChange, DesktopSettingsWriteError>;
+    readonly setCustomCloudConfig: (config: {
+      readonly relayUrl: string | null;
+      readonly clerkPublishableKey: string | null;
+      readonly clerkCliOAuthClientId: string | null;
+    }) => Effect.Effect<DesktopSettingsChange, DesktopSettingsWriteError>;
     readonly setLocalEnvironmentEnabled: (
       enabled: boolean,
     ) => Effect.Effect<DesktopSettingsChange, DesktopSettingsWriteError>;
@@ -215,6 +224,24 @@ function normalizeCustomRelayUrl(value: unknown): string | null {
   return typeof value === "string" ? normalizeSecureRelayUrl(value) : null;
 }
 
+function normalizeCustomClerkPublishableKey(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  try {
+    clerkFrontendApiHostnameFromPublishableKey(trimmed);
+    return trimmed;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeTrimmedNonEmpty(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 export function normalizeMainWindowBounds(value: unknown): DesktopWindowBounds | null {
   return Option.getOrNull(decodeDesktopWindowBounds(value));
 }
@@ -237,6 +264,8 @@ function normalizeDesktopSettingsDocument(
 
   return {
     customRelayUrl: normalizeCustomRelayUrl(parsed.customRelayUrl),
+    customClerkPublishableKey: normalizeCustomClerkPublishableKey(parsed.customClerkPublishableKey),
+    customClerkCliOAuthClientId: normalizeTrimmedNonEmpty(parsed.customClerkCliOAuthClientId),
     localEnvironmentEnabled: parsed.localEnvironmentEnabled !== false,
     linuxPasswordStore: normalizeLinuxPasswordStorePreference(parsed.linuxPasswordStore),
     mainWindowBounds,
@@ -263,6 +292,12 @@ function toDesktopSettingsDocument(
 
   if (settings.customRelayUrl !== defaults.customRelayUrl) {
     document.customRelayUrl = settings.customRelayUrl;
+  }
+  if (settings.customClerkPublishableKey !== defaults.customClerkPublishableKey) {
+    document.customClerkPublishableKey = settings.customClerkPublishableKey;
+  }
+  if (settings.customClerkCliOAuthClientId !== defaults.customClerkCliOAuthClientId) {
+    document.customClerkCliOAuthClientId = settings.customClerkCliOAuthClientId;
   }
 
   if (settings.localEnvironmentEnabled !== defaults.localEnvironmentEnabled) {
@@ -392,11 +427,27 @@ function setWslOnly(settings: DesktopSettings, enabled: boolean): DesktopSetting
       };
 }
 
-function setCustomRelayUrl(settings: DesktopSettings, url: string | null): DesktopSettings {
-  const normalized = normalizeCustomRelayUrl(url);
-  return settings.customRelayUrl === normalized
+function setCustomCloudConfig(
+  settings: DesktopSettings,
+  config: {
+    readonly relayUrl: string | null;
+    readonly clerkPublishableKey: string | null;
+    readonly clerkCliOAuthClientId: string | null;
+  },
+): DesktopSettings {
+  const customRelayUrl = normalizeCustomRelayUrl(config.relayUrl);
+  const customClerkPublishableKey = normalizeCustomClerkPublishableKey(config.clerkPublishableKey);
+  const customClerkCliOAuthClientId = normalizeTrimmedNonEmpty(config.clerkCliOAuthClientId);
+  return settings.customRelayUrl === customRelayUrl &&
+    settings.customClerkPublishableKey === customClerkPublishableKey &&
+    settings.customClerkCliOAuthClientId === customClerkCliOAuthClientId
     ? settings
-    : { ...settings, customRelayUrl: normalized };
+    : {
+        ...settings,
+        customRelayUrl,
+        customClerkPublishableKey,
+        customClerkCliOAuthClientId,
+      };
 }
 
 function setLocalEnvironmentEnabled(settings: DesktopSettings, enabled: boolean): DesktopSettings {
@@ -615,10 +666,13 @@ export const make = Effect.gen(function* () {
 
       return yield* persist((settings) => setWslOnly(settings, enabled));
     }),
-    setCustomRelayUrl: Effect.fn("desktop.settings.setCustomRelayUrl")(function* (url) {
-      yield* Effect.annotateCurrentSpan({ hasCustomRelayUrl: url !== null });
+    setCustomCloudConfig: Effect.fn("desktop.settings.setCustomCloudConfig")(function* (config) {
+      yield* Effect.annotateCurrentSpan({
+        hasCustomRelayUrl: config.relayUrl !== null,
+        hasCustomClerkKey: config.clerkPublishableKey !== null,
+      });
 
-      return yield* persist((settings) => setCustomRelayUrl(settings, url));
+      return yield* persist((settings) => setCustomCloudConfig(settings, config));
     }),
     setLocalEnvironmentEnabled: Effect.fn("desktop.settings.setLocalEnvironmentEnabled")(
       function* (enabled) {
@@ -685,9 +739,11 @@ export const layerTest = (initialSettings: DesktopSettings = DEFAULT_DESKTOP_SET
         setWslOnly: Effect.fn("DesktopAppSettings.setWslOnly")(function (enabled) {
           return update((settings) => setWslOnly(settings, enabled));
         }),
-        setCustomRelayUrl: Effect.fn("DesktopAppSettings.setCustomRelayUrl")(function (url) {
-          return update((settings) => setCustomRelayUrl(settings, url));
-        }),
+        setCustomCloudConfig: Effect.fn("DesktopAppSettings.setCustomCloudConfig")(
+          function (config) {
+            return update((settings) => setCustomCloudConfig(settings, config));
+          },
+        ),
         setLocalEnvironmentEnabled: Effect.fn("DesktopAppSettings.setLocalEnvironmentEnabled")(
           function (enabled) {
             return update((settings) => setLocalEnvironmentEnabled(settings, enabled));

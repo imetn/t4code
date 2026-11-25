@@ -166,7 +166,16 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     const result = ipcRenderer.sendSync(IpcChannels.GET_CUSTOM_RELAY_URL_CHANNEL);
     return typeof result === "string" ? result : null;
   },
-  setCustomRelayUrl: (url) => ipcRenderer.invoke(IpcChannels.SET_CUSTOM_RELAY_URL_CHANNEL, url),
+  getCustomClerkPublishableKey: () => {
+    const result = ipcRenderer.sendSync(IpcChannels.GET_CUSTOM_CLERK_PUBLISHABLE_KEY_CHANNEL);
+    return typeof result === "string" ? result : null;
+  },
+  getCustomClerkCliOAuthClientId: () => {
+    const result = ipcRenderer.sendSync(IpcChannels.GET_CUSTOM_CLERK_CLI_OAUTH_CLIENT_ID_CHANNEL);
+    return typeof result === "string" ? result : null;
+  },
+  setCustomCloudConfig: (config) =>
+    ipcRenderer.invoke(IpcChannels.SET_CUSTOM_CLOUD_CONFIG_CHANNEL, config),
   getHostEnvironmentId: () => ipcRenderer.invoke(IpcChannels.GET_HOST_ENVIRONMENT_ID_CHANNEL),
   getClientSettings: () => ipcRenderer.invoke(IpcChannels.GET_CLIENT_SETTINGS_CHANNEL),
   setClientSettings: (settings) =>

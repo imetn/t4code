@@ -45,7 +45,10 @@ export const GET_LOCAL_ENVIRONMENT_BOOTSTRAPS_CHANNEL = "desktop:get-local-envir
 export const GET_LOCAL_ENVIRONMENT_ENABLED_CHANNEL = "desktop:get-local-environment-enabled";
 export const SET_LOCAL_ENVIRONMENT_ENABLED_CHANNEL = "desktop:set-local-environment-enabled";
 export const GET_CUSTOM_RELAY_URL_CHANNEL = "desktop:get-custom-relay-url";
-export const SET_CUSTOM_RELAY_URL_CHANNEL = "desktop:set-custom-relay-url";
+export const GET_CUSTOM_CLERK_PUBLISHABLE_KEY_CHANNEL = "desktop:get-custom-clerk-publishable-key";
+export const GET_CUSTOM_CLERK_CLI_OAUTH_CLIENT_ID_CHANNEL =
+  "desktop:get-custom-clerk-cli-oauth-client-id";
+export const SET_CUSTOM_CLOUD_CONFIG_CHANNEL = "desktop:set-custom-cloud-config";
 export const GET_HOST_ENVIRONMENT_ID_CHANNEL = "desktop:get-host-environment-id";
 export const GET_LOCAL_ENVIRONMENT_BEARER_TOKEN_CHANNEL =
   "desktop:get-local-environment-bearer-token";

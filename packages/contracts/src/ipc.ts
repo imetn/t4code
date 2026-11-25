@@ -1163,7 +1163,13 @@ export interface DesktopBridge {
   getLocalEnvironmentEnabled: () => boolean;
   setLocalEnvironmentEnabled: (enabled: boolean) => Promise<void>;
   getCustomRelayUrl?: () => string | null;
-  setCustomRelayUrl?: (url: string | null) => Promise<void>;
+  getCustomClerkPublishableKey?: () => string | null;
+  getCustomClerkCliOAuthClientId?: () => string | null;
+  setCustomCloudConfig?: (config: {
+    readonly relayUrl: string | null;
+    readonly clerkPublishableKey: string | null;
+    readonly clerkCliOAuthClientId: string | null;
+  }) => Promise<void>;
   /** The environment ID recorded in this app's T3 home, such as its own machine's background service. */
   getHostEnvironmentId?: () => Promise<string | null>;
   getLocalEnvironmentBearerToken: () => Promise<string>;

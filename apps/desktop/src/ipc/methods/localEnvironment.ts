@@ -1,3 +1,4 @@
+import { clerkFrontendApiHostnameFromPublishableKey } from "@t3tools/shared/relayAuth";
 import { normalizeSecureRelayUrl } from "@t3tools/shared/relayUrl";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -41,20 +42,67 @@ export const getCustomRelayUrl = makeSyncIpcMethod({
   }),
 });
 
-export const setCustomRelayUrl = makeIpcMethod({
-  channel: IpcChannels.SET_CUSTOM_RELAY_URL_CHANNEL,
-  payload: Schema.NullOr(Schema.String),
+export const getCustomClerkPublishableKey = makeSyncIpcMethod({
+  channel: IpcChannels.GET_CUSTOM_CLERK_PUBLISHABLE_KEY_CHANNEL,
+  result: Schema.NullOr(Schema.String),
+  handler: Effect.fn("desktop.ipc.localEnvironment.getCustomClerkPublishableKey")(function* () {
+    const appSettings = yield* DesktopAppSettings.DesktopAppSettings;
+    return (yield* appSettings.get).customClerkPublishableKey;
+  }),
+});
+
+export const getCustomClerkCliOAuthClientId = makeSyncIpcMethod({
+  channel: IpcChannels.GET_CUSTOM_CLERK_CLI_OAUTH_CLIENT_ID_CHANNEL,
+  result: Schema.NullOr(Schema.String),
+  handler: Effect.fn("desktop.ipc.localEnvironment.getCustomClerkCliOAuthClientId")(function* () {
+    const appSettings = yield* DesktopAppSettings.DesktopAppSettings;
+    return (yield* appSettings.get).customClerkCliOAuthClientId;
+  }),
+});
+
+const CustomCloudConfigPayload = Schema.Struct({
+  relayUrl: Schema.NullOr(Schema.String),
+  clerkPublishableKey: Schema.NullOr(Schema.String),
+  clerkCliOAuthClientId: Schema.NullOr(Schema.String),
+});
+
+function parseCustomClerkPublishableKey(raw: string): string | null {
+  try {
+    clerkFrontendApiHostnameFromPublishableKey(raw);
+    return raw;
+  } catch {
+    return null;
+  }
+}
+
+export const setCustomCloudConfig = makeIpcMethod({
+  channel: IpcChannels.SET_CUSTOM_CLOUD_CONFIG_CHANNEL,
+  payload: CustomCloudConfigPayload,
   result: Schema.Void,
-  handler: Effect.fn("desktop.ipc.localEnvironment.setCustomRelayUrl")(function* (url) {
+  handler: Effect.fn("desktop.ipc.localEnvironment.setCustomCloudConfig")(function* (config) {
     const appSettings = yield* DesktopAppSettings.DesktopAppSettings;
     const lifecycle = yield* DesktopLifecycle.DesktopLifecycle;
-    const normalized = url === null || url.trim() === "" ? null : normalizeSecureRelayUrl(url);
-    if (url !== null && url.trim() !== "" && normalized === null) {
+    const relayUrl =
+      config.relayUrl === null || config.relayUrl.trim() === ""
+        ? null
+        : normalizeSecureRelayUrl(config.relayUrl);
+    if (config.relayUrl !== null && config.relayUrl.trim() !== "" && relayUrl === null) {
       return yield* Effect.die(new Error("Relay URL must be an HTTPS origin."));
     }
-    const change = yield* appSettings.setCustomRelayUrl(normalized);
+    const clerkKeyRaw = config.clerkPublishableKey?.trim() ?? "";
+    const clerkPublishableKey =
+      clerkKeyRaw.length === 0 ? null : parseCustomClerkPublishableKey(clerkKeyRaw);
+    if (clerkKeyRaw.length > 0 && clerkPublishableKey === null) {
+      return yield* Effect.die(new Error("Invalid Clerk publishable key."));
+    }
+    const clerkCliOAuthClientId = config.clerkCliOAuthClientId?.trim() || null;
+    const change = yield* appSettings.setCustomCloudConfig({
+      relayUrl,
+      clerkPublishableKey,
+      clerkCliOAuthClientId,
+    });
     if (change.changed) {
-      yield* lifecycle.relaunch("customRelayUrl");
+      yield* lifecycle.relaunch("customCloudConfig");
     }
   }),
 });

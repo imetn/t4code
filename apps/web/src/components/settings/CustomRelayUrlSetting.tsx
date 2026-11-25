@@ -4,9 +4,12 @@ import { T, useGT } from "gt-react";
 import { useState } from "react";
 
 import {
+  normalizeClerkPublishableKey,
+  readCustomClerkCliOAuthClientIdOverride,
+  readCustomClerkPublishableKeyOverride,
   readCustomRelayUrlOverride,
   resolveDefaultRelayUrl,
-  writeWebCustomRelayUrlOverride,
+  writeWebCustomCloudConfigOverride,
 } from "~/cloud/publicConfig";
 import { m } from "~/i18n/messages";
 import { Button } from "../ui/button";
@@ -20,34 +23,70 @@ export function CustomRelayUrlSetting() {
   const gt = useGT();
   const defaultRelayUrl = resolveDefaultRelayUrl();
   const isDesktop = typeof window !== "undefined" && window.desktopBridge !== undefined;
-  const setDesktopCustomRelayUrl = window.desktopBridge?.setCustomRelayUrl;
-  const [savedUrl, setSavedUrl] = useState<string | null>(() => readCustomRelayUrlOverride());
-  const [draft, setDraft] = useState(() => savedUrl ?? "");
+  const setDesktopCustomCloudConfig = window.desktopBridge?.setCustomCloudConfig;
+
+  const [savedRelayUrl, setSavedRelayUrl] = useState<string | null>(() =>
+    readCustomRelayUrlOverride(),
+  );
+  const [savedClerkKey, setSavedClerkKey] = useState<string | null>(() =>
+    readCustomClerkPublishableKeyOverride(),
+  );
+  const [savedCliClientId, setSavedCliClientId] = useState<string | null>(() =>
+    readCustomClerkCliOAuthClientIdOverride(),
+  );
+
+  const [relayDraft, setRelayDraft] = useState(() => savedRelayUrl ?? "");
+  const [clerkKeyDraft, setClerkKeyDraft] = useState(() => savedClerkKey ?? "");
+  const [cliClientIdDraft, setCliClientIdDraft] = useState(() => savedCliClientId ?? "");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const trimmedDraft = draft.trim();
-  const normalizedDraft = trimmedDraft === "" ? null : normalizeSecureRelayUrl(trimmedDraft);
-  const isInvalid = trimmedDraft !== "" && normalizedDraft === null;
-  const hasChanges = normalizedDraft !== savedUrl;
+  const trimmedRelay = relayDraft.trim();
+  const normalizedRelay = trimmedRelay === "" ? null : normalizeSecureRelayUrl(trimmedRelay);
+  const isRelayInvalid = trimmedRelay !== "" && normalizedRelay === null;
 
-  const applyRelayUrl = async (nextUrl: string | null) => {
+  const trimmedClerkKey = clerkKeyDraft.trim();
+  const normalizedClerkKey =
+    trimmedClerkKey === "" ? null : normalizeClerkPublishableKey(trimmedClerkKey);
+  const isClerkKeyInvalid = trimmedClerkKey !== "" && normalizedClerkKey === null;
+
+  const normalizedCliClientId = cliClientIdDraft.trim() || null;
+
+  const hasSavedOverride =
+    savedRelayUrl !== null || savedClerkKey !== null || savedCliClientId !== null;
+  const hasChanges =
+    normalizedRelay !== savedRelayUrl ||
+    normalizedClerkKey !== savedClerkKey ||
+    (isDesktop && normalizedCliClientId !== savedCliClientId);
+
+  const applyConfig = async (next: {
+    readonly relayUrl: string | null;
+    readonly clerkPublishableKey: string | null;
+    readonly clerkCliOAuthClientId: string | null;
+  }) => {
     setIsSaving(true);
     setError(null);
     try {
-      if (isDesktop && setDesktopCustomRelayUrl) {
-        await setDesktopCustomRelayUrl(nextUrl);
+      if (isDesktop && setDesktopCustomCloudConfig) {
+        await setDesktopCustomCloudConfig(next);
       } else {
-        writeWebCustomRelayUrlOverride(nextUrl);
-        setSavedUrl(nextUrl);
-        setDraft(nextUrl ?? "");
+        writeWebCustomCloudConfigOverride({
+          relayUrl: next.relayUrl,
+          clerkPublishableKey: next.clerkPublishableKey,
+        });
+        setSavedRelayUrl(next.relayUrl);
+        setSavedClerkKey(next.clerkPublishableKey);
+        setSavedCliClientId(null);
+        setRelayDraft(next.relayUrl ?? "");
+        setClerkKeyDraft(next.clerkPublishableKey ?? "");
+        setCliClientIdDraft("");
         window.location.reload();
       }
     } catch (cause) {
       setError(
         cause instanceof Error
           ? (thrownErrorMessage(cause, m) ?? cause.message)
-          : gt("Couldn't update the custom relay URL."),
+          : gt("Couldn't update the custom relay configuration."),
       );
       setIsSaving(false);
     }
@@ -57,37 +96,66 @@ export function CustomRelayUrlSetting() {
     <SettingsRow
       {...searchableSetting("custom-relay-url")}
       description={
-        savedUrl
+        savedRelayUrl
           ? gt("Using custom self-hosted relay: {url}. Clear to use the default relay.", {
-              url: savedUrl,
+              url: savedRelayUrl,
             })
           : gt(
-              "Optional HTTPS origin for a self-hosted T3 Connect relay. Leave empty to use the official default ({url}).",
+              "Optional self-hosted T3 Connect relay and Clerk instance. Leave empty to use the official defaults ({url}).",
               { url: defaultRelayUrl ?? "https://relay.t3.codes" },
             )
       }
     >
       <div className="flex w-full flex-col gap-2">
-        <div className="flex flex-wrap items-center gap-2">
+        <Input
+          value={relayDraft}
+          onChange={(event) => {
+            setRelayDraft(event.currentTarget.value);
+            setError(null);
+          }}
+          placeholder={defaultRelayUrl ?? "https://relay.t3.codes"}
+          aria-label={gt("Custom relay URL")}
+          size="sm"
+          disabled={isSaving}
+        />
+        <Input
+          value={clerkKeyDraft}
+          onChange={(event) => {
+            setClerkKeyDraft(event.currentTarget.value);
+            setError(null);
+          }}
+          placeholder={gt("Optional Clerk publishable key (pk_live_... or pk_test_...)")}
+          aria-label={gt("Custom Clerk publishable key")}
+          size="sm"
+          disabled={isSaving}
+        />
+        {isDesktop ? (
           <Input
-            value={draft}
+            value={cliClientIdDraft}
             onChange={(event) => {
-              setDraft(event.currentTarget.value);
+              setCliClientIdDraft(event.currentTarget.value);
               setError(null);
             }}
-            placeholder={defaultRelayUrl ?? "https://relay.t3.codes"}
-            aria-label={gt("Custom relay URL")}
+            placeholder={gt("Optional CLI OAuth client ID")}
+            aria-label={gt("Custom CLI OAuth client ID")}
             size="sm"
-            className="min-w-0 flex-1"
             disabled={isSaving}
           />
-          {savedUrl ? (
+        ) : null}
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {hasSavedOverride ? (
             <Button
               type="button"
               size="sm"
               variant="outline"
               disabled={isSaving}
-              onClick={() => void applyRelayUrl(null)}
+              onClick={() =>
+                void applyConfig({
+                  relayUrl: null,
+                  clerkPublishableKey: null,
+                  clerkCliOAuthClientId: null,
+                })
+              }
             >
               <T>Use default</T>
             </Button>
@@ -95,8 +163,14 @@ export function CustomRelayUrlSetting() {
           <Button
             type="button"
             size="sm"
-            disabled={isSaving || isInvalid || !hasChanges}
-            onClick={() => void applyRelayUrl(normalizedDraft)}
+            disabled={isSaving || isRelayInvalid || isClerkKeyInvalid || !hasChanges}
+            onClick={() =>
+              void applyConfig({
+                relayUrl: normalizedRelay,
+                clerkPublishableKey: normalizedClerkKey,
+                clerkCliOAuthClientId: normalizedCliClientId,
+              })
+            }
           >
             {isSaving ? (
               <>
@@ -110,9 +184,14 @@ export function CustomRelayUrlSetting() {
             )}
           </Button>
         </div>
-        {isInvalid ? (
+        {isRelayInvalid ? (
           <p className="text-xs text-destructive">
             <T>Enter a valid HTTPS origin (for example, https://relay.example.com).</T>
+          </p>
+        ) : null}
+        {isClerkKeyInvalid ? (
+          <p className="text-xs text-destructive">
+            <T>Enter a valid Clerk publishable key starting with pk_live_ or pk_test_.</T>
           </p>
         ) : null}
         {error ? <p className="text-xs text-destructive">{error}</p> : null}

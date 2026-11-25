@@ -13,10 +13,12 @@ import { updateTrayState } from "./methods/tray.ts";
 import { getClientSettings, setClientSettings } from "./methods/clientSettings.ts";
 import { getConnectionCatalog, setConnectionCatalog } from "./methods/connectionCatalog.ts";
 import {
+  getCustomClerkCliOAuthClientId,
+  getCustomClerkPublishableKey,
   getCustomRelayUrl,
   getHostEnvironmentId,
   getLocalEnvironmentEnabled,
-  setCustomRelayUrl,
+  setCustomCloudConfig,
   setLocalEnvironmentEnabled,
 } from "./methods/localEnvironment.ts";
 import {
@@ -119,7 +121,9 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handleSync(getLocalEnvironmentEnabled);
   yield* ipc.handle(setLocalEnvironmentEnabled);
   yield* ipc.handleSync(getCustomRelayUrl);
-  yield* ipc.handle(setCustomRelayUrl);
+  yield* ipc.handleSync(getCustomClerkPublishableKey);
+  yield* ipc.handleSync(getCustomClerkCliOAuthClientId);
+  yield* ipc.handle(setCustomCloudConfig);
   yield* ipc.handle(getHostEnvironmentId);
   yield* ipc.handle(getLocalEnvironmentBearerToken);
 

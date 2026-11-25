@@ -43,11 +43,23 @@ function normalizeSecureUrl(value: string): string | null {
 }
 
 const CUSTOM_RELAY_URL_STORAGE_KEY = "t3code:custom-relay-url";
+const CUSTOM_CLERK_KEY_STORAGE_KEY = "t3code:custom-clerk-publishable-key";
 
 export function resolveDefaultRelayUrl(): string | null {
   return normalizeSecureRelayUrl(
     (import.meta.env.VITE_T3CODE_RELAY_URL as string | undefined) ?? "",
   );
+}
+
+export function normalizeClerkPublishableKey(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  try {
+    clerkFrontendApiHostnameFromPublishableKey(trimmed);
+    return trimmed;
+  } catch {
+    return null;
+  }
 }
 
 export function readCustomRelayUrlOverride(): string | null {
@@ -67,13 +79,46 @@ export function readCustomRelayUrlOverride(): string | null {
   }
 }
 
-export function writeWebCustomRelayUrlOverride(url: string | null): void {
+export function readCustomClerkPublishableKeyOverride(): string | null {
+  if (typeof window === "undefined") return null;
+  const desktopOverride = window.desktopBridge?.getCustomClerkPublishableKey?.();
+  if (typeof desktopOverride === "string") {
+    return normalizeClerkPublishableKey(desktopOverride);
+  }
+  if (window.desktopBridge) {
+    return null;
+  }
+  try {
+    const stored = window.localStorage.getItem(CUSTOM_CLERK_KEY_STORAGE_KEY);
+    return stored ? normalizeClerkPublishableKey(stored) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function readCustomClerkCliOAuthClientIdOverride(): string | null {
+  if (typeof window === "undefined") return null;
+  const desktopOverride = window.desktopBridge?.getCustomClerkCliOAuthClientId?.();
+  return typeof desktopOverride === "string" && desktopOverride.trim().length > 0
+    ? desktopOverride.trim()
+    : null;
+}
+
+export function writeWebCustomCloudConfigOverride(config: {
+  readonly relayUrl: string | null;
+  readonly clerkPublishableKey: string | null;
+}): void {
   if (typeof window === "undefined") return;
   try {
-    if (url === null) {
+    if (config.relayUrl === null) {
       window.localStorage.removeItem(CUSTOM_RELAY_URL_STORAGE_KEY);
     } else {
-      window.localStorage.setItem(CUSTOM_RELAY_URL_STORAGE_KEY, url);
+      window.localStorage.setItem(CUSTOM_RELAY_URL_STORAGE_KEY, config.relayUrl);
+    }
+    if (config.clerkPublishableKey === null) {
+      window.localStorage.removeItem(CUSTOM_CLERK_KEY_STORAGE_KEY);
+    } else {
+      window.localStorage.setItem(CUSTOM_CLERK_KEY_STORAGE_KEY, config.clerkPublishableKey);
     }
   } catch {
     // Ignore restricted storage contexts.
@@ -82,9 +127,9 @@ export function writeWebCustomRelayUrlOverride(url: string | null): void {
 
 export function resolveCloudPublicConfig(): CloudPublicConfig {
   return {
-    clerkPublishableKey: trimNonEmpty(
-      import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined,
-    ),
+    clerkPublishableKey:
+      readCustomClerkPublishableKeyOverride() ??
+      trimNonEmpty(import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined),
     clerkJwtTemplate: trimNonEmpty(import.meta.env.VITE_CLERK_JWT_TEMPLATE as string | undefined),
     relayUrl: readCustomRelayUrlOverride() ?? resolveDefaultRelayUrl(),
     relayTracing: {

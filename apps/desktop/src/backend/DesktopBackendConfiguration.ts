@@ -251,6 +251,8 @@ interface SharedBootstrapInput {
   readonly observabilitySettings: BackendObservabilitySettings;
   readonly hostScope: string;
   readonly customRelayUrl: string | null;
+  readonly customClerkPublishableKey: string | null;
+  readonly customClerkCliOAuthClientId: string | null;
 }
 
 // Matches the server's DESKTOP_HOST_SCOPE_ENV.
@@ -583,6 +585,12 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
         T3CODE_CLI_PATH: Option.getOrUndefined(input.cliPath),
         [DESKTOP_HOST_SCOPE_ENV]: input.hostScope,
         ...(input.customRelayUrl ? { T3CODE_RELAY_URL: input.customRelayUrl } : {}),
+        ...(input.customClerkPublishableKey
+          ? { T3CODE_CLERK_PUBLISHABLE_KEY: input.customClerkPublishableKey }
+          : {}),
+        ...(input.customClerkCliOAuthClientId
+          ? { T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: input.customClerkCliOAuthClientId }
+          : {}),
       },
       extendEnv: true,
       bootstrap,
@@ -698,6 +706,14 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
   if (input.customRelayUrl && !env.T3CODE_RELAY_URL) {
     forwardedEnv.T3CODE_RELAY_URL = input.customRelayUrl;
     forwardedEnvNames.push("T3CODE_RELAY_URL");
+  }
+  if (input.customClerkPublishableKey && !env.T3CODE_CLERK_PUBLISHABLE_KEY) {
+    forwardedEnv.T3CODE_CLERK_PUBLISHABLE_KEY = input.customClerkPublishableKey;
+    forwardedEnvNames.push("T3CODE_CLERK_PUBLISHABLE_KEY");
+  }
+  if (input.customClerkCliOAuthClientId && !env.T3CODE_CLERK_CLI_OAUTH_CLIENT_ID) {
+    forwardedEnv.T3CODE_CLERK_CLI_OAUTH_CLIENT_ID = input.customClerkCliOAuthClientId;
+    forwardedEnvNames.push("T3CODE_CLERK_CLI_OAUTH_CLIENT_ID");
   }
 
   const parentEnvWithoutT3Home: Record<string, string | undefined> = {};
@@ -851,6 +867,12 @@ export const make = Effect.gen(function* () {
       observabilitySettings,
       hostScope: yield* hostScope,
       customRelayUrl: hostEnv.T3CODE_RELAY_URL?.trim() ? null : persistedSettings.customRelayUrl,
+      customClerkPublishableKey: hostEnv.T3CODE_CLERK_PUBLISHABLE_KEY?.trim()
+        ? null
+        : persistedSettings.customClerkPublishableKey,
+      customClerkCliOAuthClientId: hostEnv.T3CODE_CLERK_CLI_OAUTH_CLIENT_ID?.trim()
+        ? null
+        : persistedSettings.customClerkCliOAuthClientId,
     } satisfies SharedBootstrapInput;
   });
 

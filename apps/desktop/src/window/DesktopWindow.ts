@@ -1058,12 +1058,16 @@ export const make = Effect.gen(function* () {
     // Desktop IPC only answers the main window, so register it before its renderer can call in.
     yield* electronWindow.setMain(window);
     remoteRequestHeaderOwner = window;
+    const currentDesktopSettings = yield* desktopSettings.get;
     const detachRemoteRequestHeaders = installMainWindowRemoteRequestHeaderPolicy(
       window.webContents.session,
       {
         desktopOrigin: getDesktopOrigin(environment.isDevelopment),
         mainWebContentsId: window.webContents.id,
-        clerkFrontendApiHostname: DesktopClerk.desktopClerkFrontendApiHostname,
+        clerkFrontendApiHostname:
+          DesktopClerk.resolveDesktopClerkFrontendApiHostname(
+            currentDesktopSettings.customClerkPublishableKey ?? undefined,
+          ) ?? DesktopClerk.desktopClerkFrontendApiHostname,
         devServerOrigin: Option.getOrUndefined(
           Option.map(environment.devServerUrl, (url) => url.origin),
         ),
