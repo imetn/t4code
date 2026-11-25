@@ -8987,6 +8987,8 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
         if (lastErrorClass === "usage_limit") {
           assert.deepEqual(candidate, {
             id: sqlShell.id,
+            projectId: sqlShell.projectId,
+            modelSelection: sqlShell.modelSelection,
             status: sqlShell.status,
             lastErrorClass: sqlShell.lastErrorClass,
             usageLimitResetAt: sqlShell.usageLimitResetAt,
@@ -9176,6 +9178,33 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
           (row) => row.id === threadId,
         ),
       );
+      for (const [since, found] of [
+        [DateTime.subtract(now, { minutes: 1 }), true],
+        [DateTime.add(now, { minutes: 1 }), false],
+      ] as const) {
+        assert.strictEqual(
+          (yield* store.getLimitRecoveryCandidates({
+            ...recoveryOptions,
+            switchAccountsSince: since,
+          })).some((row) => row.id === threadId),
+          found,
+        );
+      }
+      yield* sql`UPDATE orchestration_v2_projection_turn_items
+        SET payload_json = json_remove(payload_json, '$.failure.resetAt') WHERE turn_item_id = ${limitItem.id}`;
+      assert.isTrue(
+        (yield* store.getLimitRecoveryCandidates({
+          ...recoveryOptions,
+          switchAccountsSince: DateTime.subtract(now, { minutes: 1 }),
+        })).some((row) => row.id === threadId),
+      );
+      assert.isFalse(
+        (yield* store.getLimitRecoveryCandidates({ ...recoveryOptions, autoResume: true })).some(
+          (row) => row.id === threadId,
+        ),
+      );
+      yield* sql`UPDATE orchestration_v2_projection_turn_items
+        SET payload_json = json_set(payload_json, '$.failure.resetAt', ${limitItem.failure.resetAt}) WHERE turn_item_id = ${limitItem.id}`;
       const reset = DateTime.makeUnsafe(limitItem.failure.resetAt);
       const recovery = {
         runId: original.id,
@@ -9440,6 +9469,17 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
         deletedParentChild,
         activeParentChild,
       ];
+      assert.deepEqual(
+        (yield* store.getLimitRecoveryCandidates({
+          now,
+          autoResume: false,
+          snooze: false,
+          switchAccountsSince: DateTime.subtract(now, { minutes: 1 }),
+        }))
+          .filter((row) => children.includes(row.id))
+          .map((row) => row.id),
+        [activeParentChild],
+      );
       for (const options of [
         { now, autoResume: true, snooze: false },
         { now, autoResume: false, snooze: true },
