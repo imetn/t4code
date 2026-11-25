@@ -18,6 +18,7 @@ import {
   getCustomRelayUrl,
   getHostEnvironmentId,
   getLocalEnvironmentEnabled,
+  probeRelay,
   setCustomCloudConfig,
   setLocalEnvironmentEnabled,
 } from "./methods/localEnvironment.ts";
@@ -124,6 +125,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handleSync(getCustomClerkPublishableKey);
   yield* ipc.handleSync(getCustomClerkCliOAuthClientId);
   yield* ipc.handle(setCustomCloudConfig);
+  yield* ipc.handle(probeRelay);
   yield* ipc.handle(getHostEnvironmentId);
   yield* ipc.handle(getLocalEnvironmentBearerToken);
 

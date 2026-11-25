@@ -944,3 +944,34 @@ it("reads Node's TLS verification code from anywhere in a cause chain", () => {
   expect(PeerLinks.certificateErrorCode({ cause: { code: "ECONNREFUSED" } })).toBeUndefined();
   expect(PeerLinks.certificateErrorCode(new Error("timed out"))).toBeUndefined();
 });
+
+it.effect("reports probe latencyMs when reachable and null when unreachable or expired", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const b = yield* serveB(box);
+      const a = yield* makeA(laptop);
+      const pairing = yield* b.auth.issuePairingCredential({
+        access: "auto",
+        purpose: "peer-link",
+      });
+      yield* a.links.link({ url: b.url, pairingCode: pairing.credential, access: "auto" });
+
+      const [reachable] = yield* a.links.list;
+      expect(reachable?.status).toBe("reachable");
+      expect(typeof reachable?.latencyMs).toBe("number");
+      expect(reachable!.latencyMs).toBeGreaterThanOrEqual(0);
+      expect(Number.isInteger(reachable!.latencyMs)).toBe(true);
+
+      yield* Ref.set(b.descriptor, descriptorOf("environment-other", "Other"));
+      const [unreachable] = yield* a.links.list;
+      expect(unreachable?.status).toBe("unreachable");
+      expect(unreachable?.latencyMs).toBeNull();
+
+      yield* Ref.set(b.descriptor, box);
+      yield* TestClock.adjust(Duration.days(31));
+      const [expired] = yield* a.links.list;
+      expect(expired?.status).toBe("expired");
+      expect(expired?.latencyMs).toBeNull();
+    }),
+  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+);

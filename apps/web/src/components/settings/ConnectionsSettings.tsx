@@ -1846,10 +1846,12 @@ function ConnectionsSettingsContent({
 
   return (
     <SettingsPageContainer>
-      <SettingsSection id="this-app" title={gt("This app")}>
-        {desktopBridge ? <LocalEnvironmentSetting /> : null}
-        <CustomRelayUrlSetting />
-      </SettingsSection>
+      {desktopBridge ? (
+        <SettingsSection id="this-app" title={gt("This app")}>
+          <LocalEnvironmentSetting />
+        </SettingsSection>
+      ) : null}
+      <CustomRelayUrlSetting />
       <SettingsSection
         {...searchableSetting("remote-environments")}
         title={gt("Environments")}

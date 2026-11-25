@@ -1131,6 +1131,30 @@ export const DesktopAppleSpeechTranscribeInputSchema = Schema.Struct({
 export const SystemSettingsPaneSchema = Schema.Literals(["full-disk-access"]);
 export type SystemSettingsPane = typeof SystemSettingsPaneSchema.Type;
 
+export const DesktopRelayProbeFailureReasonSchema = Schema.Literals([
+  "invalid-url",
+  "http-error",
+  "invalid-response",
+  "timeout",
+  "unreachable",
+]);
+export type DesktopRelayProbeFailureReason = typeof DesktopRelayProbeFailureReasonSchema.Type;
+
+export const DesktopRelayProbeResultSchema = Schema.Union([
+  Schema.Struct({
+    ok: Schema.Literal(true),
+    latencyMs: Schema.Number,
+    status: Schema.Int,
+  }),
+  Schema.Struct({
+    ok: Schema.Literal(false),
+    latencyMs: Schema.NullOr(Schema.Number),
+    status: Schema.NullOr(Schema.Int),
+    reason: DesktopRelayProbeFailureReasonSchema,
+  }),
+]);
+export type DesktopRelayProbeResult = typeof DesktopRelayProbeResultSchema.Type;
+
 export interface DesktopBridge {
   getAppBranding: () => DesktopAppBranding | null;
   getDatabaseMigrationProgress?: () => Promise<DatabaseMigrationProgress | null>;
@@ -1170,6 +1194,7 @@ export interface DesktopBridge {
     readonly clerkPublishableKey: string | null;
     readonly clerkCliOAuthClientId: string | null;
   }) => Promise<void>;
+  probeRelay?: (relayUrl: string) => Promise<DesktopRelayProbeResult>;
   /** The environment ID recorded in this app's T3 home, such as its own machine's background service. */
   getHostEnvironmentId?: () => Promise<string | null>;
   getLocalEnvironmentBearerToken: () => Promise<string>;

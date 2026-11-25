@@ -19,7 +19,7 @@ import { peerLinkHealth, type PeerLinkHealth } from "@t3tools/client-runtime/sta
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
-import { PlusIcon } from "lucide-react";
+import { PlusIcon, RefreshCwIcon } from "lucide-react";
 import { T, useGT, useMessages, Var } from "gt-react";
 import { type ReactNode, useId, useRef, useState } from "react";
 
@@ -52,7 +52,10 @@ import {
   DialogTrigger,
 } from "../ui/dialog";
 import { Input } from "../ui/input";
+import { Spinner } from "../ui/spinner";
 import { stackedThreadToast, toastManager } from "../ui/toast";
+import { cn } from "../../lib/utils";
+import { latencyToneClassName } from "./CustomRelayUrlSetting.logic";
 import { ITEM_ROW_CLASSNAME, ITEM_ROW_INNER_CLASSNAME } from "./itemRows";
 import { LinkAccessPicker } from "./LinkAccessPicker";
 import { LinkAddressWarning, LinkMachineSelect } from "./LinkMachineSelect";
@@ -107,14 +110,26 @@ export function LinkedEnvironmentsSettings({
       {...(isSearchTarget ? { id: search.id } : {})}
       title={environmentLabel === null ? search.title : `${search.title} · ${environmentLabel}`}
       headerAction={
-        canLink ? (
-          <div className="flex items-center gap-2">
-            {otherMachines > 1 ? (
-              <LinkSeveralEnvironmentsAction environmentId={environmentId} />
-            ) : null}
-            <LinkEnvironmentAction environmentId={environmentId} />
-          </div>
-        ) : null
+        <div className="flex items-center gap-1.5">
+          <Button
+            size="xs"
+            variant="ghost"
+            disabled={links.isPending}
+            aria-label={gt("Refresh linked environments")}
+            onClick={() => links.refresh()}
+          >
+            {links.isPending ? <Spinner size="xs" /> : <RefreshCwIcon className="size-3" />}
+            {gt("Refresh", { $context: "button: re-probe linked environments status and latency" })}
+          </Button>
+          {canLink ? (
+            <>
+              {otherMachines > 1 ? (
+                <LinkSeveralEnvironmentsAction environmentId={environmentId} />
+              ) : null}
+              <LinkEnvironmentAction environmentId={environmentId} />
+            </>
+          ) : null}
+        </div>
       }
     >
       {links.error ? (
@@ -175,8 +190,20 @@ function LinkedEnvironmentRow({
             />
             <h3 className="text-sm font-medium text-foreground">{link.label}</h3>
           </div>
-          <p className="text-xs text-muted-foreground">
-            {m(accessConfig[link.access].label)} · {status}
+          <p className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
+            <span>{m(accessConfig[link.access].label)}</span>
+            <span aria-hidden>·</span>
+            <span>{status}</span>
+            {health.kind === "reachable" && link.latencyMs != null ? (
+              <>
+                <span aria-hidden>·</span>
+                <span
+                  className={cn("font-mono tabular-nums", latencyToneClassName(link.latencyMs))}
+                >
+                  {gt("{ms} ms", { ms: link.latencyMs })}
+                </span>
+              </>
+            ) : null}
           </p>
           <p className="truncate text-xs text-muted-foreground/80">{link.urls.join(", ")}</p>
         </div>
