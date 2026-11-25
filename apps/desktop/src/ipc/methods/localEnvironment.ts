@@ -4,8 +4,12 @@ import {
 } from "@t3tools/contracts";
 import { clerkFrontendApiHostnameFromPublishableKey } from "@t3tools/shared/relayAuth";
 import { normalizeSecureRelayUrl } from "@t3tools/shared/relayUrl";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as HttpClient from "effect/http/HttpClient";
+import * as HttpClientRequest from "effect/http/HttpClientRequest";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import * as DesktopEnvironment from "../../app/DesktopEnvironment.ts";
@@ -139,58 +143,65 @@ export const probeRelay = makeIpcMethod({
         reason: "invalid-url" as const,
       };
     }
-    return yield* Effect.promise(async (): Promise<DesktopRelayProbeResult> => {
-      const startedAt = performance.now();
-      try {
-        const response = await fetch(`${origin}/health`, {
-          method: "GET",
-          cache: "no-store",
-          credentials: "omit",
-          redirect: "error",
-          signal: AbortSignal.timeout(RELAY_PROBE_TIMEOUT_MS),
-        });
+    const httpClient = yield* HttpClient.HttpClient;
+    const startedAt = performance.now();
+    const request = HttpClientRequest.get(`${origin}/health`).pipe(
+      HttpClientRequest.setHeader("cache-control", "no-store"),
+    );
+    const result = yield* httpClient.execute(request).pipe(
+      Effect.flatMap((response): Effect.Effect<DesktopRelayProbeResult> => {
         const latencyMs = Math.max(0, Math.round(performance.now() - startedAt));
-        if (!response.ok) {
-          await response.body?.cancel();
-          return {
+        if (response.status < 200 || response.status >= 300) {
+          return Effect.succeed({
             ok: false,
             latencyMs,
             status: response.status,
             reason: "http-error",
-          };
+          });
         }
-        let payload: unknown;
-        try {
-          payload = await response.json();
-        } catch {
-          return {
+        return response.json.pipe(
+          Effect.map(
+            (payload): DesktopRelayProbeResult =>
+              isRelayHealthPayload(payload)
+                ? { ok: true, latencyMs, status: response.status }
+                : {
+                    ok: false,
+                    latencyMs,
+                    status: response.status,
+                    reason: "invalid-response",
+                  },
+          ),
+          Effect.orElseSucceed(
+            (): DesktopRelayProbeResult => ({
+              ok: false,
+              latencyMs,
+              status: response.status,
+              reason: "invalid-response",
+            }),
+          ),
+        );
+      }),
+      Effect.timeoutOption(Duration.millis(RELAY_PROBE_TIMEOUT_MS)),
+      Effect.map(
+        Option.getOrElse(
+          (): DesktopRelayProbeResult => ({
             ok: false,
-            latencyMs,
-            status: response.status,
-            reason: "invalid-response",
-          };
-        }
-        if (!isRelayHealthPayload(payload)) {
-          return {
-            ok: false,
-            latencyMs,
-            status: response.status,
-            reason: "invalid-response",
-          };
-        }
-        return { ok: true, latencyMs, status: response.status };
-      } catch (cause) {
-        const isTimeout =
-          cause instanceof Error &&
-          (cause.name === "TimeoutError" || cause.name === "AbortError");
-        return {
+            latencyMs: null,
+            status: null,
+            reason: "timeout",
+          }),
+        ),
+      ),
+      Effect.orElseSucceed(
+        (): DesktopRelayProbeResult => ({
           ok: false,
           latencyMs: null,
           status: null,
-          reason: isTimeout ? "timeout" : "unreachable",
-        };
-      }
-    });
+          reason: "unreachable",
+        }),
+      ),
+    );
+    return result;
   }),
 });
 

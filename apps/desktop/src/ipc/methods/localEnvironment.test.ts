@@ -1,9 +1,13 @@
 import { assert, describe, it } from "@effect/vitest";
+import { DesktopRelayProbeResultSchema } from "@t3tools/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as FileSystem from "effect/FileSystem";
+import * as HttpClient from "effect/http/HttpClient";
+import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as Path from "effect/Path";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 
 import * as DesktopEnvironment from "../../app/DesktopEnvironment.ts";
 import * as DesktopLifecycle from "../../app/DesktopLifecycle.ts";
@@ -101,6 +105,38 @@ describe("local environment IPC", () => {
         status: null,
         reason: "invalid-url",
       });
-    }),
+    }).pipe(
+      Effect.provideService(
+        HttpClient.HttpClient,
+        HttpClient.make(() => Effect.die("unexpected HTTP request")),
+      ),
+    ),
+  );
+
+  it.effect("probes a healthy relay and returns latencyMs", () =>
+    Effect.gen(function* () {
+      const rawResult = yield* probeRelay.handler("https://relay.example.com");
+      const result = yield* Schema.decodeUnknownEffect(DesktopRelayProbeResultSchema)(rawResult);
+      assert.strictEqual(result.ok, true);
+      if (result.ok) {
+        assert.strictEqual(result.status, 200);
+        assert.isNumber(result.latencyMs);
+      }
+    }).pipe(
+      Effect.provideService(
+        HttpClient.HttpClient,
+        HttpClient.make((request) =>
+          Effect.succeed(
+            HttpClientResponse.fromWeb(
+              request,
+              new Response(JSON.stringify({ ok: true, service: "relay" }), {
+                status: 200,
+                headers: { "content-type": "application/json" },
+              }),
+            ),
+          ),
+        ),
+      ),
+    ),
   );
 });
