@@ -153,6 +153,7 @@ const DEVICE = "device";
 function CloudSpeechLogo({ provider }: { provider: CloudSpeechProvider }) {
   if (provider === "openrouter")
     return <ProviderPackageIcon icon={openRouterIcon} aria-hidden className="size-4 shrink-0" />;
+  if (provider === "custom") return <AudioLinesIcon aria-hidden className="size-4 shrink-0" />;
   return (
     <ProviderInstanceIcon
       driverKind={ProviderDriverKind.make(provider === "openai" ? "codex" : "grok")}
@@ -1419,9 +1420,13 @@ export function VoiceSettingsPanel() {
   const cloudEnvironment = environments.find(
     (env) => env.environmentId === pendingCloud?.environmentId,
   );
-  // OpenRouter users without settings access still manage their own model choice.
+  // OpenRouter and custom users without settings access still manage their own model choice.
   const manageLabel =
-    destination.cloudProvider === "openrouter" ? gt("Manage OpenRouter") : gt("Manage key");
+    destination.cloudProvider === "openrouter"
+      ? gt("Manage OpenRouter")
+      : destination.cloudProvider === "custom"
+        ? gt("Manage endpoint")
+        : gt("Manage key");
   const chosenEnvironment = environments.find(
     (environment) => environment.environmentId === destination.environmentId,
   );
@@ -1525,11 +1530,13 @@ export function VoiceSettingsPanel() {
           {...setting("voice-transcription-destination")}
           title={gt("Transcribe with")}
           description={
-            destination.environmentId && chosenUnsupported
-              ? gt("{label} can’t transcribe audio locally. Choose another destination.", {
-                  label: chosenEnvironment.label,
-                })
-              : gt("Where your speech is turned into text.")
+            destination.staleEndpoint
+              ? gt("The endpoint changed. Choose Custom endpoint again to approve it.")
+              : destination.environmentId && chosenUnsupported
+                ? gt("{label} can’t transcribe audio locally. Choose another destination.", {
+                    label: chosenEnvironment.label,
+                  })
+                : gt("Where your speech is turned into text.")
           }
           control={
             <div className="flex w-full min-w-0 items-center gap-1.5 @min-[32rem]/settings-row:w-auto">
@@ -1658,7 +1665,9 @@ export function VoiceSettingsPanel() {
               </Select>
               {destination.cloudProvider &&
                 chosenEnvironment &&
-                (canManageKey || destination.cloudProvider === "openrouter") && (
+                (canManageKey ||
+                  destination.cloudProvider === "openrouter" ||
+                  destination.cloudProvider === "custom") && (
                   <Tooltip>
                     <TooltipTrigger
                       render={

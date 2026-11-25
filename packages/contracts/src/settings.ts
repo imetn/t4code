@@ -60,6 +60,7 @@ import {
   SpeechCorrectionCue,
   SpeechCustomWords,
   SpeechLanguage,
+  SpeechModelId,
   SpeechModelUnloadTimeout,
   SpeechPostProcessingPromptSettings,
 } from "./speech.ts";
@@ -400,6 +401,7 @@ export type VoiceMicrophoneEntry = typeof VoiceMicrophoneEntry.Type;
 /**
  * Where this device sends microphone audio. A cloud grant names the forwarding environment and
  * the provider; an OpenRouter grant also names the exact model, since OpenRouter has no default.
+ * A custom endpoint grant names the exact model too: OpenAI-compatible servers have no default.
  */
 export const VoiceTranscriptionDestination = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("environment"), environmentId: EnvironmentId }),
@@ -413,6 +415,14 @@ export const VoiceTranscriptionDestination = Schema.Union([
     environmentId: EnvironmentId,
     provider: Schema.Literal("openrouter"),
     model: CloudSpeechModelId,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("cloud"),
+    environmentId: EnvironmentId,
+    provider: Schema.Literal("custom"),
+    model: SpeechModelId,
+    /** The base URL this device consented to; a later server-side change voids the grant. */
+    endpoint: Schema.String,
   }),
 ]);
 export type VoiceTranscriptionDestination = typeof VoiceTranscriptionDestination.Type;
@@ -518,6 +528,7 @@ export const ClientSettingsSchema = Schema.Struct({
   fontFamilyTerminal: FontFamilyPreference.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
 
   fontSmoothing: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  historySwipeNavigation: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   // Older installs also decode to null; onboarding must additionally require an empty workspace.
   onboardingCompletedAt: Schema.NullOr(Schema.String).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
@@ -1400,6 +1411,7 @@ export const CloudSpeechCredentials = Schema.Struct({
   openai: CloudSpeechCredential,
   xai: CloudSpeechCredential,
   openrouter: CloudSpeechCredential,
+  custom: CloudSpeechCredential,
 });
 
 export const ServerSettings = Schema.Struct({
@@ -1441,8 +1453,10 @@ export const ServerSettings = Schema.Struct({
   /** Lets clients reach this machine's loopback ports over `/api/preview/tunnel`. */
   enablePreviewTunnel: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   cloudSpeechCredentials: CloudSpeechCredentials.pipe(
-    Schema.withDecodingDefault(Effect.succeed({ openai: "", xai: "", openrouter: "" })),
+    Schema.withDecodingDefault(Effect.succeed({ openai: "", xai: "", openrouter: "", custom: "" })),
   ),
+  /** Base URL of the OpenAI-compatible transcription endpoint, including the version path (e.g. `https://host/v1`). */
+  cloudSpeechCustomBaseUrl: Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   speechModelId: Schema.String.pipe(
     Schema.withDecodingDefault(Effect.succeed("handy-computer/parakeet-unified-en-0.6b-gguf")),
   ),
@@ -1646,7 +1660,7 @@ export const ServerSettings = Schema.Struct({
   ),
 
   usageHistoryRetentionDays: UsageHistoryRetentionDays.pipe(
-    Schema.withDecodingDefault(Effect.succeed(92)),
+    Schema.withDecodingDefault(Effect.succeed(182)),
   ),
 
   usagePriceOverrides: Schema.Record(TrimmedNonEmptyString, UsageModelPriceOverride).pipe(
@@ -1921,8 +1935,10 @@ export const ServerSettingsPatch = Schema.Struct({
       openai: Schema.optionalKey(SettingsSecretValue),
       xai: Schema.optionalKey(SettingsSecretValue),
       openrouter: Schema.optionalKey(SettingsSecretValue),
+      custom: Schema.optionalKey(SettingsSecretValue),
     }),
   ),
+  cloudSpeechCustomBaseUrl: Schema.optionalKey(Schema.String),
   speechModelId: Schema.optionalKey(Schema.String),
   speechAcceleration: Schema.optionalKey(SpeechAcceleration),
   speechModelUnloadTimeout: Schema.optionalKey(SpeechModelUnloadTimeout),
@@ -2167,6 +2183,7 @@ export const ClientSettingsPatch = Schema.Struct({
   fontFamilySans: Schema.optionalKey(FontFamilyPreference),
   fontFamilyTerminal: Schema.optionalKey(FontFamilyPreference),
   fontSmoothing: Schema.optionalKey(Schema.Boolean),
+  historySwipeNavigation: Schema.optionalKey(Schema.Boolean),
   persistComposerContextStrip: Schema.optionalKey(Schema.Boolean),
   favorites: Schema.optionalKey(ModelFavorites),
   providerModelPreferences: Schema.optionalKey(ProviderModelPreferences),
