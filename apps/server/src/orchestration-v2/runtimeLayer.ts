@@ -60,6 +60,7 @@ import * as PeerLinks from "../peer/PeerLinks.ts";
 import * as PeerMcpClient from "../peer/PeerMcpClient.ts";
 import * as WorkflowRuntime from "../workflows/WorkflowRuntime.ts";
 import * as ThreadIssueService from "./ThreadIssueService.ts";
+import * as ThreadImportService from "./ThreadImportService.ts";
 import * as ThreadLaunchService from "./ThreadLaunchService.ts";
 import * as ThreadForkService from "./ThreadForkService.ts";
 import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
@@ -306,6 +307,11 @@ export const layerProjectSetupScriptRunner = ProjectSetupScriptRunner.layer.pipe
 const layerManagedProjectFoldersProvided = ManagedProjectFolders.layer.pipe(
   Layer.provide(layerProjectService),
 );
+const layerThreadImportProvided = ThreadImportService.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(layerThreadManagementProvided, layerEventSink, ProjectionStore.layer),
+  ),
+);
 const layerThreadLaunchProvided = ThreadLaunchService.layer.pipe(
   Layer.provide(
     Layer.mergeAll(
@@ -439,6 +445,7 @@ export const layerProduction = Layer.mergeAll(
   ),
   layer,
   layerManagedProjectFoldersProvided,
+  layerThreadImportProvided,
   layerThreadLaunchProvided,
   layerScheduledTaskProvided,
   layerWorkflowsProvided,

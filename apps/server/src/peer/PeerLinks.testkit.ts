@@ -24,6 +24,7 @@ import * as AuthHttp from "../auth/http.ts";
 import * as McpOAuth from "../auth/McpOAuth.ts";
 import * as McpOAuthHttp from "../auth/mcpOAuthHttp.ts";
 import type * as SqlClient from "effect/sql/SqlClient";
+import * as AssetSigner from "../assets/AssetSigner.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as CloudLink from "../cloud/CloudLink.ts";
 import * as ServerConfig from "../config.ts";
@@ -85,6 +86,13 @@ export const servePeer = <E, R, E2 = never, R2 = never>(
   tools: Layer.Layer<never, E, R>,
   /** More of its HTTP routes, whose handlers get the same auth and settings. */
   routes: Layer.Layer<never, E2, R2> = Layer.empty,
+  /**
+   * The peer's own config, secret store and asset signer, when its tools need
+   * the same ones its routes use, as signed uploads do. A fresh set otherwise.
+   */
+  base?: Context.Context<
+    ServerConfig.ServerConfig | ServerSecretStore.ServerSecretStore | AssetSigner.AssetSigner
+  >,
 ) =>
   Effect.gen(function* () {
     const descriptor = yield* Ref.make(initial);
@@ -97,7 +105,19 @@ export const servePeer = <E, R, E2 = never, R2 = never>(
       getEnvironmentId: Ref.get(descriptor).pipe(Effect.map((current) => current.environmentId)),
       getDescriptor: Ref.get(descriptor),
     });
-    const authContext = yield* Layer.build(layerEnvironmentAuth("t3-peer-link-peer-"));
+    const authContext = yield* (
+      base === undefined
+        ? layerEnvironmentAuth("t3-peer-link-peer-")
+        : EnvironmentAuth.layer.pipe(
+            Layer.provide(ManagedPolicy.layerTest()),
+            Layer.provideMerge(ServerSettings.layerTest({ linkedEnvironmentsEnabled: true })),
+            Layer.provide(Sqlite.layerMemory),
+            Layer.provideMerge(ServerEnvironment.layerIdentity),
+            Layer.provideMerge(Layer.succeedContext(base)),
+            Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+            Layer.fresh,
+          )
+    ).pipe(Layer.build);
     const layerRecordBearers = HttpRouter.middleware(
       (httpEffect) =>
         Effect.gen(function* () {

@@ -182,6 +182,11 @@ import {
   threadActionRequiresOperate,
 } from "./threadActionMenu.logic";
 import {
+  readThreadHandoffSupported,
+  readThreadHandoffTargets,
+  startThreadHandoff,
+} from "./threadHandoffMenu";
+import {
   applySidebarThreadDrop,
   filterSidebarV2VisibleThreads,
   groupSidebarThreadsByProject,
@@ -2694,8 +2699,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     },
   );
 
+  // Waiting for move targets can outlast the right-click that asked for them.
+  const latestThreadContextMenuRef = useRef(0);
+
   const handleDraftContextMenu = useStableCallback(
     (draftId: DraftId, position: { x: number; y: number }, source: ContextMenuSource) => {
+      latestThreadContextMenuRef.current += 1;
       void (async () => {
         const api = readLocalApi();
         const session = useComposerDraftStore.getState().getDraftSession(draftId);
@@ -2753,6 +2762,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       source: ContextMenuSource,
       fromSearch = false,
     ) => {
+      const open = ++latestThreadContextMenuRef.current;
       void (async () => {
         const api = readLocalApi();
         if (!api) return;
@@ -2797,6 +2807,13 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                 projectRef.projectId === thread.projectId,
             ),
           ) ?? null;
+        // Only an environment that can move threads makes the menu wait for targets.
+        const handoffTargets =
+          readThreadHandoffSupported(thread.environmentId) &&
+          (thread.handoff == null || thread.handoff.state === "failed")
+            ? await readThreadHandoffTargets(thread.environmentId, thread.id)
+            : [];
+        if (open !== latestThreadContextMenuRef.current) return;
         const clicked = await settlePromise(() =>
           api.contextMenu.show(
             buildThreadActionMenuItems({
@@ -2835,6 +2852,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                 titleRegeneration: configLoaded,
               },
               snoozePresets,
+              handoffTargets,
             }),
             position,
             source,
@@ -2846,6 +2864,14 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           !checkThreadOperations([thread], isThreadTriageAction(clicked.value))
         )
           return;
+        if (clicked.value?.startsWith("continue-on:")) {
+          await startThreadHandoff(
+            thread.environmentId,
+            thread.id,
+            clicked.value.slice("continue-on:".length),
+          );
+          return;
+        }
         if (clicked.value?.startsWith("snooze:")) {
           const preset =
             clicked.value === "snooze:custom"

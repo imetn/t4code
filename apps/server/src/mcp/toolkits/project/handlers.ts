@@ -20,6 +20,8 @@ import * as Schema from "effect/Schema";
 import { OrchestratorRuntimeModeAboveCeilingError } from "../../../orchestration-v2/Orchestrator.ts";
 import { outputRequestProblem } from "../../../orchestration-v2/runOutput.ts";
 import * as ThreadLaunch from "../../../orchestration-v2/ThreadLaunchService.ts";
+import * as ThreadImportService from "../../../orchestration-v2/ThreadImportService.ts";
+import * as HandoffImport from "../../../peer/handoff/HandoffImport.ts";
 import * as ThreadMessageIntake from "../../../orchestration-v2/ThreadMessageIntake.ts";
 import * as Claims from "../../../orchestration-v2/AttachmentClaims.ts";
 import * as Project from "../../../project/ProjectService.ts";
@@ -522,6 +524,66 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
         };
       }),
     // The launched thread carries the caller's link, if it has one.
+    "stamped",
+  ),
+  t3_thread_import: McpToolAccess.startsThreads(
+    (input) => input,
+    (input, { runtimeMode, interactionMode, linkOrigin }) =>
+      Effect.gen(function* () {
+        const projects = yield* access;
+        const project = yield* projects
+          .getById(input.projectId)
+          .pipe(Effect.mapError(unavailable), Effect.map(Option.getOrUndefined));
+        if (project === undefined)
+          return yield* new OrchestratorMcpFailure({
+            code: "invalid_request",
+            message: "The project was not found.",
+          });
+        if (input.worktreePath !== undefined && input.bundle !== undefined)
+          return yield* new OrchestratorMcpFailure({
+            code: "invalid_request",
+            message: "A bundle lands in a new worktree; omit worktreePath.",
+          });
+        const worktreePath =
+          input.worktreePath === undefined
+            ? undefined
+            : yield* projectWorktreePath(project.workspaceRoot, input.worktreePath);
+        const imports = yield* ThreadImportService.ThreadImportService;
+        const handoffs = yield* HandoffImport.HandoffImport;
+        const bundle = input.bundle;
+        const workspace =
+          bundle === undefined
+            ? undefined
+            : handoffs.applyBundle({
+                repoRoot: project.workspaceRoot,
+                handoffId: input.source.handoffId,
+                bundle,
+              });
+        return yield* imports
+          .importThread({
+            ...input,
+            ...(worktreePath === undefined ? {} : { worktreePath }),
+            runtimeMode,
+            interactionMode,
+            linkOrigin,
+            ...(workspace === undefined ? {} : { workspace }),
+          })
+          .pipe(
+            Effect.mapError((error) =>
+              error._tag === "OrchestratorMcpFailure"
+                ? error
+                : new OrchestratorMcpFailure({
+                    code:
+                      error._tag === "ThreadImportProjectMismatchError" ||
+                      error._tag === "ThreadImportInvalidInputError"
+                        ? "invalid_request"
+                        : "orchestration_error",
+                    message: error.message,
+                  }),
+            ),
+          );
+      }),
+    // A moved thread carries the link that moved it, like a launch.
     "stamped",
   ),
   t3_project_list: McpToolAccess.reads((input) =>

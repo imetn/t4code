@@ -1,6 +1,7 @@
 import {
   EnvironmentId,
   PeerLinkThreadReadError,
+  ThreadId,
   WS_METHODS,
   type OrchestrationV2ThreadHistoryPage,
   type OrchestrationV2ThreadStreamItem,
@@ -30,7 +31,11 @@ import type { LinkedThreadView } from "../linkedThread.ts";
 import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
 import type { RpcSession } from "../rpc/session.ts";
 import { v2MessageRow, v2Projection, v2ThreadId } from "./orchestrationV2TestFixtures.ts";
-import { createPeerLinkEnvironmentAtoms, linkThroughRoutes } from "./peerLinks.ts";
+import {
+  createPeerLinkEnvironmentAtoms,
+  linkThroughRoutes,
+  threadHandoffNotice,
+} from "./peerLinks.ts";
 
 // regression: #40544 earlier messages vanished when a linked thread's view opened again
 it.effect(
@@ -266,4 +271,70 @@ describe("refreshNamesLacking", () => {
       ).toEqual([id("known"), id("new")]);
     }).pipe(Effect.scoped),
   );
+});
+
+describe("threadHandoffNotice", () => {
+  const remoteId = EnvironmentId.make("remote");
+  const remoteThreadId = ThreadId.make("remote-thread");
+
+  it("maps every handoff state to its banner copy and send/cancel rules", () => {
+    expect(threadHandoffNotice(null)).toBeNull();
+    expect(
+      threadHandoffNotice({
+        state: "pending",
+        handoffId: "h1",
+        environmentId: remoteId,
+        label: "VPS",
+      }),
+    ).toMatchObject({
+      tone: "info",
+      title: "Moving to VPS when this turn ends",
+      blocksSend: false,
+      canCancel: true,
+      openTarget: null,
+    });
+    expect(
+      threadHandoffNotice({
+        state: "departing",
+        handoffId: "h1",
+        environmentId: remoteId,
+        label: "VPS",
+      }),
+    ).toMatchObject({
+      tone: "info",
+      blocksSend: true,
+      canCancel: false,
+      openTarget: null,
+    });
+    expect(
+      threadHandoffNotice({
+        state: "departed",
+        handoffId: "h1",
+        environmentId: remoteId,
+        label: "VPS",
+        threadId: remoteThreadId,
+      }),
+    ).toMatchObject({
+      tone: "info",
+      blocksSend: true,
+      canCancel: false,
+      openTarget: { environmentId: remoteId, threadId: remoteThreadId, label: "VPS" },
+    });
+    expect(
+      threadHandoffNotice({
+        state: "failed",
+        handoffId: "h1",
+        environmentId: remoteId,
+        label: "",
+        lastError: "Branch diverged.",
+      }),
+    ).toMatchObject({
+      tone: "error",
+      title: "Could not continue on remote",
+      detail: "Branch diverged.",
+      blocksSend: false,
+      canCancel: true,
+      openTarget: null,
+    });
+  });
 });
