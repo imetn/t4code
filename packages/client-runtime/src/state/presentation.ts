@@ -1,5 +1,6 @@
 import type { MarkedText } from "../errors/translatable.ts";
 import {
+  resolveEnvironmentLabel,
   resolveEnvironmentMachineKind,
   type EnvironmentMachineKind,
   type EnvironmentId,
@@ -220,7 +221,7 @@ export function projectEnvironmentConnectionSummary(
 ): EnvironmentConnectionSummary {
   return {
     environmentId,
-    environmentLabel: environment.entry.target.label,
+    environmentLabel: resolveEnvironmentLabel(environment.serverConfig, environment.entry.target.label),
     displayUrl: connectionCatalogDisplayUrl(environment.entry) ?? "",
     isRelayManaged: hasRelayRoute(environment.entry),
     isEnabled: environment.entry.enabled,
@@ -251,7 +252,10 @@ export function createEnvironmentSummaryAtoms(input: {
   const identitiesAtom = Atom.make((get) => {
     const next = [...get(input.catalogValueAtom).entries].map(([environmentId, entry]) => ({
       environmentId,
-      label: entry.target.label,
+      label: resolveEnvironmentLabel(
+        get(input.presentationAtom(environmentId))?.serverConfig,
+        entry.target.label,
+      ),
     }));
     const previous = Option.getOrNull(
       get.self<ReadonlyArray<{ readonly environmentId: EnvironmentId; readonly label: string }>>(),

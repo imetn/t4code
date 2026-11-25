@@ -5,7 +5,7 @@ import {
   type EnvironmentPresentation as BaseEnvironmentPresentation,
 } from "@t3tools/client-runtime/connection";
 import { Discovery } from "@t3tools/client-runtime/relay";
-import type { EnvironmentId } from "@t3tools/contracts";
+import { type EnvironmentId, resolveEnvironmentLabel } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { useState } from "react";
 
@@ -34,7 +34,7 @@ function projectEnvironmentPresentation(
   return {
     ...presentation,
     environmentId,
-    label: presentation.entry.target.label,
+    label: resolveEnvironmentLabel(presentation.serverConfig, presentation.entry.target.label),
     displayUrl: connectionCatalogDisplayUrl(presentation.entry),
     relayManaged: hasRelayRoute(presentation.entry),
   };

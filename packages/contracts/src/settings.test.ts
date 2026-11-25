@@ -555,3 +555,23 @@ describe("server model preferences", () => {
     expect(decodeServerSettingsPatch(input)).toEqual(input);
   });
 });
+
+describe("T4 Code custom settings", () => {
+  it("defaults sidebarWorkingShelfPosition to top and accepts bottom", () => {
+    expect(decodeClientSettings({}).sidebarWorkingShelfPosition).toBe("top");
+    expect(
+      decodeClientSettings({ sidebarWorkingShelfPosition: "bottom" }).sidebarWorkingShelfPosition,
+    ).toBe("bottom");
+    expect(decodeClientSettingsPatch({ sidebarWorkingShelfPosition: "bottom" })).toEqual({
+      sidebarWorkingShelfPosition: "bottom",
+    });
+  });
+
+  it("decodes optional custom environmentLabel on ServerSettings", () => {
+    expect(decodeServerSettings({}).environmentLabel).toBeNull();
+    expect(decodeServerSettings({ environmentLabel: "Mac Studio" }).environmentLabel).toBe(
+      "Mac Studio",
+    );
+    expect(decodeServerSettingsPatch({ environmentLabel: null }).environmentLabel).toBeNull();
+  });
+});

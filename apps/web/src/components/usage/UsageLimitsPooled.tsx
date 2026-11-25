@@ -15,7 +15,13 @@ import {
 import { T, Var, useGT, useMessages } from "gt-react";
 import type { Popover as PopoverPrimitive } from "@base-ui/react/popover";
 import { normalizeProviderAccentColor } from "@t3tools/client-runtime/state/provider-instance-display";
-import { AlertTriangleIcon, ExternalLinkIcon, TicketIcon } from "lucide-react";
+import {
+  AlertTriangleIcon,
+  ArrowDownIcon,
+  ArrowUpIcon,
+  ExternalLinkIcon,
+  TicketIcon,
+} from "lucide-react";
 import {
   createContext,
   Fragment,
@@ -644,23 +650,64 @@ function PoolWindowCard({
   );
 }
 
-function PoolSection({ pool, now }: { readonly pool: LimitPool; readonly now: number }) {
+function PoolSection({
+  pool,
+  now,
+  canMoveUp,
+  canMoveDown,
+  onMoveUp,
+  onMoveDown,
+}: {
+  readonly pool: LimitPool;
+  readonly now: number;
+  readonly canMoveUp: boolean;
+  readonly canMoveDown: boolean;
+  readonly onMoveUp?: (() => void) | undefined;
+  readonly onMoveDown?: (() => void) | undefined;
+}) {
   const color = barColor(pool.driver);
   const label = providerClients.get(pool.driver)?.label ?? String(pool.driver);
   const windows = displayLimitWindows(pool);
+  const gt = useGT();
   const m = useMessages();
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="flex items-center gap-2 text-sm font-medium text-foreground">
-        <ProviderInstanceIcon
-          driverKind={pool.driver}
-          displayName={label}
-          indicatorBackground="var(--background)"
-          className="size-5"
-          iconClassName="size-4 text-foreground/80"
-        />
-        {label}
-      </h2>
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="flex items-center gap-2 text-sm font-medium text-foreground">
+          <ProviderInstanceIcon
+            driverKind={pool.driver}
+            displayName={label}
+            indicatorBackground="var(--background)"
+            className="size-5"
+            iconClassName="size-4 text-foreground/80"
+          />
+          {label}
+        </h2>
+        {onMoveUp || onMoveDown ? (
+          <div className="flex items-center gap-0.5">
+            <Button
+              type="button"
+              size="icon-xs"
+              variant="ghost-muted"
+              disabled={!canMoveUp}
+              onClick={onMoveUp}
+              aria-label={gt("Move {label} up", { label })}
+            >
+              <ArrowUpIcon className="size-3.5" aria-hidden="true" />
+            </Button>
+            <Button
+              type="button"
+              size="icon-xs"
+              variant="ghost-muted"
+              disabled={!canMoveDown}
+              onClick={onMoveDown}
+              aria-label={gt("Move {label} down", { label })}
+            >
+              <ArrowDownIcon className="size-3.5" aria-hidden="true" />
+            </Button>
+          </div>
+        ) : null}
+      </div>
       {windows.map((window) => {
         const details =
           pool.driver === "cursor" ? cursorUsageWindowDetails(window.id, pool, m) : undefined;
@@ -679,18 +726,55 @@ function PoolSection({ pool, now }: { readonly pool: LimitPool; readonly now: nu
   );
 }
 
+function orderLimitPools(
+  pools: readonly LimitPool[],
+  preferredOrder: readonly string[] | undefined,
+): readonly LimitPool[] {
+  if (!preferredOrder || preferredOrder.length === 0) return pools;
+  const rank = new Map(preferredOrder.map((driver, index) => [driver, index]));
+  return pools
+    .map((pool, index) => ({
+      pool,
+      rank: rank.get(String(pool.driver)) ?? preferredOrder.length + index,
+    }))
+    .toSorted((left, right) => left.rank - right.rank)
+    .map((entry) => entry.pool);
+}
+
 export function UsageLimitsPooled({
   presentations,
+  providerOrder,
+  onProviderOrderChange,
   now,
 }: {
   readonly presentations: Parameters<typeof collectLimitAccounts>[0];
+  readonly providerOrder?: readonly string[] | undefined;
+  readonly onProviderOrderChange?: ((next: readonly string[]) => void) | undefined;
   readonly now: number;
 }) {
   const gt = useGT();
   const m = useMessages();
   const [segmentPopover] = useState(() => PopoverCreateHandle<SegmentPayload>());
   const segmentPopoverActions = useRef<PopoverPrimitive.Root.Actions | null>(null);
-  const pools = collectLimitPools(collectLimitAccounts(presentations), now);
+  const pools = orderLimitPools(
+    collectLimitPools(collectLimitAccounts(presentations), now),
+    providerOrder,
+  );
+  const movePool = (index: number, delta: -1 | 1) => {
+    if (!onProviderOrderChange) return;
+    const targetIndex = index + delta;
+    if (targetIndex < 0 || targetIndex >= pools.length) return;
+    const nextDrivers = pools.map((pool) => String(pool.driver));
+    const current = nextDrivers[index]!;
+    nextDrivers[index] = nextDrivers[targetIndex]!;
+    nextDrivers[targetIndex] = current;
+    // Preserve any hidden/offline providers previously saved in providerOrder.
+    const seen = new Set(nextDrivers);
+    for (const driver of providerOrder ?? []) {
+      if (!seen.has(driver)) nextDrivers.push(driver);
+    }
+    onProviderOrderChange(nextDrivers);
+  };
   const quotaSources = collectHttpQuotaSources(presentations);
   const notices = collectLimitNotices(presentations, m);
   const externalLinks = collectExternalUsageLinks(presentations, m);
@@ -705,9 +789,20 @@ export function UsageLimitsPooled({
         </p>
       ) : null}
       <SegmentPopoverContext value={segmentPopover}>
-        {pools.map((pool) => (
+        {pools.map((pool, index) => (
           <Fragment key={pool.driver}>
-            <PoolSection pool={pool} now={now} />
+            <PoolSection
+              pool={pool}
+              now={now}
+              canMoveUp={index > 0}
+              canMoveDown={index < pools.length - 1}
+              onMoveUp={
+                onProviderOrderChange && pools.length > 1 ? () => movePool(index, -1) : undefined
+              }
+              onMoveDown={
+                onProviderOrderChange && pools.length > 1 ? () => movePool(index, 1) : undefined
+              }
+            />
           </Fragment>
         ))}
       </SegmentPopoverContext>

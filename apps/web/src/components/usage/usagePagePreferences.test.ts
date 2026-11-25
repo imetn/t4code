@@ -32,6 +32,15 @@ describe("Usage page preferences", () => {
     expect(readUsagePagePreferences()).toEqual({ metric: "tokens", windowDays: 30 });
   });
 
+  it("round-trips limitsProviderOrder", () => {
+    saveUsagePagePreferences({
+      metric: "limits",
+      windowDays: 30,
+      limitsProviderOrder: ["claudeAgent", "codex"],
+    });
+    expect(readUsagePagePreferences().limitsProviderOrder).toEqual(["claudeAgent", "codex"]);
+  });
+
   // regression: #10189 an invalid saved usage selection was never replaced
   it.each([
     "not-json",

@@ -5,6 +5,7 @@ import { ExecutionEnvironmentDescriptor } from "./environment.ts";
 import {
   applyServerProviderDeltas,
   OtlpEndpointCheckInput,
+  resolveEnvironmentLabel,
   resolveEnvironmentMachineKind,
   ServerConfigProviderStatusDeltasPayload,
   ServerObservability,
@@ -153,6 +154,53 @@ describe("resolveEnvironmentMachineKind", () => {
     expect(
       resolveEnvironmentMachineKind({ environment: parsed, settings: decodeSettings({}) }),
     ).toBe("server");
+  });
+});
+
+describe("resolveEnvironmentLabel", () => {
+  const decodeDescriptor = Schema.decodeUnknownSync(ExecutionEnvironmentDescriptor);
+  const decodeSettings = Schema.decodeUnknownSync(ServerSettings);
+  const descriptor = (label: string) =>
+    decodeDescriptor({
+      environmentId: "env-1",
+      label,
+      platform: { os: "darwin", arch: "arm64" },
+      serverVersion: "1.0.0",
+      capabilities: {},
+    });
+
+  it("prefers custom environmentLabel over descriptor and fallback", () => {
+    expect(
+      resolveEnvironmentLabel(
+        {
+          environment: descriptor("MacBook Pro"),
+          settings: decodeSettings({ environmentLabel: "  Work Studio  " }),
+        },
+        "Fallback",
+      ),
+    ).toBe("Work Studio");
+  });
+
+  it("falls back to descriptor label when custom label is empty or unset", () => {
+    expect(
+      resolveEnvironmentLabel(
+        {
+          environment: descriptor("MacBook Pro"),
+          settings: decodeSettings({ environmentLabel: null }),
+        },
+        "Fallback",
+      ),
+    ).toBe("MacBook Pro");
+    expect(
+      resolveEnvironmentLabel(
+        {
+          environment: descriptor("MacBook Pro"),
+          settings: { ...decodeSettings({}), environmentLabel: "   " },
+        },
+        "Fallback",
+      ),
+    ).toBe("MacBook Pro");
+    expect(resolveEnvironmentLabel(null, "Fallback")).toBe("Fallback");
   });
 });
 

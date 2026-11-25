@@ -310,12 +310,31 @@ export const make = Effect.gen(function* () {
     },
   };
 
+  const fileSystem = yield* FileSystem.FileSystem;
+  const readCustomEnvironmentLabel = fileSystem.readFileString(serverConfig.settingsPath).pipe(
+    Effect.map((raw) => {
+      try {
+        const parsed = JSON.parse(raw) as { readonly environmentLabel?: unknown };
+        const value =
+          typeof parsed.environmentLabel === "string" ? parsed.environmentLabel.trim() : "";
+        return value.length > 0 ? value : null;
+      } catch {
+        return null;
+      }
+    }),
+    Effect.orElseSucceed(() => null),
+  );
+
   return ServerEnvironment.of({
     getEnvironmentId: Effect.succeed(environmentId),
-    // Publishing opt-in and relay links change at runtime; read the capability per request.
-    getDescriptor: readAgentActivityPublishingActive(secrets).pipe(
-      Effect.map((agentActivityPublishing) => ({
+    // Publishing opt-in, custom environment label, and relay links change at runtime; read per request.
+    getDescriptor: Effect.all([
+      readAgentActivityPublishingActive(secrets),
+      readCustomEnvironmentLabel,
+    ]).pipe(
+      Effect.map(([agentActivityPublishing, customLabel]) => ({
         ...descriptor,
+        label: customLabel ?? descriptor.label,
         capabilities: { ...descriptor.capabilities, agentActivityPublishing },
       })),
     ),

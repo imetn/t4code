@@ -543,6 +543,8 @@ export function UsagePage() {
               <UsageLimitsSection
                 selectedEnvironmentIds={selectedEnvironmentIds}
                 hiddenProviders={hiddenProviders}
+                providerOrder={preferences.limitsProviderOrder}
+                onProviderOrderChange={(next) => updatePreferences({ limitsProviderOrder: next })}
                 now={limitsNow}
               />
             ) : shown === null ? (

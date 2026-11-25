@@ -787,6 +787,23 @@ export function resolveEnvironmentMachineKind(
   return config?.settings?.environmentIcon ?? config?.environment.platform.machine ?? "server";
 }
 
+export function resolveEnvironmentLabel(
+  config:
+    | {
+        readonly environment?: Pick<ExecutionEnvironmentDescriptor, "label">;
+        readonly settings?: Pick<ServerSettings, "environmentLabel">;
+      }
+    | null
+    | undefined,
+  fallback?: string,
+): string {
+  const custom = config?.settings?.environmentLabel?.trim();
+  if (custom && custom.length > 0) return custom;
+  const advertised = config?.environment?.label?.trim();
+  if (advertised && advertised.length > 0) return advertised;
+  return fallback ?? "";
+}
+
 const ServerUpsertKeybindingReplaceTarget = Schema.Struct({
   key: KeybindingValue,
   command: KeybindingCommand,

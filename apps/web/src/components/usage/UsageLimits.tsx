@@ -392,10 +392,14 @@ export function ResetCredits({
 export function UsageLimitsSection({
   selectedEnvironmentIds,
   hiddenProviders,
+  providerOrder,
+  onProviderOrderChange,
   now,
 }: {
   readonly selectedEnvironmentIds: ReadonlySet<EnvironmentId> | null;
   readonly hiddenProviders: ReadonlySet<UsageProviderKind>;
+  readonly providerOrder?: readonly string[] | undefined;
+  readonly onProviderOrderChange?: ((next: readonly string[]) => void) | undefined;
   readonly now: number;
 }) {
   const presentations = useAtomValue(environmentPresentations.presentationsWithProvidersAtom);
@@ -428,5 +432,12 @@ export function UsageLimitsSection({
       ];
     }),
   );
-  return <UsageLimitsPooled presentations={selected} now={now} />;
+  return (
+    <UsageLimitsPooled
+      presentations={selected}
+      providerOrder={providerOrder}
+      onProviderOrderChange={onProviderOrderChange}
+      now={now}
+    />
+  );
 }

@@ -1,6 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import {
   AuthDiagnosticsReadScope,
+  resolveEnvironmentLabel,
   USAGE_CONTRACT_VERSION,
   type EnvironmentId,
   type UsageBucket,
@@ -48,7 +49,7 @@ const usageByWindowAtom = Atom.family((windowKey: string) =>
       if (!access.canReadDiagnostics) {
         statuses.push({
           environmentId,
-          label: presentation.entry.target.label,
+          label: resolveEnvironmentLabel(presentation.serverConfig, presentation.entry.target.label),
           isConnected,
           ...access,
           summary: null,
@@ -67,7 +68,7 @@ const usageByWindowAtom = Atom.family((windowKey: string) =>
       const summary = AsyncResult.getOrElse(result, () => null);
       statuses.push({
         environmentId,
-        label: presentation.entry.target.label,
+        label: resolveEnvironmentLabel(presentation.serverConfig, presentation.entry.target.label),
         isPending: result.waiting,
         canReadDiagnostics: true,
         isConnected,

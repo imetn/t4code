@@ -30,7 +30,11 @@ import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { cn } from "../../lib/utils";
 import { SettingsRow } from "./settingsLayout";
 import { useSearchableSetting } from "./settingsSearch";
-import { EnvironmentIconMenu } from "./EnvironmentIconPicker";
+import {
+  EnvironmentIconMenu,
+  EnvironmentRenameDialog,
+  EnvironmentRenameMenuItem,
+} from "./EnvironmentIconPicker";
 import { EnvironmentRoutesList } from "./EnvironmentRoutesList";
 import {
   ConnectionDiagnosisPanel,
@@ -135,6 +139,7 @@ export function SavedBackendListRow({
   const messages = useMessages();
   const gt = useGT();
   const [routesOpen, setRoutesOpen] = useState(initialRoutesOpen);
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [permissionsOpen, setPermissionsOpen] = useState(false);
   const [diagnosisOpen, setDiagnosisOpen] = useState(false);
   const environmentId = environment.environmentId;
@@ -446,6 +451,11 @@ export function SavedBackendListRow({
           <EllipsisIcon className="size-3.5" />
         </MenuTrigger>
         <MenuPopup align="end">
+          <EnvironmentRenameMenuItem
+            environmentId={environmentId}
+            serverConfig={environment.serverConfig}
+            onOpen={() => setRenameDialogOpen(true)}
+          />
           <EnvironmentIconMenu
             environmentId={environmentId}
             serverConfig={environment.serverConfig}
@@ -470,6 +480,13 @@ export function SavedBackendListRow({
           </MenuItem>
         </MenuPopup>
       </Menu>
+      <EnvironmentRenameDialog
+        open={renameDialogOpen}
+        onOpenChange={setRenameDialogOpen}
+        environmentId={environmentId}
+        serverConfig={environment.serverConfig}
+        fallbackLabel={environment.label}
+      />
     </EnvironmentRow>
   );
 }

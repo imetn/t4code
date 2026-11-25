@@ -547,6 +547,10 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.sidebarWorkingShelfEnabled !== DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled
       ? [gt("Working section")]
       : []),
+    ...(settings.sidebarWorkingShelfPosition !==
+    DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfPosition
+      ? [gt("Working section position")]
+      : []),
     ...(settings.sidebarAutoSettleAfterDays !== DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays
       ? [gt("Auto-settle inactive threads")]
       : []),
@@ -739,6 +743,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
       sidebarProjectSortOrder: DEFAULT_UNIFIED_SETTINGS.sidebarProjectSortOrder,
       sidebarWorkingShelfEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled,
+      sidebarWorkingShelfPosition: DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfPosition,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
       sidebarAutoSettleKeepPullRequests: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleKeepPullRequests,
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
@@ -958,8 +963,8 @@ export function GeneralSettingsPanel() {
           {...setting("working-shelf")}
           description={
             <T>
-              Fold working and monitoring threads into a Working section. They return to the top of
-              the inbox when they need you. The boring sidebar in Labs has no Working section.
+              Group working and monitoring threads into a Working section. They return to the inbox
+              when they need you.
             </T>
           }
           resetAction={
@@ -983,6 +988,53 @@ export function GeneralSettingsPanel() {
               }
               aria-label={gt("Working section")}
             />
+          }
+        />
+        <SettingsRow
+          {...setting("working-shelf-position")}
+          description={
+            <T>
+              Place the Working section at the top of the sidebar above active threads and project
+              folders, or fold it at the bottom.
+            </T>
+          }
+          resetAction={
+            settings.sidebarWorkingShelfPosition !==
+            DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfPosition ? (
+              <SettingResetButton
+                ariaLabel={gt("Reset working section position to default")}
+                onClick={() =>
+                  updateSettings({
+                    sidebarWorkingShelfPosition:
+                      DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfPosition,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={settings.sidebarWorkingShelfPosition}
+              disabled={!settings.sidebarWorkingShelfEnabled}
+              onValueChange={(value) => {
+                if (value === "top" || value === "bottom") {
+                  updateSettings({ sidebarWorkingShelfPosition: value });
+                }
+              }}
+            >
+              <SelectTrigger
+                className={SETTINGS_PICKER_TRIGGER_CLASSNAME}
+                aria-label={gt("Working section position")}
+              >
+                <SelectValue>
+                  {settings.sidebarWorkingShelfPosition === "top" ? gt("Top") : gt("Bottom")}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end">
+                <SelectItem value="top">{gt("Top")}</SelectItem>
+                <SelectItem value="bottom">{gt("Bottom")}</SelectItem>
+              </SelectPopup>
+            </Select>
           }
         />
       </SettingsSection>
