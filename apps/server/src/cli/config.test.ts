@@ -729,7 +729,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         authorization: "Bearer abc==",
         "x-tenant": "t3",
       });
-      expect(resolved.otlpTracesUrl).toBe("http://collector.internal:4318");
+      expect(resolved.otlpTracesUrl).toBeUndefined();
     }),
   );
 
