@@ -321,9 +321,7 @@ it("configures a custom OpenAI-compatible endpoint with its URL, model, and key"
       const dialog = page.getByRole("dialog");
       const save = dialog.getByRole("button", { name: "Save and enable" });
       await expect.element(save).toBeDisabled();
-      await dialog
-        .getByLabelText("Custom endpoint API key", { exact: true })
-        .fill("custom-key");
+      await dialog.getByLabelText("Custom endpoint API key", { exact: true }).fill("custom-key");
       await dialog.getByRole("textbox", { name: "Transcription model" }).fill("whisper-1");
       const endpoint = dialog.getByRole("textbox", { name: "Endpoint base URL" });
       await endpoint.fill("http://insecure.example.com/v1");

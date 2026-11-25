@@ -112,6 +112,8 @@ const makeRepos = Effect.gen(function* () {
   const boxRepo = path.join(root, "box");
   yield* git(root, ["clone", "--quiet", origin, laptopRepo]);
   yield* git(root, ["clone", "--quiet", origin, boxRepo]);
+  yield* git(laptopRepo, ["remote", "add", "upstream", "https://github.com/acme/app.git"]);
+  yield* git(boxRepo, ["remote", "add", "upstream", "https://github.com/acme/app.git"]);
   return { root, laptopRepo, boxRepo };
 });
 
@@ -151,9 +153,11 @@ const layerProjects = (project: Project) =>
   );
 
 /** What each test runs on: a test HTTP server, git, and Node. */
-const layerTestHost = Layer.mergeAll(NodeHttpServer.layerTest, VcsProcess.layer).pipe(
-  Layer.provideMerge(NodeServices.layer),
-);
+const layerTestHost = Layer.mergeAll(
+  NodeHttpServer.layerTest,
+  VcsProcess.layer,
+  NodeCrypto.layer,
+).pipe(Layer.provideMerge(NodeServices.layer));
 
 /** A real orchestrator on an in-memory database, with a capturing provider. */
 const layerOrchestration = (

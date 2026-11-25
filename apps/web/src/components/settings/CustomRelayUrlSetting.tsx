@@ -134,18 +134,27 @@ export function CustomRelayUrlSetting() {
     probeSerialRef.current = serial;
     const targetHost = relayHostLabel(targetUrl);
     setProbeState({ status: "probing", targetHost });
-    const result = await probeRelayHealth(targetUrl, {
-      ...(desktopProbeRelay ? { desktopProbe: desktopProbeRelay } : {}),
-    });
+    const result = await probeRelayHealth(
+      targetUrl,
+      desktopProbeRelay ? { desktopProbe: desktopProbeRelay } : {},
+    );
     if (probeSerialRef.current !== serial) return;
     setProbeState({ status: "done", targetHost, result });
   };
 
   const initialProbeUrl = verification.activeRelayUrl;
   const probeInitialRelay = useEffectEvent(() => {
-    if (initialProbeUrl !== null) {
-      void runProbe(initialProbeUrl);
-    }
+    if (initialProbeUrl === null) return;
+    const serial = probeSerialRef.current + 1;
+    probeSerialRef.current = serial;
+    const targetHost = relayHostLabel(initialProbeUrl);
+    void probeRelayHealth(
+      initialProbeUrl,
+      desktopProbeRelay ? { desktopProbe: desktopProbeRelay } : {},
+    ).then((result) => {
+      if (probeSerialRef.current !== serial) return;
+      setProbeState({ status: "done", targetHost, result });
+    });
   });
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- probes the active relay once on mount so reachability and RTT are visible immediately
   useEffect(() => {
@@ -208,7 +217,7 @@ export function CustomRelayUrlSetting() {
   const verificationBanner =
     verification.linkAlignment === "mismatched" ? (
       <div className="flex items-start gap-2 px-3 py-2.5 text-xs leading-relaxed text-muted-foreground sm:px-4">
-        <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+        <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0 text-warning-foreground" />
         <p>
           {gt(
             "This machine is still linked to {linkedHost}. Unlink and re-link T3 Connect in Sharing & access to switch to {activeHost}.",
@@ -221,7 +230,7 @@ export function CustomRelayUrlSetting() {
       </div>
     ) : showMissingClerkWarning ? (
       <div className="flex items-start gap-2 px-3 py-2.5 text-xs leading-relaxed text-muted-foreground sm:px-4">
-        <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+        <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0 text-warning-foreground" />
         <p>
           <T>
             Self-hosted relays usually require a matching Clerk publishable key. After saving, sign
@@ -231,7 +240,7 @@ export function CustomRelayUrlSetting() {
       </div>
     ) : verification.isCustomRelay && verification.linkAlignment === "revoked" ? (
       <div className="flex items-start gap-2 px-3 py-2.5 text-xs leading-relaxed text-muted-foreground sm:px-4">
-        <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+        <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0 text-warning-foreground" />
         <p>
           {gt(
             "Using {activeHost}, but this machine's T3 Connect link was revoked. Re-link in Sharing & access.",
@@ -241,7 +250,7 @@ export function CustomRelayUrlSetting() {
       </div>
     ) : verification.isCustomRelay && verification.linkAlignment === "matched" ? (
       <div className="flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground sm:px-4">
-        <CheckCircle2Icon className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+        <CheckCircle2Icon className="size-3.5 shrink-0 text-success-foreground" />
         <p className="min-w-0 truncate">
           <span className="font-medium text-foreground">
             <T>Active on this machine</T>

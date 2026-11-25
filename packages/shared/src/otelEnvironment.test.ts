@@ -70,10 +70,7 @@ describe("OtelEnvironment", () => {
         const layerEnv = ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} }));
         const resource = yield* OtlpResource.fromConfig({ serviceName: "t3" }).pipe(
           Effect.provide(
-            Layer.provide(
-              OtelEnvironment.layerResourceAttributes({ "a,b": "x=y" }),
-              layerEnv,
-            ),
+            Layer.provide(OtelEnvironment.layerResourceAttributes({ "a,b": "x=y" }), layerEnv),
           ),
         );
         assert.deepStrictEqual(

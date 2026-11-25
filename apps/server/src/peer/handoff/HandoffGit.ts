@@ -101,11 +101,8 @@ export type HandoffGitError =
   | HandoffGitStepError;
 
 /**
- * Moves a thread's git work between environments as one git bundle: the
- * commits no remote has, and a snapshot commit of the working tree made with
- * a temporary index, as checkpoints are. Applying it never touches a
- * checkout it does not create, moves an existing branch only forward, and
- * undoes everything it did when a step fails.
+ * Packs/applies a thread's unpushed commits and working-tree snapshot as one git bundle.
+ * Applying never touches existing checkouts, only fast-forwards branches, and rolls back on failure.
  */
 export class HandoffGit extends Context.Service<
   HandoffGit,
@@ -237,14 +234,7 @@ const make = Effect.gen(function* () {
     yield* git(input.cwd, ["update-ref", snapshotRef, snapshot]);
     const bundlePath = path.join(input.outDir, `${input.handoffId}.bundle`);
     // Only what no remote has: the peer fetches the rest from the remote.
-    yield* git(input.cwd, [
-      "bundle",
-      "create",
-      bundlePath,
-      snapshotRef,
-      "--not",
-      "--remotes",
-    ]).pipe(
+    yield* git(input.cwd, ["bundle", "create", bundlePath, snapshotRef, "--not", "--remotes"]).pipe(
       Effect.ensuring(git(input.cwd, ["update-ref", "-d", snapshotRef]).pipe(Effect.ignore)),
     );
     const bundleBytes = Number(
@@ -322,9 +312,7 @@ const make = Effect.gen(function* () {
             return yield* new HandoffBranchCheckedOutError({ branch });
           }
           if (current !== input.tip) {
-            if (
-              !(yield* ok(input.repoRoot, ["merge-base", "--is-ancestor", current, input.tip]))
-            ) {
+            if (!(yield* ok(input.repoRoot, ["merge-base", "--is-ancestor", current, input.tip]))) {
               return yield* new HandoffBranchDivergedError({ branch });
             }
             // Compare-and-swap: fails if the branch moved since it was read.
@@ -337,9 +325,7 @@ const make = Effect.gen(function* () {
         } else {
           yield* git(input.repoRoot, ["update-ref", ref, input.tip, ""]);
           // Only while it is still the tip: a branch someone moved on since keeps their commits.
-          undo.push(
-            git(input.repoRoot, ["update-ref", "-d", ref, input.tip]).pipe(Effect.ignore),
-          );
+          undo.push(git(input.repoRoot, ["update-ref", "-d", ref, input.tip]).pipe(Effect.ignore));
         }
       }
       yield* git(

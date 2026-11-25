@@ -179,59 +179,62 @@ describe("DesktopTray", () => {
     ),
   );
 
-  it.effect("refreshes the active win32 tray menu on updateState without duplicating the tray", () => {
-    const activate = vi.fn();
-    const quit = vi.fn();
-    return Effect.gen(function* () {
-      const tray = yield* DesktopTray.DesktopTray;
-      const state = yield* DesktopState.DesktopState;
+  it.effect(
+    "refreshes the active win32 tray menu on updateState without duplicating the tray",
+    () => {
+      const activate = vi.fn();
+      const quit = vi.fn();
+      return Effect.gen(function* () {
+        const tray = yield* DesktopTray.DesktopTray;
+        const state = yield* DesktopState.DesktopState;
 
-      // Live thread updates do not create a tray while keepRunningInTray is off.
-      yield* tray.updateState(SAMPLE_TRAY_STATE);
-      assert.equal(electronMock.trays.length, 0);
-      assert.isFalse(yield* Ref.get(state.closeToTray));
+        // Live thread updates do not create a tray while keepRunningInTray is off.
+        yield* tray.updateState(SAMPLE_TRAY_STATE);
+        assert.equal(electronMock.trays.length, 0);
+        assert.isFalse(yield* Ref.get(state.closeToTray));
 
-      yield* tray.configure(true);
-      assert.equal(electronMock.trays.length, 1);
-      assert.isTrue(yield* Ref.get(state.closeToTray));
+        yield* tray.configure(true);
+        assert.equal(electronMock.trays.length, 1);
+        assert.isTrue(yield* Ref.get(state.closeToTray));
 
-      const beforeMenuCalls = electronMock.trays[0]!.setContextMenu.mock.calls.length;
-      yield* tray.updateState({ ...SAMPLE_TRAY_STATE, workingCount: 3 });
-      assert.equal(electronMock.trays.length, 1);
-      assert.equal(electronMock.trays[0]!.setContextMenu.mock.calls.length, beforeMenuCalls + 1);
-      assert.equal(electronMock.trays[0]!.setTitle.mock.calls.length, 0);
+        const beforeMenuCalls = electronMock.trays[0]!.setContextMenu.mock.calls.length;
+        yield* tray.updateState({ ...SAMPLE_TRAY_STATE, workingCount: 3 });
+        assert.equal(electronMock.trays.length, 1);
+        assert.equal(electronMock.trays[0]!.setContextMenu.mock.calls.length, beforeMenuCalls + 1);
+        assert.equal(electronMock.trays[0]!.setTitle.mock.calls.length, 0);
 
-      const clickCall = electronMock.trays[0]!.on.mock.calls.find(
-        (call) => call[0] === "click",
-      ) as [string, () => void] | undefined;
-      assert.isDefined(clickCall);
-      clickCall[1]();
-      assert.equal(activate.mock.calls.length, 1);
+        const clickCall = electronMock.trays[0]!.on.mock.calls.find(
+          (call) => call[0] === "click",
+        ) as [string, () => void] | undefined;
+        assert.isDefined(clickCall);
+        clickCall[1]();
+        assert.equal(activate.mock.calls.length, 1);
 
-      const lastTemplate = electronMock.buildFromTemplate.mock.calls.at(-1)?.[0] ?? [];
-      const quitItem = lastTemplate.find(
-        (item) => typeof item.label === "string" && item.label.startsWith("Quit "),
-      ) as { click?: () => void } | undefined;
-      const quitClick = quitItem?.click;
-      assert.isDefined(quitClick);
-      quitClick();
-      assert.equal(quit.mock.calls.length, 1);
+        const lastTemplate = electronMock.buildFromTemplate.mock.calls.at(-1)?.[0] ?? [];
+        const quitItem = lastTemplate.find(
+          (item) => typeof item.label === "string" && item.label.startsWith("Quit "),
+        ) as { click?: () => void } | undefined;
+        const quitClick = quitItem?.click;
+        assert.isDefined(quitClick);
+        quitClick();
+        assert.equal(quit.mock.calls.length, 1);
 
-      yield* tray.dispose;
-      assert.equal(electronMock.trays[0]!.destroy.mock.calls.length, 1);
-      assert.isFalse(yield* Ref.get(state.closeToTray));
-    }).pipe(
-      Effect.provide(
-        layerTest({
-          platform: "win32",
-          ico: "C:\\icons\\t3.ico",
-          onActivate: activate,
-          onQuit: quit,
-        }),
-      ),
-      Effect.scoped,
-    );
-  });
+        yield* tray.dispose;
+        assert.equal(electronMock.trays[0]!.destroy.mock.calls.length, 1);
+        assert.isFalse(yield* Ref.get(state.closeToTray));
+      }).pipe(
+        Effect.provide(
+          layerTest({
+            platform: "win32",
+            ico: "C:\\icons\\t3.ico",
+            onActivate: activate,
+            onQuit: quit,
+          }),
+        ),
+        Effect.scoped,
+      );
+    },
+  );
 
   it.effect("resizes the png icon on linux and stays off when the decoded image is empty", () =>
     Effect.gen(function* () {
@@ -247,10 +250,7 @@ describe("DesktopTray", () => {
       assert.equal(electronMock.trays.length, 1);
       assert.isTrue(yield* Ref.get(state.closeToTray));
       assert.deepEqual(electronMock.resize.mock.calls.at(-1), [{ width: 32, height: 32 }]);
-    }).pipe(
-      Effect.provide(layerTest({ platform: "linux", png: "/icons/t3.png" })),
-      Effect.scoped,
-    ),
+    }).pipe(Effect.provide(layerTest({ platform: "linux", png: "/icons/t3.png" })), Effect.scoped),
   );
 
   it.effect.each(["initialize", "configure"] as const)(

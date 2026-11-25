@@ -21,65 +21,64 @@ import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import * as AnalyticsService from "./AnalyticsService.ts";
 
 it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("AnalyticsService test", (it) => {
-  it.effect("never records events, creates anonymous-id, or sends HTTP requests even when enabled", () =>
-    Effect.gen(function* () {
-      const requests: Array<string> = [];
-      const client = HttpClient.make((request) =>
-        Effect.sync(() => {
-          requests.push(request.url);
-          return HttpClientResponse.fromWeb(request, new Response(null, { status: 204 }));
-        }),
-      );
-      const layerRuntime = AnalyticsService.layer.pipe(
-        Layer.provideMerge(
-          ServerConfig.ServerConfig.layerTest(process.cwd(), { prefix: "t3-telemetry-noop-" }),
-        ),
-        Layer.provide(
-          ConfigProvider.layer(
-            ConfigProvider.fromUnknown({
-              T3CODE_TELEMETRY_ENABLED: true,
-              T3CODE_POSTHOG_KEY: "phc_test_key",
-              T3CODE_POSTHOG_HOST: "http://localhost",
-            }),
-          ),
-        ),
-        Layer.provide(
-          Layer.mergeAll(
-            Layer.succeed(HostProcess.Platform, "linux"),
-            Layer.succeed(HostProcess.Architecture, "arm64"),
-            Layer.succeed(HttpClient.HttpClient, client),
-            ManagedPolicy.layerTest({
-              schemaVersion: 1,
-              organization: "Example Corp",
-              limits: { telemetry: true },
-            }),
-          ),
-        ),
-      );
-
-      const scope = yield* Scope.make();
-      const context = yield* Layer.buildWithScope(layerRuntime, scope);
-
-      yield* Effect.gen(function* () {
-        const analytics = yield* AnalyticsService.AnalyticsService;
-        const config = yield* ServerConfig.ServerConfig;
-        const fileSystem = yield* FileSystem.FileSystem;
-
-        assert.isFalse(yield* analytics.record("test.event", { index: 1 }));
-        assert.isFalse(yield* analytics.record("test.anonymous", {}, { anonymous: true }));
-        yield* analytics.recordOwners(
-          [{ source: "connect", ownerId: "a".repeat(64) }],
-          "server",
+  it.effect(
+    "never records events, creates anonymous-id, or sends HTTP requests even when enabled",
+    () =>
+      Effect.gen(function* () {
+        const requests: Array<string> = [];
+        const client = HttpClient.make((request) =>
+          Effect.sync(() => {
+            requests.push(request.url);
+            return HttpClientResponse.fromWeb(request, new Response(null, { status: 204 }));
+          }),
         );
-        yield* analytics.flush;
-        yield* TestClock.adjust("1 minute");
+        const layerRuntime = AnalyticsService.layer.pipe(
+          Layer.provideMerge(
+            ServerConfig.ServerConfig.layerTest(process.cwd(), { prefix: "t3-telemetry-noop-" }),
+          ),
+          Layer.provide(
+            ConfigProvider.layer(
+              ConfigProvider.fromUnknown({
+                T3CODE_TELEMETRY_ENABLED: true,
+                T3CODE_POSTHOG_KEY: "phc_test_key",
+                T3CODE_POSTHOG_HOST: "http://localhost",
+              }),
+            ),
+          ),
+          Layer.provide(
+            Layer.mergeAll(
+              Layer.succeed(HostProcess.Platform, "linux"),
+              Layer.succeed(HostProcess.Architecture, "arm64"),
+              Layer.succeed(HttpClient.HttpClient, client),
+              ManagedPolicy.layerTest({
+                schemaVersion: 1,
+                organization: "Example Corp",
+                limits: { telemetry: true },
+              }),
+            ),
+          ),
+        );
 
-        assert.isFalse(yield* fileSystem.exists(config.anonymousIdPath));
-      }).pipe(Effect.provide(context));
+        const scope = yield* Scope.make();
+        const context = yield* Layer.buildWithScope(layerRuntime, scope);
 
-      yield* Scope.close(scope, Exit.void);
-      assert.deepEqual(requests, []);
-    }),
+        yield* Effect.gen(function* () {
+          const analytics = yield* AnalyticsService.AnalyticsService;
+          const config = yield* ServerConfig.ServerConfig;
+          const fileSystem = yield* FileSystem.FileSystem;
+
+          assert.isFalse(yield* analytics.record("test.event", { index: 1 }));
+          assert.isFalse(yield* analytics.record("test.anonymous", {}, { anonymous: true }));
+          yield* analytics.recordOwners([{ source: "connect", ownerId: "a".repeat(64) }], "server");
+          yield* analytics.flush;
+          yield* TestClock.adjust("1 minute");
+
+          assert.isFalse(yield* fileSystem.exists(config.anonymousIdPath));
+        }).pipe(Effect.provide(context));
+
+        yield* Scope.close(scope, Exit.void);
+        assert.deepEqual(requests, []);
+      }),
   );
 
   it.effect("does not send batch requests to an HTTP server even with telemetry env vars set", () =>

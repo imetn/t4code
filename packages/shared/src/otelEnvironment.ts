@@ -82,7 +82,10 @@ export const resolveSignalEndpoint = (
   _otel: OtelEnvironment,
   _signal: SignalName,
   _t3: { readonly url: string | undefined; readonly export: SignalExport },
-  _fallback: { readonly bootstrapUrl: string | undefined; readonly settingsUrl: string | undefined },
+  _fallback: {
+    readonly bootstrapUrl: string | undefined;
+    readonly settingsUrl: string | undefined;
+  },
 ): SignalEndpoint | undefined => undefined;
 
 export const layerResourceAttributes = (attributes: Readonly<Record<string, string>>) =>

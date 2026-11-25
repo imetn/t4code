@@ -16934,8 +16934,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       yield* mapDispatchError(command)(
         startNextQueuedRun(command.threadId, {
           userStarted:
-            command.type !== "thread.runtime-mode.set" &&
-            command.type !== "thread.handoff.update",
+            command.type !== "thread.runtime-mode.set" && command.type !== "thread.handoff.update",
           ...(command.type === "queued-run.start" ? { queuedRunId: command.runId } : {}),
         }),
       );

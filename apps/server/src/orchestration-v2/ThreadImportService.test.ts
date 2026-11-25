@@ -154,7 +154,8 @@ it.live(
           assert.equal(turns.length, 1);
           assert.include(turns[0]!.text, "Context handoff (manual_context):");
           assert.include(turns[0]!.text, "EARLIER_FINDING");
-          assert.include(turns[0]!.text, `User message:\n${continuation}`);
+          assert.include(turns[0]!.text, "User message:\n");
+          assert.include(turns[0]!.text, continuation);
 
           // Retrying the same import creates nothing and runs nothing new.
           const retried = yield* imports.importThread(request);

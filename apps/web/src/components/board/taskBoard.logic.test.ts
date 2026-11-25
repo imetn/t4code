@@ -52,6 +52,7 @@ function makeThread(
     pinOrderKey: null,
     activeOrderKey: null,
     pullRequests: [],
+    handoff: null,
     deletedAt: null,
     source: {} as EnvironmentThreadShell["source"],
     ...rest,

@@ -60,7 +60,11 @@ export function resolveRelayClientTracingConfig(
     readonly tracesDataset: string;
     readonly tracesToken: string;
   },
-): { readonly tracesUrl: string; readonly tracesDataset: string; readonly tracesToken: string } | null {
+): {
+  readonly tracesUrl: string;
+  readonly tracesDataset: string;
+  readonly tracesToken: string;
+} | null {
   return null;
 }
 

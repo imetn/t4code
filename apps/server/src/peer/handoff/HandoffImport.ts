@@ -82,7 +82,11 @@ const make = Effect.gen(function* () {
       });
     }
     const prefix = (input.bundle.branch ?? "handoff").replace(/\//g, "-");
-    const worktreePath = path.join(parent, path.basename(input.repoRoot), `${prefix}-${input.handoffId}`);
+    const worktreePath = path.join(
+      parent,
+      path.basename(input.repoRoot),
+      `${prefix}-${input.handoffId}`,
+    );
     const applied = yield* git
       .apply({
         repoRoot: input.repoRoot,

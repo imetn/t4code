@@ -87,13 +87,7 @@ export interface ImportedWorkspace {
   readonly undo: Effect.Effect<void>;
 }
 
-/**
- * Creates a thread here seeded with a conversation from another environment,
- * for a thread moving here. The history is runless and marked as imported,
- * so the first run gets it as a text context handoff, whatever the provider.
- * Every id derives from the source thread and the handoff, so retrying an
- * import returns the thread the first one created.
- */
+/** Imports a thread conversation from another environment; ids derive from source+handoff for idempotent retries. */
 export class ThreadImportService extends Context.Service<
   ThreadImportService,
   {
@@ -128,102 +122,106 @@ const make = Effect.gen(function* () {
       return lock.withPermits(1)(effect);
     });
 
+  const encodeSourceKey = Schema.encodeEffect(
+    Schema.fromJsonString(Schema.Tuple([Schema.String, Schema.String, Schema.String])),
+  );
+
   /** The thread an import of `source` creates here, the same on every retry. */
   const importedThreadId = Effect.fn("ThreadImportService.importedThreadId")(function* (
     source: OrchestratorMcpThreadImportInput["source"],
   ) {
-    const hash = yield* Digest.sha256(
-      new TextEncoder().encode(
-        JSON.stringify([source.environmentId, source.threadId, source.handoffId]),
-      ),
-    ).pipe(Effect.provideService(Digest.Digest, digest));
+    const serialized = yield* encodeSourceKey([
+      source.environmentId,
+      source.threadId,
+      source.handoffId,
+    ]).pipe(Effect.orDie);
+    const hash = yield* digest.digest(Digest.sha256, new TextEncoder().encode(serialized));
     return ThreadId.make(`thread:import:${Hex.encode(hash).slice(0, 32)}`);
   });
 
-  const parseHistoryEvents = (
+  const parseHistoryEvents = Effect.fn("ThreadImportService.parseHistoryEvents")(function* (
     threadId: ThreadId,
     messages: OrchestratorMcpThreadImportInput["messages"],
-  ): Effect.Effect<ReadonlyArray<OrchestrationV2DomainEvent>, ThreadImportInvalidInputError> =>
-    Effect.gen(function* () {
-      const events: Array<OrchestrationV2DomainEvent> = [];
-      for (const [index, message] of messages.entries()) {
-        const parsed = DateTime.make(message.createdAt);
-        if (Option.isNone(parsed)) {
-          return yield* new ThreadImportInvalidInputError({
-            detail: `Message ${index} has an invalid createdAt timestamp.`,
-          });
-        }
-        const at = parsed.value;
-        const suffix = String(index).padStart(6, "0");
-        const messageId = MessageId.make(`${threadId}:${suffix}`);
-        const turnItemId = TurnItemId.make(`${IMPORT_EVENT_PREFIX}:turn-item:${threadId}:${suffix}`);
-        const common = {
-          id: turnItemId,
-          threadId,
-          runId: null,
-          nodeId: null,
-          providerThreadId: null,
-          providerTurnId: null,
-          nativeItemRef: null,
-          parentItemId: null,
-          // Imported items are numbered before any run here by the position store.
-          ordinal: index + 1,
-          status: "completed" as const,
-          title: null,
-          startedAt: at,
-          completedAt: at,
-          updatedAt: at,
-        };
-        events.push(
-          {
-            id: EventId.make(`${IMPORT_EVENT_PREFIX}:message:${threadId}:${suffix}`),
-            type: "message.updated",
-            threadId,
-            occurredAt: at,
-            payload: {
-              createdBy: message.role === "user" ? "user" : "agent",
-              creationSource: "server",
-              id: messageId,
-              threadId,
-              runId: null,
-              nodeId: null,
-              role: message.role,
-              text: message.text,
-              attachments: [],
-              streaming: false,
-              createdAt: at,
-              updatedAt: at,
-            },
-          },
-          {
-            id: EventId.make(`${IMPORT_EVENT_PREFIX}:turn-item:${threadId}:${suffix}`),
-            type: "turn-item.updated",
-            threadId,
-            occurredAt: at,
-            payload:
-              message.role === "user"
-                ? {
-                    ...common,
-                    createdBy: "user",
-                    creationSource: "server",
-                    type: "user_message",
-                    messageId,
-                    inputIntent: "turn_start",
-                    text: message.text,
-                    attachments: [],
-                  }
-                : {
-                    ...common,
-                    type: "assistant_message",
-                    messageId,
-                    text: message.text,
-                    streaming: false,
-                  },
-          },
-        );
+  ): Effect.fn.Return<ReadonlyArray<OrchestrationV2DomainEvent>, ThreadImportInvalidInputError> {
+    const events: Array<OrchestrationV2DomainEvent> = [];
+    for (const [index, message] of messages.entries()) {
+      const parsed = DateTime.make(message.createdAt);
+      if (Option.isNone(parsed)) {
+        return yield* new ThreadImportInvalidInputError({
+          detail: `Message ${index} has an invalid createdAt timestamp.`,
+        });
       }
-      return events;
-    });
+      const at = parsed.value;
+      const suffix = String(index).padStart(6, "0");
+      const messageId = MessageId.make(`${threadId}:${suffix}`);
+      const turnItemId = TurnItemId.make(`${IMPORT_EVENT_PREFIX}:turn-item:${threadId}:${suffix}`);
+      const common = {
+        id: turnItemId,
+        threadId,
+        runId: null,
+        nodeId: null,
+        providerThreadId: null,
+        providerTurnId: null,
+        nativeItemRef: null,
+        parentItemId: null,
+        // Imported items are numbered before any run here by the position store.
+        ordinal: index + 1,
+        status: "completed" as const,
+        title: null,
+        startedAt: at,
+        completedAt: at,
+        updatedAt: at,
+      };
+      events.push(
+        {
+          id: EventId.make(`${IMPORT_EVENT_PREFIX}:message:${threadId}:${suffix}`),
+          type: "message.updated",
+          threadId,
+          occurredAt: at,
+          payload: {
+            createdBy: message.role === "user" ? "user" : "agent",
+            creationSource: "server",
+            id: messageId,
+            threadId,
+            runId: null,
+            nodeId: null,
+            role: message.role,
+            text: message.text,
+            attachments: [],
+            streaming: false,
+            createdAt: at,
+            updatedAt: at,
+          },
+        },
+        {
+          id: EventId.make(`${IMPORT_EVENT_PREFIX}:turn-item:${threadId}:${suffix}`),
+          type: "turn-item.updated",
+          threadId,
+          occurredAt: at,
+          payload:
+            message.role === "user"
+              ? {
+                  ...common,
+                  createdBy: "user",
+                  creationSource: "server",
+                  type: "user_message",
+                  messageId,
+                  inputIntent: "turn_start",
+                  text: message.text,
+                  attachments: [],
+                }
+              : {
+                  ...common,
+                  type: "assistant_message",
+                  messageId,
+                  text: message.text,
+                  streaming: false,
+                },
+        },
+      );
+    }
+    return events;
+  });
 
   const continuationMessageId = (threadId: ThreadId) => MessageId.make(`${threadId}:continue`);
 
@@ -326,7 +324,9 @@ const make = Effect.gen(function* () {
           .pipe(Effect.orElseSucceed(() => null));
         if (existing !== null) {
           yield* verifyExistingMatch(existing, input);
-          const runId = yield* readContinuationRunId(threadId).pipe(Effect.orElseSucceed(() => null));
+          const runId = yield* readContinuationRunId(threadId).pipe(
+            Effect.orElseSucceed(() => null),
+          );
           return { threadId, projectId: input.projectId, created: false, runId };
         }
         const workspace = input.workspace === undefined ? undefined : yield* input.workspace;
@@ -377,24 +377,26 @@ const make = Effect.gen(function* () {
             .pipe(
               Effect.as(true),
               // A concurrent retry may have written the same events first.
-              Effect.catchCause((cause) =>
+              Effect.catch((writeError) =>
                 threads.getThreadShell(threadId).pipe(
                   Effect.orElseSucceed(() => null),
-                  Effect.flatMap((raced) =>
-                    raced === null
-                      ? Effect.failCause(cause)
-                      : (workspace?.undo ?? Effect.void).pipe(
-                          Effect.andThen(verifyExistingMatch(raced, input)),
-                          Effect.as(false),
-                        ),
+                  Effect.flatMap(
+                    (
+                      raced,
+                    ): Effect.Effect<
+                      boolean,
+                      | ThreadImportWriteError
+                      | ThreadImportProjectMismatchError
+                      | ThreadImportInvalidInputError
+                    > =>
+                      raced === null
+                        ? Effect.fail(new ThreadImportWriteError({ threadId, cause: writeError }))
+                        : (workspace?.undo ?? Effect.void).pipe(
+                            Effect.andThen(verifyExistingMatch(raced, input)),
+                            Effect.as(false),
+                          ),
                   ),
                 ),
-              ),
-              Effect.mapError((cause) =>
-                cause._tag === "ThreadImportProjectMismatchError" ||
-                cause._tag === "ThreadImportInvalidInputError"
-                  ? cause
-                  : new ThreadImportWriteError({ threadId, cause }),
               ),
             );
         }).pipe(Effect.tapError(() => workspace?.undo ?? Effect.void));

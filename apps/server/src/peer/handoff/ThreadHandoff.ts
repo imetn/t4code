@@ -44,13 +44,8 @@ const MAX_REMOTE_PROJECT_PAGES = 20;
 type HandoffState = OrchestrationV2ThreadHandoff["state"];
 
 /**
- * Moves a thread to a linked environment: its conversation, and its git work
- * (unpushed commits, uncommitted edits, new files). Exactly one copy stays
- * live: the thread here takes no new turns once it starts moving, and reads
- * only once it has moved. A failed move releases it with the reason.
- *
- * An agent can ask to move its own thread mid-turn; the move then waits for
- * that turn to end (`pending`), and a message to the thread before then cancels it.
+ * Moves a thread and its git work to a linked environment, keeping one live copy.
+ * Mid-turn agent requests wait in `pending` until the turn ends and cancel on new messages.
  */
 export class ThreadHandoff extends Context.Service<
   ThreadHandoff,
@@ -169,8 +164,7 @@ const make = Effect.gen(function* () {
     if (key === undefined) {
       return yield* new ThreadHandoffError({
         reason: "refused",
-        message:
-          "This thread's project has no repository to match there. Pick the project there.",
+        message: "This thread's project has no repository to match there. Pick the project there.",
       });
     }
     const allProjects: Array<Project> = [];
@@ -332,7 +326,7 @@ const make = Effect.gen(function* () {
           : yield* git.pack({ cwd, handoffId: handoff.handoffId, outDir: tempDir }).pipe(
               Effect.catchTags({
                 // A thread outside git moves with its conversation only.
-                HandoffNotARepositoryError: () => Effect.succeed(undefined),
+                HandoffNotARepositoryError: () => Effect.undefined,
               }),
               Effect.mapError(
                 (error) => new ThreadHandoffError({ reason: "refused", message: error.message }),
@@ -381,7 +375,7 @@ const make = Effect.gen(function* () {
         "failed",
         handoff.handoffId,
       ).pipe(Effect.ignore);
-      return yield* Effect.fail(result.failure);
+      return yield* result.failure;
     }
     const departed: OrchestrationV2ThreadHandoff = {
       state: "departed",
@@ -583,7 +577,9 @@ const make = Effect.gen(function* () {
         // queued after it: new instructions win. That is the user, or an agent
         // the user works through, such as an orchestrator.
         const askedAtParsed =
-          handoff.askedAt === undefined ? undefined : Option.getOrUndefined(DateTime.make(handoff.askedAt));
+          handoff.askedAt === undefined
+            ? undefined
+            : Option.getOrUndefined(DateTime.make(handoff.askedAt));
         const asked = askedAtParsed ?? records.runs.at(-1)?.requestedAt;
         const runTriggerMessageIds = new Set(records.runs.map((run) => run.userMessageId));
         const writtenSince =

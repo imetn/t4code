@@ -248,9 +248,7 @@ export const make = Effect.gen(function* () {
               ),
             )
           : Effect.void
-        ).pipe(
-          Effect.andThen(logTrayWarning("failed to configure the menu bar tray", { cause })),
-        ),
+        ).pipe(Effect.andThen(logTrayWarning("failed to configure the menu bar tray", { cause }))),
       ),
     );
   }).pipe(
@@ -358,7 +356,9 @@ export const make = Effect.gen(function* () {
       yield* configureMutex
         .withPermits(1)(keepRunningInTray ? applyCloseToTrayEnabled : applyCloseToTrayDisabled)
         .pipe(
-          Effect.catchCause((cause) => logTrayWarning("failed to update the system tray", { cause })),
+          Effect.catchCause((cause) =>
+            logTrayWarning("failed to update the system tray", { cause }),
+          ),
         );
     }),
     updateState: Effect.fn("desktop.tray.updateState")(function* (nextState) {

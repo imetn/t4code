@@ -330,7 +330,7 @@ describe("threadHandoffNotice", () => {
       }),
     ).toMatchObject({
       tone: "error",
-      title: "Could not continue on remote",
+      title: "Could not move to remote",
       detail: "Branch diverged.",
       blocksSend: false,
       canCancel: true,

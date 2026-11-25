@@ -334,43 +334,46 @@ describe("DesktopObservability", () => {
     );
   });
 
-  it.effect("never exports logs or traces externally even when settings configure OTLP URLs", () => {
-    const requests: Array<ExportedRequest> = [];
-    return Effect.gen(function* () {
-      const fileSystem = yield* FileSystem.FileSystem;
-      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
-        prefix: "t3-desktop-observability-test-",
-      });
-      const layerEnvironment = layerEnvironmentFor(baseDir, true, {
-        T3CODE_OTLP_TRACES_URL: "https://env.example.com/v1/traces",
-        T3CODE_OTLP_LOGS_URL: "https://env.example.com/v1/logs",
-      });
-      const tracePath = yield* Effect.gen(function* () {
-        const environment = yield* DesktopEnvironment.DesktopEnvironment;
-        return environment.path.join(environment.logDir, "desktop.trace.ndjson");
-      }).pipe(Effect.provide(layerEnvironment));
-      yield* writeObservabilitySettings(layerEnvironment, {
-        otlpTracesUrl: "https://settings.example.com/v1/traces",
-        otlpLogsUrl: "https://settings.example.com/v1/logs",
-      });
+  it.effect(
+    "never exports logs or traces externally even when settings configure OTLP URLs",
+    () => {
+      const requests: Array<ExportedRequest> = [];
+      return Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "t3-desktop-observability-test-",
+        });
+        const layerEnvironment = layerEnvironmentFor(baseDir, true, {
+          T3CODE_OTLP_TRACES_URL: "https://env.example.com/v1/traces",
+          T3CODE_OTLP_LOGS_URL: "https://env.example.com/v1/logs",
+        });
+        const tracePath = yield* Effect.gen(function* () {
+          const environment = yield* DesktopEnvironment.DesktopEnvironment;
+          return environment.path.join(environment.logDir, "desktop.trace.ndjson");
+        }).pipe(Effect.provide(layerEnvironment));
+        yield* writeObservabilitySettings(layerEnvironment, {
+          otlpTracesUrl: "https://settings.example.com/v1/traces",
+          otlpLogsUrl: "https://settings.example.com/v1/logs",
+        });
 
-      yield* Effect.scoped(
-        Effect.logInfo("desktop log stays local").pipe(
-          Effect.withSpan("desktop-local-only-test"),
-          Effect.provide(DesktopObservability.layer.pipe(Layer.provideMerge(layerEnvironment))),
-        ),
+        yield* Effect.scoped(
+          Effect.logInfo("desktop log stays local").pipe(
+            Effect.withSpan("desktop-local-only-test"),
+            Effect.provide(DesktopObservability.layer.pipe(Layer.provideMerge(layerEnvironment))),
+          ),
+        );
+
+        assert.lengthOf(requests, 0);
+        const traceRecords = (yield* fileSystem.readFileString(tracePath))
+          .trim()
+          .split("\n")
+          .filter((line) => line.length > 0)
+          .map((line) => decodeTraceRecordLine(line));
+        assert.isTrue(traceRecords.some((record) => record.name === "desktop-local-only-test"));
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(Layer.mergeAll(NodeServices.layer, layerCollector(requests), layerEmptyEnv)),
       );
-
-      assert.lengthOf(requests, 0);
-      const traceRecords = (yield* fileSystem.readFileString(tracePath))
-        .trim()
-        .split("\n")
-        .filter((line) => line.length > 0)
-        .map((line) => decodeTraceRecordLine(line));
-      assert.isTrue(traceRecords.some((record) => record.name === "desktop-local-only-test"));
-    }).pipe(
-      Effect.scoped,
-      Effect.provide(Layer.mergeAll(NodeServices.layer, layerCollector(requests), layerEmptyEnv)),
-    );
-  });
+    },
+  );
 });

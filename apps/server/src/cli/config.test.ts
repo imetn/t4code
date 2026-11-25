@@ -568,59 +568,61 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
     }),
   );
 
-  it.effect("ignores OTLP endpoints supplied by desktop bootstrap, settings.json, or env vars", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const baseDir = yield* fs.makeTempDirectoryScoped({
-        prefix: "t3-cli-config-otlp-disabled-",
-      });
-      const derivedPaths = yield* deriveExplicitServerPaths(baseDir, undefined);
-      yield* fs.makeDirectory(path.dirname(derivedPaths.settingsPath), { recursive: true });
-      yield* fs.writeFileString(
-        derivedPaths.settingsPath,
-        `${JSON.stringify({
-          observability: {
+  it.effect(
+    "ignores OTLP endpoints supplied by desktop bootstrap, settings.json, or env vars",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const baseDir = yield* fs.makeTempDirectoryScoped({
+          prefix: "t3-cli-config-otlp-disabled-",
+        });
+        const derivedPaths = yield* deriveExplicitServerPaths(baseDir, undefined);
+        yield* fs.makeDirectory(path.dirname(derivedPaths.settingsPath), { recursive: true });
+        yield* fs.writeFileString(
+          derivedPaths.settingsPath,
+          `${JSON.stringify({
+            observability: {
+              otlpTracesUrl: "http://localhost:4318/v1/traces",
+              otlpMetricsUrl: "http://localhost:4318/v1/metrics",
+              otlpLogsUrl: "http://localhost:4318/v1/logs",
+            },
+          })}\n`,
+        );
+        const fd = yield* openBootstrapFd(
+          makeDesktopBootstrap({
             otlpTracesUrl: "http://localhost:4318/v1/traces",
             otlpMetricsUrl: "http://localhost:4318/v1/metrics",
             otlpLogsUrl: "http://localhost:4318/v1/logs",
-          },
-        })}\n`,
-      );
-      const fd = yield* openBootstrapFd(
-        makeDesktopBootstrap({
-          otlpTracesUrl: "http://localhost:4318/v1/traces",
-          otlpMetricsUrl: "http://localhost:4318/v1/metrics",
-          otlpLogsUrl: "http://localhost:4318/v1/logs",
-        }),
-      );
+          }),
+        );
 
-      const resolved = yield* resolveServerConfig(
-        { ...minimalDesktopFlags(baseDir), bootstrapFd: Option.some(fd) },
-        Option.none(),
-      ).pipe(
-        Effect.provide(
-          Layer.mergeAll(
-            ConfigProvider.layer(
-              ConfigProvider.fromEnv({
-                env: {
-                  T3CODE_OTEL_SDK_DISABLED: "false",
-                  OTEL_SDK_DISABLED: "false",
-                  T3CODE_OTLP_TRACES_URL: "http://env.example.test/v1/traces",
-                  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel.example.test",
-                },
-              }),
+        const resolved = yield* resolveServerConfig(
+          { ...minimalDesktopFlags(baseDir), bootstrapFd: Option.some(fd) },
+          Option.none(),
+        ).pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              ConfigProvider.layer(
+                ConfigProvider.fromEnv({
+                  env: {
+                    T3CODE_OTEL_SDK_DISABLED: "false",
+                    OTEL_SDK_DISABLED: "false",
+                    T3CODE_OTLP_TRACES_URL: "http://env.example.test/v1/traces",
+                    OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel.example.test",
+                  },
+                }),
+              ),
+              NetService.layer,
             ),
-            NetService.layer,
           ),
-        ),
-      );
+        );
 
-      expect(resolved.otlpTracesUrl).toBeUndefined();
-      expect(resolved.otlpMetricsUrl).toBeUndefined();
-      expect(resolved.otlpLogsUrl).toBeUndefined();
-      expect(resolved.otelEnvironment.disabled).toBe(true);
-    }),
+        expect(resolved.otlpTracesUrl).toBeUndefined();
+        expect(resolved.otlpMetricsUrl).toBeUndefined();
+        expect(resolved.otlpLogsUrl).toBeUndefined();
+        expect(resolved.otelEnvironment.disabled).toBe(true);
+      }),
   );
 
   it.effect("forces noBrowser and disables auto-bootstrap for headless startup presentation", () =>

@@ -1,7 +1,4 @@
-import {
-  DesktopRelayProbeResultSchema,
-  type DesktopRelayProbeResult,
-} from "@t3tools/contracts";
+import { DesktopRelayProbeResultSchema, type DesktopRelayProbeResult } from "@t3tools/contracts";
 import { clerkFrontendApiHostnameFromPublishableKey } from "@t3tools/shared/relayAuth";
 import { normalizeSecureRelayUrl } from "@t3tools/shared/relayUrl";
 import * as Duration from "effect/Duration";
@@ -160,46 +157,39 @@ export const probeRelay = makeIpcMethod({
           });
         }
         return response.json.pipe(
-          Effect.map(
-            (payload): DesktopRelayProbeResult =>
-              isRelayHealthPayload(payload)
-                ? { ok: true, latencyMs, status: response.status }
-                : {
-                    ok: false,
-                    latencyMs,
-                    status: response.status,
-                    reason: "invalid-response",
-                  },
+          Effect.map((payload): DesktopRelayProbeResult =>
+            isRelayHealthPayload(payload)
+              ? { ok: true, latencyMs, status: response.status }
+              : {
+                  ok: false,
+                  latencyMs,
+                  status: response.status,
+                  reason: "invalid-response",
+                },
           ),
-          Effect.orElseSucceed(
-            (): DesktopRelayProbeResult => ({
-              ok: false,
-              latencyMs,
-              status: response.status,
-              reason: "invalid-response",
-            }),
-          ),
+          Effect.orElseSucceed((): DesktopRelayProbeResult => ({
+            ok: false,
+            latencyMs,
+            status: response.status,
+            reason: "invalid-response",
+          })),
         );
       }),
       Effect.timeoutOption(Duration.millis(RELAY_PROBE_TIMEOUT_MS)),
       Effect.map(
-        Option.getOrElse(
-          (): DesktopRelayProbeResult => ({
-            ok: false,
-            latencyMs: null,
-            status: null,
-            reason: "timeout",
-          }),
-        ),
-      ),
-      Effect.orElseSucceed(
-        (): DesktopRelayProbeResult => ({
+        Option.getOrElse((): DesktopRelayProbeResult => ({
           ok: false,
           latencyMs: null,
           status: null,
-          reason: "unreachable",
-        }),
+          reason: "timeout",
+        })),
       ),
+      Effect.orElseSucceed((): DesktopRelayProbeResult => ({
+        ok: false,
+        latencyMs: null,
+        status: null,
+        reason: "unreachable",
+      })),
     );
     return result;
   }),

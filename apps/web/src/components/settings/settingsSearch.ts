@@ -1430,7 +1430,9 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: msg("Self-hosted relay"),
     to: "/settings/connections",
     searchTerms: [
-      msg("custom relay url clerk oauth latency ping self hosted server t3 connect tunnel origin https"),
+      msg(
+        "custom relay url clerk oauth latency ping self hosted server t3 connect tunnel origin https",
+      ),
     ],
   },
   {

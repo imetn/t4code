@@ -24,6 +24,8 @@ import {
   setLocalEnvironmentEnabled,
 } from "./localEnvironment.ts";
 
+const decodeProbeResult = Schema.decodeUnknownEffect(DesktopRelayProbeResultSchema);
+
 const layerUnusedLifecycleRuntime = Layer.mergeAll(
   DesktopShutdown.layer,
   DesktopState.layer,
@@ -116,7 +118,7 @@ describe("local environment IPC", () => {
   it.effect("probes a healthy relay and returns latencyMs", () =>
     Effect.gen(function* () {
       const rawResult = yield* probeRelay.handler("https://relay.example.com");
-      const result = yield* Schema.decodeUnknownEffect(DesktopRelayProbeResultSchema)(rawResult);
+      const result = yield* decodeProbeResult(rawResult);
       assert.strictEqual(result.ok, true);
       if (result.ok) {
         assert.strictEqual(result.status, 200);

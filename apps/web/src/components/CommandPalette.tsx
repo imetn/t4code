@@ -1584,7 +1584,8 @@ function OpenCommandPaletteDialog(props: {
                 ...(target.reason === null ? {} : { description: target.reason }),
                 disabled: target.reason !== null,
                 icon: <MonitorIcon className={ITEM_ICON_CLASS} />,
-                run: () => startThreadHandoff(thread.environmentId, thread.id, target.environmentId),
+                run: () =>
+                  startThreadHandoff(thread.environmentId, thread.id, target.environmentId),
               })),
             },
           ],

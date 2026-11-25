@@ -39,10 +39,7 @@ import * as Orchestrator from "../Orchestrator.ts";
 import * as ProjectionReplay from "../testkit/ProjectionReplay.ts";
 import * as ProjectionStore from "../ProjectionStore.ts";
 import * as ProviderAdapterRegistry from "../ProviderAdapterRegistry.ts";
-import {
-  type CapturedTurn,
-  makeCapturingCodexAdapter,
-} from "../testkit/CapturingCodexAdapter.ts";
+import { type CapturedTurn, makeCapturingCodexAdapter } from "../testkit/CapturingCodexAdapter.ts";
 import * as ProviderReplayHarness from "../testkit/ProviderReplayHarness.ts";
 import { checkpointWorkspace } from "@t3tools/provider-testing/replayWorkspace";
 

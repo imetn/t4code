@@ -1,17 +1,17 @@
 import { threadHandoffNotice } from "@t3tools/client-runtime/state/peerLinks";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import { useNavigation } from "@react-navigation/native";
+import { StackActions, useNavigation } from "@react-navigation/native";
 import { useGT, useMessages } from "gt-react-native";
 import { useState } from "react";
 import { View } from "react-native";
 
 import { AppText as Text } from "../../components/ui/AppText";
+import { Button } from "../../components/ui/Button";
 import { cn } from "../../lib/cn";
 import { useEnvironments } from "../../state/environments";
 import { threadHandoffEnvironment } from "../../state/threadHandoff";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { RequestActionButton } from "./RequestActionButton";
 
 /** Whether the composer is closed because the thread is moving or has moved away. */
 export function threadHandoffClosesComposer(
@@ -78,18 +78,20 @@ export function ThreadHandoffCard({ thread }: { thread: EnvironmentThreadShell }
       ) : null}
       {handoff.state === "pending" ? (
         <View className="flex-row">
-          <RequestActionButton
+          <Button
             label={cancelling ? gt("Cancelling…") : gt("Keep it here")}
             tone="secondary"
+            size="compact"
             disabled={cancelling}
             onPress={() => void requestCancel()}
           />
         </View>
       ) : handoff.state === "failed" ? (
         <View className="flex-row">
-          <RequestActionButton
+          <Button
             label={cancelling ? gt("Dismissing…") : gt("Dismiss")}
             tone="secondary"
+            size="compact"
             disabled={cancelling}
             onPress={() => void requestCancel()}
           />
@@ -97,14 +99,17 @@ export function ThreadHandoffCard({ thread }: { thread: EnvironmentThreadShell }
       ) : handoff.state === "departed" &&
         presentationById.get(handoff.environmentId)?.connection.phase === "connected" ? (
         <View className="flex-row">
-          <RequestActionButton
+          <Button
             label={gt("Open on {label}", { label: handoff.label })}
             tone="secondary"
+            size="compact"
             onPress={() =>
-              navigation.navigate("Thread", {
-                environmentId: handoff.environmentId,
-                threadId: handoff.threadId,
-              })
+              navigation.dispatch(
+                StackActions.push("Thread", {
+                  environmentId: handoff.environmentId,
+                  threadId: handoff.threadId,
+                }),
+              )
             }
           />
         </View>

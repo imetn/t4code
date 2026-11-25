@@ -260,7 +260,9 @@ describe("searchSettings", () => {
 
 describe("settings search targets", () => {
   it("omits telemetry export from settings search and enforces environment scope on environment targets", () => {
-    expect(searchSettings("OpenTelemetry export").find((item) => item.id === "telemetry-export")).toBeUndefined();
+    expect(
+      searchSettings("OpenTelemetry export").find((item) => item.id === "telemetry-export"),
+    ).toBeUndefined();
     const target = getSettingsSearchTargetScope("workflows-beta")!;
     expect(isSettingsSearchScopeAvailable(target.scope, "all")).toBe(false);
     expect(isSettingsSearchScopeAvailable(target.scope, "project")).toBe(false);

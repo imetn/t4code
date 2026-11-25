@@ -1,6 +1,6 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { assert, it } from "@effect/vitest";
+import { assert, it, vi } from "@effect/vitest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -288,14 +288,11 @@ it.layer(layer)("handing a thread's git work to another checkout", (it) => {
         // As when the server is started from a git hook in the box's clone.
         yield* Effect.acquireRelease(
           Effect.sync(() => {
-            const before = process.env.GIT_DIR;
-            process.env.GIT_DIR = boxGitDir;
-            return before;
+            vi.stubEnv("GIT_DIR", boxGitDir);
           }),
-          (before) =>
+          () =>
             Effect.sync(() => {
-              if (before === undefined) delete process.env.GIT_DIR;
-              else process.env.GIT_DIR = before;
+              vi.unstubAllEnvs();
             }),
         );
         const packed = yield* handoff.pack({ cwd: laptop, handoffId: "h8", outDir });
@@ -312,15 +309,12 @@ it.layer(layer)("handing a thread's git work to another checkout", (it) => {
         yield* workOnLaptop(laptop);
         const packed = yield* handoff.pack({ cwd: laptop, handoffId: "h7", outDir });
         // A hook that fires when the worktree is checked out moves the branch
-        // the apply just created, then fails the checkout.
-        const hooks = yield* sh(box, [
-          "rev-parse",
-          "--path-format=absolute",
-          "--git-path",
-          "hooks",
-        ]);
+        // the apply just created, then fails the checkout. Keep the hook local
+        // to the test repo so a user's global core.hooksPath is never touched.
         const fileSystem = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
+        const hooks = path.join(box, ".git", "local-test-hooks");
+        yield* sh(box, ["config", "core.hooksPath", hooks]);
         const moved = yield* sh(box, ["rev-parse", "main"]);
         const hook = path.join(hooks, "post-checkout");
         yield* fileSystem.makeDirectory(hooks, { recursive: true });
@@ -365,11 +359,9 @@ it.layer(layer)("handing a thread's git work to another checkout", (it) => {
         yield* workOnLaptop(laptop);
         const packed = yield* handoff.pack({ cwd: laptop, handoffId: "h4", outDir });
         assert.isFalse(
-          (yield* sh(packed.bundlePath.replace(/\/[^/]+$/, ""), [
-            "bundle",
-            "list-heads",
-            packed.bundlePath,
-          ])).includes(yield* sh(laptop, ["rev-parse", "main"])),
+          (yield* sh(laptop, ["bundle", "list-heads", packed.bundlePath])).includes(
+            yield* sh(laptop, ["rev-parse", "main"]),
+          ),
         );
         const applied = yield* handoff.apply({
           repoRoot: box,
@@ -387,7 +379,7 @@ it.layer(layer)("handing a thread's git work to another checkout", (it) => {
         const secureRandom = yield* SecureRandom.SecureRandom;
         yield* fileSystem.writeFile(
           path.join(laptop, "big.bin"),
-          yield* secureRandom.nextBytes(HandoffGit.MAX_HANDOFF_BUNDLE_BYTES + 1024),
+          yield* secureRandom.randomBytes(HandoffGit.MAX_HANDOFF_BUNDLE_BYTES + 1024),
         );
         const tooLarge = yield* handoff
           .pack({ cwd: laptop, handoffId: "h5", outDir })
