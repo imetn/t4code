@@ -9019,7 +9019,7 @@
   "f172d7e5deb24f75": "Redefinir execuções ignoradas mantidas para o padrão",
   "ba94015389f327bc": "Execuções ignoradas mantidas",
   "d52b3d6bf9f2a013": "Misto",
-  "13e86eb5d8287a71": "Mostra uma próxima mensagem prevista no editor vazio após um turno do Claude ou do Codex. Tab a usa. Cada uma é uma requisição extra em cache no seu plano. Requer Codex 0.165+. As threads do Claude são atualizadas ao reiniciar.",
+  "3d68642693e8f949": "Mostra uma próxima mensagem prevista no editor vazio após um turno do Claude, Codex ou Antigravity. Tab a usa. Cada uma é uma requisição extra no seu plano. Requer Codex 0.165+. As threads do Claude são atualizadas ao reiniciar.",
   "d4b2a2ec812aafb0": "Sugerir próximo prompt",
   "298c7150a7621c80": "Hosts de dispositivos Simlock",
   "67937aa49179285e": "No Mac, clona novos worktrees a partir de um checkout em cache na pasta T3 home em vez de gravar cada arquivo. Usa o checkout normal do Git quando não consegue. Desativar exclui o cache.",

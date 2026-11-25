@@ -29,8 +29,10 @@ import {
   type ProviderUserInputAnswers,
   type RuntimeMode,
   type RuntimeRequestId,
+  type TextGenerationError,
   type ThreadTokenUsageSnapshot,
   type ThreadId,
+  isDelegatedAppThread,
   isRuntimeModeAbove,
   type TurnTokenUsage,
 } from "@t3tools/contracts";
@@ -40,6 +42,7 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import { HTML_RENDER_TOOL_NAME } from "@t3tools/shared/htmlRender";
 import { modelSelectionsEqual } from "@t3tools/shared/model";
 import { type SelfInvocation, selfInvocationArgs } from "@t3tools/shared/nodeRuntime";
+import { causeErrorTag } from "@t3tools/shared/observability";
 import { resolveT3McpToolId } from "@t3tools/shared/t3McpToolPresentation";
 import {
   compactDynamicToolOutput,
@@ -59,6 +62,7 @@ import * as Equal from "effect/Equal";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Fiber from "effect/Fiber";
+import * as FiberHandle from "effect/FiberHandle";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
@@ -745,6 +749,12 @@ export interface AcpAdapterV2Flavor {
   readonly restartRuntimeAfterInterrupt?: boolean;
   /** Prompt failures after which the agent process keeps failing until replaced. */
   readonly restartRuntimeAfterPromptError?: (error: unknown) => boolean;
+  /**
+   * A prompt the agent refused because an earlier prompt it still runs waits on an answer.
+   * The agent refuses every prompt until that one ends, and T3 no longer tracks it, so the
+   * thread shows it as background work and Stop sends session/cancel to end it.
+   */
+  readonly promptRefusedWhileAgentWaits?: (error: unknown) => boolean;
   readonly restartRuntimeOnEveryInterrupt?: boolean;
   readonly terminateRuntimeProcessGroupOnInterrupt?: boolean;
   readonly preserveRuntimeOnSettledInterrupt?: boolean;
@@ -766,6 +776,16 @@ export interface AcpAdapterV2Flavor {
   readonly sessionCarriesPullRequestLinking?: (
     initializeResult: EffectAcpSchema.InitializeResponse,
   ) => boolean;
+  /** Labs flag, read live: predict the next user message after a completed root turn. */
+  readonly samplePromptSuggestion?: (input: {
+    readonly modelSelection: ModelSelection;
+    readonly messages: ReadonlyArray<AcpPromptSuggestionMessage>;
+  }) => Effect.Effect<string | null, EffectAcpErrors.AcpError | TextGenerationError>;
+}
+
+export interface AcpPromptSuggestionMessage {
+  readonly role: "user" | "assistant";
+  readonly text: string;
 }
 
 /**
@@ -2070,6 +2090,8 @@ const emptySnapshotState = (): SnapshotMessageState => ({
 
 /** How long a Stop waits for the agent to confirm before the user is offered Force stop. */
 const ACP_STOP_CONFIRM_TIMEOUT_MS = 10_000;
+
+const acpHeldPromptTaskId = (nativeSessionId: string) => `acp-held-prompt:${nativeSessionId}`;
 const TOOL_UPDATE_PERSIST_EVERY = 10;
 
 // Agents can resend whole calls while streaming arguments.
@@ -2325,6 +2347,8 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           return created;
         };
         let pendingStopCloseTurn: ActiveAcpTurn | null = null;
+        // Native session whose agent refused a prompt while it still runs an untracked one.
+        let heldPromptSessionId: string | null = null;
         let followsAgentWorkState = false;
         let postSettleContinuationEnabled = false;
         let defersFinalizeForBackgroundWork = false;
@@ -2746,6 +2770,90 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
         const continuationGeneration = yield* Ref.make(0);
         const continuationPermit = yield* Semaphore.make(1);
         const continuationClosed = yield* Ref.make(false);
+        const promptSuggestionsEnabled = input.promptSuggestions ?? Effect.succeed(false);
+        const promptSuggestionHandle = yield* FiberHandle.make();
+        let promptSuggestionGeneration = 0;
+        const cancelPromptSuggestion = Effect.fnUntraced(function* () {
+          promptSuggestionGeneration += 1;
+          yield* FiberHandle.clear(promptSuggestionHandle);
+        });
+        const samplePromptSuggestion = Effect.fn("AcpAdapterV2.samplePromptSuggestion")(function* (
+          context: ActiveAcpTurn,
+        ) {
+          const sampler = flavor.samplePromptSuggestion;
+          if (
+            sampler === undefined ||
+            isDelegatedAppThread(context.input.appThread) ||
+            acpIsProviderContinuationMessage(context.input.message) ||
+            isCompactCommand(context.input.message) ||
+            (yield* Ref.get(continuationRequested)) ||
+            !(yield* promptSuggestionsEnabled)
+          ) {
+            return;
+          }
+          const state = yield* Ref.get(snapshot);
+          const messages: Array<AcpPromptSuggestionMessage> = [];
+          for (const key of state.order) {
+            const message = state.messages.get(key);
+            if (
+              message === undefined ||
+              state.reasoningIds.has(message.id) ||
+              (message.role !== "user" && message.role !== "assistant") ||
+              (message.role === "user" && acpIsProviderContinuationMessage(message))
+            ) {
+              continue;
+            }
+            const rawText =
+              message.id === context.input.message.messageId &&
+              context.input.inlineContextLength !== undefined
+                ? message.text.slice(context.input.inlineContextLength)
+                : message.text;
+            const text = rawText.trim();
+            if (text.length === 0) continue;
+            messages.push({ role: message.role, text });
+          }
+          if (!messages.some((message) => message.role === "assistant")) {
+            return;
+          }
+          const generation = ++promptSuggestionGeneration;
+          yield* FiberHandle.run(
+            promptSuggestionHandle,
+            sampler({
+              modelSelection: context.input.modelSelection,
+              messages,
+            }).pipe(
+              Effect.flatMap((raw) => {
+                const suggestion = raw?.trim() ?? "";
+                // Delegated completion wakes arrive as user input, so samples can imitate one.
+                if (suggestion.length === 0 || suggestion.startsWith("Delegated task")) {
+                  return Effect.void;
+                }
+                return Effect.gen(function* () {
+                  if (
+                    (yield* Ref.get(activeTurn)) !== null ||
+                    (yield* Ref.get(continuationRequested)) ||
+                    promptSuggestionGeneration !== generation
+                  ) {
+                    return;
+                  }
+                  yield* emitProviderEvent({
+                    type: "prompt_suggestion.updated",
+                    driver,
+                    threadId: context.input.threadId,
+                    runId: context.input.runId,
+                    text: suggestion,
+                  });
+                });
+              }),
+              Effect.catchCause((cause) =>
+                Effect.logDebug("orchestration-v2.acp-prompt-suggestion-failed", {
+                  driver,
+                  errorTag: causeErrorTag(cause),
+                }),
+              ),
+            ),
+          );
+        });
         // Quarantine stopped-run events so they cannot wake or attach to later runs.
         const stoppedRunQuarantine = yield* Ref.make(false);
         // Native subagents can outlive interrupts; carry lineage forward to finish their original turn items.
@@ -5538,6 +5646,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             }),
           );
           if (Option.isNone(pending)) return false;
+          yield* cancelPromptSuggestion();
           const { route, generation, reports } = pending.value;
           const notification = backgroundWorkNotification([...reports.values()]);
           yield* Effect.logInfo("orchestration-v2.acp-wake-turn-detected", {
@@ -8979,8 +9088,31 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             threadId: context.input.threadId,
             providerTurn: turn,
           });
+          if (settledStatus !== "failed" && heldPromptSessionId === context.nativeThreadId) {
+            heldPromptSessionId = null;
+          }
+          const heldPromptTaskId = acpHeldPromptTaskId(context.nativeThreadId);
+          const priorTasks = context.input.providerThread.pendingBackgroundTasks;
+          const heldPrompt =
+            settledStatus === "failed" && heldPromptSessionId === context.nativeThreadId;
           const updatedProviderThread: OrchestrationV2ProviderThread = {
             ...context.input.providerThread,
+            ...(heldPrompt || priorTasks?.some((task) => task.taskId === heldPromptTaskId)
+              ? {
+                  pendingBackgroundTasks: [
+                    ...(priorTasks ?? []).filter((task) => task.taskId !== heldPromptTaskId),
+                    ...(heldPrompt
+                      ? [
+                          {
+                            taskId: heldPromptTaskId,
+                            kind: "background_task" as const,
+                            description: "Earlier prompt still waiting on an answer",
+                          },
+                        ]
+                      : []),
+                  ],
+                }
+              : {}),
             providerSessionId: input.providerSessionId,
             status: threadDisposition === "broken" ? "error" : "active",
             lastRunOrdinal: context.input.runOrdinal,
@@ -9057,6 +9189,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             yield* detachBackgroundCommands(context);
           }
           steerInjections.clear();
+          let offeredContinuation = false;
           if (
             postSettleContinuationEnabled &&
             settledStatus === "completed" &&
@@ -9068,11 +9201,15 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           ) {
             const sessionId = yield* Ref.get(activeSessionId);
             if (sessionId !== null) {
+              offeredContinuation = true;
               yield* offerContinuationRun(sessionId);
             }
           }
           if (settledStatus !== "completed") {
             yield* Ref.set(midTurnUnreportedCompletedTaskIds, new Set());
+          }
+          if (settledStatus === "completed" && !directStopQuarantine && !offeredContinuation) {
+            yield* samplePromptSuggestion(context);
           }
           yield* Deferred.succeed(context.completed, undefined).pipe(Effect.ignore);
         });
@@ -9704,6 +9841,12 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                       error.success._tag === "AcpRequestError" &&
                       error.success.code === -32800);
                   const failure = Cause.squash(cause);
+                  if (!interrupted) {
+                    heldPromptSessionId =
+                      flavor.promptRefusedWhileAgentWaits?.(failure) === true
+                        ? context.nativeThreadId
+                        : null;
+                  }
                   // A resumed prompt stands in for an outcome failure, which always restarts.
                   if (
                     !interrupted &&
@@ -9825,6 +9968,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               });
             }
             yield* validateModelSelection(turnInput.modelSelection);
+            yield* cancelPromptSuggestion();
             yield* Ref.set(lastTurnRoute, {
               threadId: turnInput.threadId,
               providerThreadId: turnInput.providerThread.id,
@@ -10211,6 +10355,16 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                 generation,
                 Effect.gen(function* () {
                   if (context.finalized || context.interrupted) return false;
+                  // `agy acp` rejects a prompt while the running one waits on a question or
+                  // approval, so the message waits as a follow-up until the user answers. Checked
+                  // under the callback permit, which also guards registering those requests.
+                  if ((yield* Ref.get(pendingRuntimeRequests)).size > 0) {
+                    return yield* new ProviderAdapter.ProviderAdapterSteerDeclinedError({
+                      driver,
+                      providerThreadId: turnInput.providerThread.id,
+                      providerTurnId: turnInput.providerTurnId,
+                    });
+                  }
                   const compactionMarker = (yield* Ref.get(compactionMarkers)).get(
                     context.nativeThreadId,
                   );
@@ -10313,6 +10467,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
 
         yield* Effect.addFinalizer(() =>
           Effect.gen(function* () {
+            yield* cancelPromptSuggestion();
             yield* continuationPermit.withPermit(
               Effect.gen(function* () {
                 yield* Ref.set(continuationClosed, true);
@@ -10402,6 +10557,8 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                 hasPendingBackgroundWork: Effect.gen(function* () {
                   if (!postSettleContinuationEnabled && !followsAgentWorkState) return false;
                   const rootSessionId = yield* Ref.get(activeSessionId);
+                  if (heldPromptSessionId !== null && heldPromptSessionId === rootSessionId)
+                    return true;
                   if (
                     followsAgentWorkState &&
                     rootSessionId !== null &&
@@ -10453,6 +10610,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                           "Cannot replace ACP session while a turn or background work is active",
                       });
                     yield* awaitRuntimeTeardown();
+                    yield* cancelPromptSuggestion();
                     const previousItemIdentityVersion = itemIdentityVersion;
                     itemIdentityVersion = 2;
                     prepareTerminalEnvironment(yield* readMcpContext(threadInput.threadId));
@@ -10701,7 +10859,8 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             (effect, turnInput) =>
               effect.pipe(
                 Effect.mapError((cause) =>
-                  cause._tag === "ProviderAdapterSteerRunUnsupportedError"
+                  cause._tag === "ProviderAdapterSteerRunUnsupportedError" ||
+                  cause._tag === "ProviderAdapterSteerDeclinedError"
                     ? cause
                     : new ProviderAdapter.ProviderAdapterSteerRunError({
                         driver,
@@ -10744,6 +10903,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                   // a stalled hard teardown keeps its state and permit without holding the caller.
                   const transitionFiber = yield* Effect.gen(function* () {
                     const transition = yield* Effect.gen(function* () {
+                      yield* cancelPromptSuggestion();
                       const interruptContext = yield* Ref.get(activeTurn);
                       if (
                         followsAgentWorkState &&
@@ -10841,6 +11001,65 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                         }
                       }
                       const context = interruptContext;
+                      if (
+                        context === null &&
+                        turnInput.requestRuntimeRestart === true &&
+                        heldPromptSessionId !== null &&
+                        heldPromptSessionId === (yield* Ref.get(activeSessionId))
+                      ) {
+                        const heldSessionId = heldPromptSessionId;
+                        yield* cancelPendingRuntimeRequests();
+                        // The agent ends a prompt it holds only on session/cancel.
+                        const cancelled = yield* restore(
+                          runtime.cancel.pipe(
+                            Effect.timeoutOption(ACP_STOP_CONFIRM_TIMEOUT_MS),
+                            Effect.exit,
+                          ),
+                        );
+                        // Keep the marker and its Stop for a retry; the next prompt restarts the agent.
+                        if (!Exit.isSuccess(cancelled) || Option.isNone(cancelled.value)) {
+                          yield* Ref.set(runtimeRestartRequired, true);
+                          return yield* Exit.isSuccess(cancelled)
+                            ? new ProviderAdapter.ProviderAdapterInterruptTimeoutError({
+                                driver,
+                                providerThreadId: turnInput.providerThread.id,
+                                providerTurnId: turnInput.providerTurnId,
+                                timeoutMs: ACP_STOP_CONFIRM_TIMEOUT_MS,
+                              })
+                            : new ProviderAdapter.ProviderAdapterProtocolError({
+                                driver,
+                                detail: "The agent refused to cancel the prompt it still holds",
+                                cause: Cause.squash(cancelled.cause),
+                              });
+                        }
+                        heldPromptSessionId = null;
+                        const heldThread =
+                          (yield* Ref.get(providerThreadByNativeSessionId)).get(heldSessionId) ??
+                          turnInput.providerThread;
+                        const heldTaskId = acpHeldPromptTaskId(heldSessionId);
+                        if (
+                          heldThread.pendingBackgroundTasks?.some(
+                            (task) => task.taskId === heldTaskId,
+                          ) === true
+                        ) {
+                          const releasedThread: OrchestrationV2ProviderThread = {
+                            ...heldThread,
+                            pendingBackgroundTasks: heldThread.pendingBackgroundTasks.filter(
+                              (task) => task.taskId !== heldTaskId,
+                            ),
+                            updatedAt: yield* DateTime.now,
+                          };
+                          yield* Ref.update(providerThreadByNativeSessionId, (current) =>
+                            new Map(current).set(heldSessionId, releasedThread),
+                          );
+                          yield* emitProviderEvent({
+                            type: "provider_thread.updated",
+                            driver,
+                            providerThread: releasedThread,
+                          });
+                        }
+                        return undefined;
+                      }
                       if (context?.providerTurnId !== turnInput.providerTurnId) {
                         // Contain orphan runtimes on Stop; session-wide teardown must not touch another active turn.
                         const containOrphanRuntime =
@@ -11192,6 +11411,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                       detail: `Cannot roll back ACP provider thread ${rollbackInput.providerThread.id} while turn ${currentTurn.providerTurnId} is active`,
                     });
                   }
+                  yield* cancelPromptSuggestion();
                   yield* awaitRuntimeTeardown();
                   itemIdentityVersion = 2;
                   prepareTerminalEnvironment(

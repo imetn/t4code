@@ -9027,7 +9027,7 @@
   "f172d7e5deb24f75": "Återställ antal sparade överhoppade körningar till standard",
   "ba94015389f327bc": "Sparade överhoppade körningar",
   "d52b3d6bf9f2a013": "Blandat",
-  "13e86eb5d8287a71": "Visa ett förutsagt nästa meddelande i det tomma inmatningsfältet efter en omgång med Claude eller Codex. Tab använder det. Varje förslag är en extra cachad begäran i ditt abonnemang. Kräver Codex 0.165+. Claude-trådar uppdateras vid omstart.",
+  "3d68642693e8f949": "Visa ett förutsagt nästa meddelande i det tomma inmatningsfältet efter en omgång med Claude, Codex eller Antigravity. Tab använder det. Varje förslag är en extra begäran i ditt abonnemang. Kräver Codex 0.165+. Claude-trådar uppdateras vid omstart.",
   "d4b2a2ec812aafb0": "Föreslå nästa prompt",
   "298c7150a7621c80": "Simlock-enhetsvärdar",
   "67937aa49179285e": "På en Mac klonas nya worktrees från en utcheckning som cachas i T3-hemmappen i stället för att varje fil skrivs. Använder Gits vanliga utcheckning när det inte går. Om du stänger av det tas cachen bort.",
