@@ -24,9 +24,11 @@ export class AnalyticsService extends Context.Service<
 >()("t3/telemetry/AnalyticsService") {}
 
 const noopService = AnalyticsService.of({
-  record: () => Effect.succeed(false),
+  record: Effect.fn("AnalyticsService.record")(function* () {
+    return false;
+  }),
   flush: Effect.void,
-  recordOwners: () => Effect.void,
+  recordOwners: Effect.fn("AnalyticsService.recordOwners")(function* () {}),
 });
 
 /** @public */
