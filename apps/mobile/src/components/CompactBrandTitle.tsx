@@ -34,7 +34,8 @@ export function CompactBrandTitle(
   // Measured only while the badge shows, so hiding it does not make it look like it fits.
   const [fullWidth, setFullWidth] = useState<number | null>(null);
   const showStage =
-    !props.fit || availableWidth === null || fullWidth === null || fullWidth <= availableWidth;
+    stageLabel !== "Beta" &&
+    (!props.fit || availableWidth === null || fullWidth === null || fullWidth <= availableWidth);
 
   const title = (
     <View
@@ -42,7 +43,7 @@ export function CompactBrandTitle(
         props.fit && showStage ? (event) => setFullWidth(event.nativeEvent.layout.width) : undefined
       }
       aria-level={1}
-      accessibilityLabel={props.accessibilityLabel ?? gt("T3 Code, Threads")}
+      accessibilityLabel={props.accessibilityLabel ?? gt("T4 Code, Threads")}
       accessible
       role="heading"
       className="flex-row items-center gap-1.5"
