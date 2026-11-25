@@ -1535,7 +1535,7 @@ export const ServerSettings = Schema.Struct({
   workflowSkippedRunsKept: WorkflowSkippedRunsKept.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_WORKFLOW_SKIPPED_RUNS_KEPT)),
   ),
-  /** Beta: Claude and Codex predict the next prompt after completed turns. Codex follows a change at once; open Claude threads after they restart. */
+  /** Beta: Claude, Codex, and Antigravity predict the next prompt after completed turns. Codex and Antigravity follow a change at once; open Claude threads after they restart. */
   promptSuggestionsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   sidebarAutoSettleKeepPullRequests: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
