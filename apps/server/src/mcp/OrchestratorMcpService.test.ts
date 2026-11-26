@@ -2165,11 +2165,17 @@ describe("OrchestratorMcpService provider resolution", () => {
           checkedAt: "2026-09-13T00:00:00.000Z",
         });
         let providers: ReadonlyArray<ServerProvider> = [
-          providerSnapshot({
-            instanceId: codexInstanceId,
-            driver: ProviderDriverKind.make("codex"),
-            model: "gpt-5.4",
-          }),
+          {
+            ...providerSnapshot({
+              instanceId: codexInstanceId,
+              driver: ProviderDriverKind.make("codex"),
+              model: "gpt-5.4",
+            }),
+            usageLimits: {
+              checkedAt: "2026-09-13T00:00:00.000Z",
+              windows: [{ id: "primary", kind: "weekly", label: "Weekly", usedPercent: 100 }],
+            },
+          },
           providerSnapshot({
             instanceId: ProviderInstanceId.make("claudeAgent"),
             driver: ProviderDriverKind.make("claudeAgent"),
@@ -2216,6 +2222,7 @@ describe("OrchestratorMcpService provider resolution", () => {
             getThreadRecords: () => Effect.succeed(parentProjection([])),
           }),
           ServerSettings.layerTest({
+            agentUsageLimitsVisible: true,
             providerInstances: {
               [ProviderInstanceId.make("pi")]: {
                 driver: ProviderDriverKind.make("pi"),
@@ -2306,6 +2313,12 @@ describe("OrchestratorMcpService provider resolution", () => {
             assert.isTrue(entry!.canRunCrossProviderChildTask);
             assert.deepEqual(entry!.constraints, []);
           }
+
+          // A used-up limit is reported but still lets the provider run child tasks.
+          assert.deepEqual(byId.get(codexInstanceId)?.usage, {
+            checkedAt: "2026-09-13T00:00:00.000Z",
+            windows: [{ label: "Weekly", leftPercent: 0 }],
+          });
 
           const disabled = byId.get(disabledAntigravityInstanceId);
           assert.isDefined(disabled);
@@ -3383,6 +3396,142 @@ describe("OrchestratorMcpService provider resolution", () => {
           Effect.provide(OrchestratorMcpService.layer.pipe(Layer.provide(layerDependencies))),
         );
       }),
+  );
+
+  it.effect.each([
+    { name: "warns on a used-up account", usedUp: ["codex"], picks: "codex" },
+    {
+      name: "warns about the account a replayed task runs on",
+      usedUp: ["codex-alt"],
+      picks: "codex",
+      replaysOn: "codex-alt",
+    },
+    {
+      name: "stays quiet when agents cannot see usage",
+      usedUp: ["codex"],
+      hidden: true,
+      picks: "codex",
+    },
+  ])("driver-only delegation $name", ({ usedUp, hidden, picks, replaysOn }) =>
+    Effect.gen(function* () {
+      const altInstanceId = ProviderInstanceId.make("codex-alt");
+      const usageLimits = (instanceId: ProviderInstanceId) =>
+        usedUp.includes(instanceId)
+          ? {
+              usageLimits: {
+                checkedAt: "2026-09-13T00:00:00.000Z",
+                windows: [
+                  { id: "primary", kind: "weekly" as const, label: "Weekly", usedPercent: 100 },
+                ],
+              },
+            }
+          : {};
+      const dispatched = yield* Ref.make<ReadonlyArray<unknown>>([]);
+      const task = {
+        id: taskId,
+        threadId: parentThreadId,
+        runId: parentRunId,
+        parentNodeId,
+        origin: "app_owned",
+        createdBy: "agent",
+        driver: ProviderDriverKind.make("codex"),
+        providerInstanceId: ProviderInstanceId.make(replaysOn ?? picks),
+        providerThreadId: null,
+        childThreadId,
+        nativeTaskRef: null,
+        prompt: "Summarize the diff.",
+        title: null,
+        model: "gpt-5.4",
+        status: "running",
+        result: null,
+        startedAt: null,
+        completedAt: null,
+      };
+      let delegated = false;
+      const layerDependencies = Layer.mergeAll(
+        NodeServices.layer,
+        NodeCrypto.layer,
+        Layer.mock(ThreadManagementService.ThreadManagementService)({
+          hasReceipt: () => Effect.succeed(false),
+          getThreadRecords: (threadId) =>
+            Effect.succeed(
+              threadId === parentThreadId
+                ? parentProjection(delegated ? [task] : [])
+                : childProjection,
+            ),
+          isProviderInstanceEnabledForProject: () => Effect.succeed(true),
+          assertProviderInstanceEnabled: () => Effect.void,
+          dispatch: (command) =>
+            Ref.update(dispatched, (commands) => [...commands, command]).pipe(
+              Effect.andThen(
+                Effect.sync(() => {
+                  delegated = true;
+                }),
+              ),
+              Effect.as({
+                sequence: 1,
+                storedEvents: [
+                  {
+                    sequence: 1,
+                    commandId: null,
+                    event: { type: "subagent.updated", payload: task },
+                  },
+                ],
+              } as never),
+            ),
+        }),
+        providerRegistryLayer([
+          {
+            ...providerSnapshot({
+              instanceId: codexInstanceId,
+              driver: ProviderDriverKind.make("codex"),
+              model: "gpt-5.4",
+            }),
+            ...usageLimits(codexInstanceId),
+          },
+          {
+            ...providerSnapshot({
+              instanceId: altInstanceId,
+              driver: ProviderDriverKind.make("codex"),
+              model: "gpt-5.4",
+            }),
+            ...usageLimits(altInstanceId),
+          },
+        ]),
+        adapterRegistryLayer([codexInstanceId, altInstanceId]),
+        Layer.mock(ProjectService.ProjectService)({ getById: () => Effect.succeedNone }),
+        Layer.mock(SecretRequests.SecretRequests)({}),
+        Layer.mock(RemoteDelegation.RemoteDelegation)({}),
+        Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
+        ServerSettings.layerTest({ agentUsageLimitsVisible: !hidden }),
+      );
+
+      yield* Effect.gen(function* () {
+        const service = yield* OrchestratorMcpService.OrchestratorMcpService;
+        const result = yield* service.delegateTask(scope, {
+          task: "Summarize the diff.",
+          target: { driverKind: ProviderDriverKind.make("codex") },
+          mode: "async",
+          clientRequestId: "delegate-driver-usage-warning-1",
+        });
+        assert.equal(result.status, "running");
+        assert.equal(
+          result.usageWarning !== undefined,
+          !hidden && usedUp.includes(replaysOn ?? picks),
+        );
+        const capabilities = yield* service.capabilities(scope);
+        assert.equal(
+          capabilities.providers.some((provider) => provider.usage !== undefined),
+          !hidden && usedUp.length > 0,
+        );
+        const commands = yield* Ref.get(dispatched);
+        assert.equal(commands.length, 1);
+        const request = commands[0] as {
+          modelSelection: { instanceId: string; model: string };
+        };
+        assert.equal(request.modelSelection.instanceId, picks);
+      }).pipe(Effect.provide(layerOrchestratorService.pipe(Layer.provide(layerDependencies))));
+    }),
   );
 
   it.effect.each(["async", "wait"] as const)(

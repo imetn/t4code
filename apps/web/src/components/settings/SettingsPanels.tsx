@@ -574,6 +574,9 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.snoozeLimitedThreads !== DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads
       ? [gt("Snooze until limits reset")]
       : []),
+    ...(settings.agentUsageLimitsVisible !== DEFAULT_UNIFIED_SETTINGS.agentUsageLimitsVisible
+      ? [gt("Agents see usage limits")]
+      : []),
     ...(!Equal.equals(settings.snoozePresets, DEFAULT_UNIFIED_SETTINGS.snoozePresets)
       ? [gt("Snooze options")]
       : []),
@@ -761,6 +764,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
       autoResumeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.autoResumeLimitedThreads,
       snoozeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads,
+      agentUsageLimitsVisible: DEFAULT_UNIFIED_SETTINGS.agentUsageLimitsVisible,
       snoozePresets: DEFAULT_UNIFIED_SETTINGS.snoozePresets,
       responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
@@ -2256,6 +2260,24 @@ export function ThreadsSettingsPanel() {
                 updateSettings({ snoozeLimitedThreads: Boolean(checked) })
               }
               aria-label={gt("Snooze until limits reset")}
+            />
+          }
+        />
+        <SettingsRow
+          serverScoped
+          {...setting("agent-usage-limits")}
+          description={gt(
+            "Agents can read usage left and are warned when they delegate to a used-up account.",
+          )}
+          settingKeys={["agentUsageLimitsVisible"]}
+          control={
+            <ScopedSwitch
+              settingKeys={["agentUsageLimitsVisible"]}
+              checked={settings.agentUsageLimitsVisible}
+              onCheckedChange={(checked) =>
+                updateSettings({ agentUsageLimitsVisible: Boolean(checked) })
+              }
+              aria-label={gt("Agents see usage limits")}
             />
           }
         />

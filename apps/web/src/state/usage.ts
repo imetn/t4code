@@ -49,7 +49,10 @@ const usageByWindowAtom = Atom.family((windowKey: string) =>
       if (!access.canReadDiagnostics) {
         statuses.push({
           environmentId,
-          label: resolveEnvironmentLabel(presentation.serverConfig, presentation.entry.target.label),
+          label: resolveEnvironmentLabel(
+            presentation.serverConfig,
+            presentation.entry.target.label,
+          ),
           isConnected,
           ...access,
           summary: null,
@@ -132,6 +135,13 @@ function withoutProviders(
             sources: environment.summary.sources.filter(
               (source) => !hiddenProviders.has(source.fingerprint.provider),
             ),
+            ...(environment.summary.projectTotals === undefined
+              ? {}
+              : {
+                  projectTotals: environment.summary.projectTotals.filter(
+                    (row) => !hiddenProviders.has(row.provider),
+                  ),
+                }),
           },
         },
   );

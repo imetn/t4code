@@ -111,6 +111,7 @@ export function AutoSettleSettingsRows(props: {
     patch: Partial<AutoSettleSettings> & {
       autoResumeLimitedThreads?: boolean;
       snoozeLimitedThreads?: boolean;
+      agentUsageLimitsVisible?: boolean;
     },
   ) => props.write(patch);
 
@@ -156,6 +157,16 @@ export function AutoSettleSettingsRows(props: {
             value={uniformMobileSetting(displayTargets, "snoozeLimitedThreads")}
             disabled={disabledFor("snoozeLimitedThreads")}
             onValueChange={(value) => writeToAll({ snoozeLimitedThreads: value })}
+          />
+          <SettingsSwitchRow
+            icon="chart.bar.xaxis"
+            label={gt("Agents see usage limits")}
+            subtitle={gt(
+              "Agents can read usage left and are warned when they delegate to a used-up account.",
+            )}
+            value={uniformMobileSetting(displayTargets, "agentUsageLimitsVisible")}
+            disabled={disabledFor("agentUsageLimitsVisible")}
+            onValueChange={(value) => writeToAll({ agentUsageLimitsVisible: value })}
           />
         </SettingsSection>
       ) : null}

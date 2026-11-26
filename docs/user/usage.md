@@ -14,6 +14,9 @@ cost, split by token type and by speed. These estimates are not your subscriptio
 **Premium** is what Fast and Ultrafast requests cost above standard rates. Cost that cannot be
 split, such as a provider-reported cost for a model without public rates, shows as **Other**.
 Select a model under **Breakdown** to see its trend, cache hit rate, and cost per million tokens.
+Choose **Project** under **Breakdown** to split usage by the T3 project whose thread ran it,
+including its worktrees; usage that T3 cannot tie to a single project (sessions run outside T3, or
+a server that does not report projects yet) is listed as **No project**.
 
 Totals depend on the history available on each server. Grok turns without a saved completed-turn
 record are missing from the totals.
@@ -241,6 +244,12 @@ credentials and APIs. Set the optional `providerInstanceId` to the exact instanc
 in **Settings → Providers**. The account’s quota windows then appear in the
 thread details usage card on web and desktop when that instance is selected. Accounts without
 a binding still appear in **Usage → Limits**.
+
+## Let agents see limits
+
+Agents cannot see your limits by default. Turn on **Agents see usage limits** in
+**Settings → Threads** to let them read how much usage each provider has left before they
+delegate work. A task delegated to an account that has run out then comes with a warning.
 
 ## Subscription usage widget
 
