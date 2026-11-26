@@ -2721,6 +2721,34 @@ export const layerWsRpc = (
                 providers = yield* providerRegistry.refreshInstance(instance.instanceId);
               }
             }
+            // Deliberately human-only and gated on provider-management scope (never exposed to
+            // MCP or scheduled tasks) so opt-in CLI quota probes stay compliant with provider ToS.
+            if (
+              input.refreshUsageLimits === true &&
+              currentSession.scopes.includes(AuthProvidersManageScope)
+            ) {
+              const instances = yield* providerInstances.listInstances;
+              const eligible = instances.filter(
+                (instance) =>
+                  instance.refreshUsageLimits !== undefined &&
+                  (input.instanceId === undefined || input.instanceId === instance.instanceId) &&
+                  providers.some(
+                    (provider) =>
+                      provider.instanceId === instance.instanceId &&
+                      provider.enabled &&
+                      provider.installed,
+                  ),
+              );
+              if (eligible.length > 0) {
+                yield* Effect.forEach(
+                  eligible,
+                  (instance) =>
+                    instance.refreshUsageLimits!().pipe(Effect.ignoreCause({ log: true })),
+                  { concurrency: 4, discard: true },
+                );
+                providers = yield* providerRegistry.getProviders;
+              }
+            }
             const { instanceId, cwd } = input;
             if (input.omitProviders === true && (instanceId === undefined || cwd === undefined)) {
               return { providers: [] };

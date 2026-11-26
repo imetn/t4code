@@ -43,6 +43,7 @@ import {
 import { resolveUsageLimitsAfterProbe } from "@t3tools/provider-core/server/usageLimits";
 
 import { antigravityThinkingConfig } from "./acp/AntigravityAcpSupport.ts";
+import type { AntigravityCliUsageProbeContext } from "./antigravityCliUsage.ts";
 
 const EMPTY_MODEL_CAPABILITIES = createModelCapabilities({ optionDescriptors: [] });
 const MAX_WORKSPACE_SNAPSHOTS = 32;
@@ -50,6 +51,8 @@ const HEALTH_CHECK_TIMEOUT_MS = 90_000;
 const SIGN_IN_MESSAGE = "Sign in with Google to use Antigravity.";
 const AUTH_UNCHECKED_MESSAGE =
   "Antigravity is installed. Google account access is not checked yet.";
+const ACCOUNT_RESTRICTED_MESSAGE =
+  "Google has restricted Antigravity access on this account (Terms of Service). Automated checks and helpers are paused until you sign in again or manually refresh.";
 // Set while a finished quota read republishes, so that health check does not read again.
 const PublishingUsage = Context.Reference<boolean>("t3/provider/AntigravityPublishingUsage", {
   defaultValue: () => false,
@@ -154,6 +157,7 @@ function isMissingInstallation(error: EffectAcpErrors.AcpError | ProviderSetupEr
 interface AntigravityProviderState {
   readonly draft: ServerProviderDraft;
   readonly authRevision: number;
+  readonly restricted: boolean;
 }
 
 interface AntigravityProviderOptions {
@@ -164,8 +168,13 @@ interface AntigravityProviderOptions {
     EffectAcpErrors.AcpError | ProviderSetupError
   >;
   readonly supportsTextGeneration: Effect.Effect<boolean>;
-  readonly probeUsage?: Effect.Effect<ServerProviderUsageLimits>;
+  readonly probeUsage?: (
+    context: AntigravityCliUsageProbeContext,
+  ) => Effect.Effect<ServerProviderUsageLimits | undefined>;
   readonly clearUsage?: Effect.Effect<void>;
+  readonly quarantineUsage?: Effect.Effect<void>;
+  readonly persistedRestricted?: boolean;
+  readonly persistRestricted?: (restricted: boolean) => Effect.Effect<void>;
   readonly maintenanceCapabilities?: ProviderMaintenanceCapabilities;
   readonly auth?: { readonly type: string; readonly label: string };
   /** Modes the last session advertised, saved because initialize alone does not report them. */
@@ -203,6 +212,7 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
     ? `Antigravity is installed. Connect with ${options.auth.label} to load models.`
     : AUTH_UNCHECKED_MESSAGE;
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
+  const initiallyRestricted = options.persistedRestricted === true;
   const initialDraft = {
     ...buildServerProvider({
       presentation: {
@@ -216,11 +226,13 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
       probe: {
         installed: false,
         version: null,
-        status: "warning",
+        status: initiallyRestricted ? "error" : "warning",
         auth: { status: "unknown", ...(options.auth ? { type: options.auth.type } : {}) },
-        message: settings.enabled
-          ? "Checking Antigravity availability."
-          : "Antigravity is disabled in T3 Code settings.",
+        message: !settings.enabled
+          ? "Antigravity is disabled in T3 Code settings."
+          : initiallyRestricted
+            ? ACCOUNT_RESTRICTED_MESSAGE
+            : "Checking Antigravity availability.",
       },
     }),
     setup: { canAuthenticate: true, canInstall: true },
@@ -231,6 +243,7 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
   const metadata = yield* SubscriptionRef.make<AntigravityProviderState>({
     draft: initialDraft,
     authRevision: 0,
+    restricted: initiallyRestricted,
   });
   // Preserve disk-discovered skills when callbacks replace workspace commands; the registry will not rescan them.
   const discoveredSkills = new Map<string, ServerProvider["skills"]>();
@@ -257,50 +270,105 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
     Effect.flatMap((state) => options.stampIdentity(state.draft)),
   );
 
-  // The quota read can take 30 seconds, so it never blocks readiness or a session start.
+  // Manual-only quota check: never triggered by background health checks or session starts.
   // One read runs at a time; sign-in and sign-out interrupt it so a stale account never lands.
   const usageRead = yield* FiberHandle.make();
   const republish = yield* Deferred.make<Effect.Effect<ServerProvider>>();
-  const scope = yield* Effect.scope;
   const refreshUsage = Effect.fn("AntigravityProvider.refreshUsage")(function* () {
-    if (!options.probeUsage || (yield* PublishingUsage)) return;
+    if (!settings.enabled || !options.probeUsage || (yield* PublishingUsage)) return;
+    const before = yield* SubscriptionRef.get(metadata);
+    if (before.restricted) return;
+    const context: AntigravityCliUsageProbeContext = {
+      version: before.draft.version,
+      authenticated: before.draft.auth.status === "authenticated",
+    };
+    const startedAuthRevision = before.authRevision;
     yield* FiberHandle.run(
       usageRead,
-      options.probeUsage.pipe(
-        Effect.flatMap((probed) =>
-          SubscriptionRef.update(metadata, (state) => ({
-            ...state,
-            draft: {
-              ...state.draft,
-              usageLimits: resolveUsageLimitsAfterProbe({
-                published: state.draft.usageLimits,
-                probed,
-              }),
-            },
-          })),
-        ),
-        // Enrichment cannot change published limits; a health check publishes them.
-        Effect.andThen(
-          Deferred.await(republish).pipe(
-            Effect.flatten,
-            Effect.provideService(PublishingUsage, true),
-            Effect.ignoreCause({ log: true }),
-            Effect.forkIn(scope),
-          ),
+      options.probeUsage(context).pipe(
+        Effect.flatMap((probed) => {
+          if (probed === undefined) return Effect.succeed(false);
+          return SubscriptionRef.modify(metadata, (state) => {
+            if (state.authRevision !== startedAuthRevision) {
+              return [false, state] as const;
+            }
+            const nextLimits = resolveUsageLimitsAfterProbe({
+              published: state.draft.usageLimits,
+              probed,
+            });
+            return [
+              true,
+              {
+                ...state,
+                draft: {
+                  ...state.draft,
+                  usageLimits: nextLimits,
+                },
+              },
+            ] as const;
+          });
+        }),
+        Effect.flatMap((updated) =>
+          updated
+            ? Deferred.await(republish).pipe(
+                Effect.flatten,
+                Effect.provideService(PublishingUsage, true),
+                Effect.ignoreCause({ log: true }),
+                Effect.asVoid,
+              )
+            : Effect.void,
         ),
       ),
       // Store the fiber before it runs, so a sign-out during the read can interrupt it.
       { onlyIfMissing: true, startImmediately: false },
     );
+    yield* FiberHandle.awaitEmpty(usageRead);
   });
   const resetUsage = Effect.gen(function* () {
     yield* FiberHandle.clear(usageRead);
     if (options.clearUsage) yield* options.clearUsage;
   });
 
+  const persistRestricted = (restricted: boolean) =>
+    options.persistRestricted ? options.persistRestricted(restricted) : Effect.void;
+
+  const clearAccountRestriction = Effect.fn("AntigravityProvider.clearAccountRestriction")(
+    function* () {
+      const wasRestricted = yield* SubscriptionRef.modify(metadata, (state) => [
+        state.restricted,
+        state.restricted ? { ...state, restricted: false } : state,
+      ]);
+      if (wasRestricted) {
+        yield* persistRestricted(false);
+      }
+    },
+  );
+
+  const onAccountRestricted = Effect.fn("AntigravityProvider.onAccountRestricted")(function* () {
+    yield* FiberHandle.clear(usageRead);
+    if (options.quarantineUsage) yield* options.quarantineUsage;
+    const updatedAt = DateTime.formatIso(yield* DateTime.now);
+    yield* SubscriptionRef.update(metadata, (state) => ({
+      ...state,
+      restricted: true,
+      draft: {
+        ...state.draft,
+        status: "error",
+        message: ACCOUNT_RESTRICTED_MESSAGE,
+        checkedAt: updatedAt,
+        supportsTextGeneration: false,
+      },
+    }));
+    yield* persistRestricted(true);
+  });
+
+  const isRestricted = SubscriptionRef.get(metadata).pipe(Effect.map((state) => state.restricted));
+
   const checkProvider = Effect.fn("checkAntigravityProvider")(function* () {
     if (!settings.enabled) return yield* getSnapshot;
     const before = yield* SubscriptionRef.get(metadata);
+    // Stop all automated background health probes while a ToS restriction is active.
+    if (before.restricted) return yield* options.stampIdentity(before.draft);
     const timeoutMs = resolveProviderProbeTimeoutMs(
       "antigravity",
       HEALTH_CHECK_TIMEOUT_MS,
@@ -372,7 +440,6 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
       const stored = deferFailure && state.draft.status === "ready" ? state : checked;
       return [checked, stored === state ? Option.none() : Option.some(stored)];
     });
-    if (initialized !== undefined) yield* refreshUsage();
     return yield* options.stampIdentity(next.draft);
   });
 
@@ -420,6 +487,7 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
       const workspace = cwd ? workspaces.find((entry) => entry.cwd === cwd) : undefined;
       const next = {
         authRevision: state.authRevision + 1,
+        restricted: false,
         draft: {
           ...draft,
           installed: true,
@@ -452,7 +520,9 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
       return [draft.supportedRuntimeModes, next] as const;
     });
     yield* rememberRuntimeModes(previousModes, supportedRuntimeModes);
-    if (!before.draft.usageLimits || before.draft.usageLimits.unavailable) yield* refreshUsage();
+    if (before.restricted) {
+      yield* persistRestricted(false);
+    }
   });
 
   const onConfigOptionsUpdated = Effect.fn("AntigravityProvider.onConfigOptionsUpdated")(function* (
@@ -501,22 +571,31 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
     });
   });
 
-  const clearAccountMetadata = Effect.fn("AntigravityProvider.clearAccountMetadata")(function* () {
-    yield* resetUsage;
+  const clearAccountMetadata = Effect.fn("AntigravityProvider.clearAccountMetadata")(function* (
+    clearQuarantine: boolean,
+  ) {
+    if (clearQuarantine) {
+      yield* resetUsage;
+      yield* clearAccountRestriction();
+    } else {
+      yield* FiberHandle.clear(usageRead);
+    }
     if (!settings.enabled) return;
     const updatedAt = DateTime.formatIso(yield* DateTime.now);
     const previousModes = yield* SubscriptionRef.modify(metadata, (state) => [
       state.draft.supportedRuntimeModes,
       {
         authRevision: state.authRevision + 1,
+        restricted: clearQuarantine ? false : state.restricted,
         draft: {
           ...state.draft,
           auth: {
             status: "unauthenticated",
             ...(usesCredentials ? options.auth : {}),
           },
-          status: "warning",
-          message: signInMessage,
+          status: clearQuarantine || !state.restricted ? "warning" : "error",
+          message:
+            !clearQuarantine && state.restricted ? ACCOUNT_RESTRICTED_MESSAGE : signInMessage,
           checkedAt: updatedAt,
           models: [],
           slashCommands: [],
@@ -563,16 +642,21 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
 
   return {
     snapshot: { ...managed, getSnapshot },
+    refreshUsage,
+    onAccountRestricted: onAccountRestricted(),
+    clearAccountRestriction: clearAccountRestriction(),
+    isRestricted,
     onSessionStarted,
     onConfigOptionsUpdated,
     onAvailableCommands,
-    // The new sign-in may be another account. Clear and republish its limits so a failed read
-    // cannot fall back to them; the session start then reads the new account's limits.
+    // The new sign-in may be another account. Clear its cached limits and any restriction/quarantine
+    // so a previous account's state cannot bleed into the new account; limits refresh only on demand.
     onSignedIn: resetUsage.pipe(
+      Effect.andThen(clearAccountRestriction()),
       Effect.andThen(
         SubscriptionRef.update(metadata, (state) => {
           const { usageLimits: _previousAccount, ...draft } = state.draft;
-          return { ...state, draft };
+          return { ...state, restricted: false, draft };
         }),
       ),
       Effect.andThen(
@@ -583,8 +667,8 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
       ),
       Effect.asVoid,
     ),
-    onSignedOut: clearAccountMetadata(),
-    onAuthRequired: clearAccountMetadata(),
+    onSignedOut: clearAccountMetadata(true),
+    onAuthRequired: clearAccountMetadata(false),
     snapshotForCwd,
   };
 });

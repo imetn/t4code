@@ -198,17 +198,30 @@ describe("manual usage refresh", () => {
 });
 
 describe("limits refresh cooldown", () => {
-  it("shares an in-flight check and skips duplicate automatic refreshes", async () => {
+  it("queues a manual refresh behind an in-flight automatic refresh and dedupes concurrent manual clicks", async () => {
     const id = EnvironmentId.make("limits-in-flight");
-    const oldCheck = Promise.withResolvers<string>();
-    const first = refreshUsageLimits(id, () => oldCheck.promise, true);
-    const newCheck = vi.fn(async () => "new limits");
-    const manual = refreshUsageLimits(id, newCheck);
-    expect(await refreshUsageLimits(id, newCheck, true)).toBeUndefined();
-    expect(newCheck).not.toHaveBeenCalled();
-    oldCheck.resolve("old limits");
-    expect(await first).toBe("old limits");
-    expect(await manual).toBe("old limits");
-    expect(newCheck).not.toHaveBeenCalled();
+    const autoCheck = Promise.withResolvers<string>();
+    const first = refreshUsageLimits(id, () => autoCheck.promise, true);
+    const manualStarted = Promise.withResolvers<void>();
+    const manualCheckResolvers = Promise.withResolvers<string>();
+    const manualCheck = vi.fn(() => {
+      manualStarted.resolve();
+      return manualCheckResolvers.promise;
+    });
+    const manual = refreshUsageLimits(id, manualCheck);
+    expect(await refreshUsageLimits(id, manualCheck, true)).toBeUndefined();
+    expect(manualCheck).not.toHaveBeenCalled();
+
+    autoCheck.resolve("auto limits");
+    expect(await first).toBe("auto limits");
+    await manualStarted.promise;
+    expect(manualCheck).toHaveBeenCalledTimes(1);
+
+    // Concurrent second manual click shares the in-flight manual refresh.
+    const secondManual = refreshUsageLimits(id, manualCheck);
+    manualCheckResolvers.resolve("manual limits");
+    expect(await manual).toBe("manual limits");
+    expect(await secondManual).toBe("manual limits");
+    expect(manualCheck).toHaveBeenCalledTimes(1);
   });
 });

@@ -72,6 +72,8 @@ const removedEnvironmentKeys = new Set([
   "AGY_ACP_CCPA_PROJECT",
   "AGY_ACP_ENABLE_OAUTH",
   "GEMINI_HOME",
+  "ANTIGRAVITY_GEMINI_DIR",
+  "ANTIGRAVITY_APP_DATA_DIR",
   "AGY_ACP_FORCE_FILE_STORAGE",
   "AGY_CLI_FORCE_FILE_TOKEN_STORAGE",
   "AGY_CLI_DISABLE_AUTO_UPDATE",
@@ -412,6 +414,8 @@ export const prepareAntigravityProfile = Effect.fn("prepareAntigravityProfile")(
   readonly auth?: AntigravityAuthConfig;
   readonly userHome?: string;
   readonly tempDirectory?: string;
+  /** Skip the Node browser-suppression preflight subprocess for non-interactive commands. */
+  readonly skipBrowserPreflight?: boolean;
 }) {
   const auth = input.auth ?? ANTIGRAVITY_PERSONAL_AUTH;
   const fs = yield* FileSystem.FileSystem;
@@ -489,44 +493,50 @@ export const prepareAntigravityProfile = Effect.fn("prepareAntigravityProfile")(
       .pipe(Effect.orElseSucceed(() => false)),
   };
   const environment = antigravityEnvironment(profile, input.baseEnv ?? process.env, auth);
-  yield* Effect.gen(function* () {
-    const child = yield* spawner.spawn(
-      ChildProcess.make(helperExecutable, ["-e", browserHelperSource, "--", browserPreflightUrl], {
-        env: environment,
-        extendEnv: false,
-        shell: false,
+  if (!input.skipBrowserPreflight) {
+    yield* Effect.gen(function* () {
+      const child = yield* spawner.spawn(
+        ChildProcess.make(
+          helperExecutable,
+          ["-e", browserHelperSource, "--", browserPreflightUrl],
+          {
+            env: environment,
+            extendEnv: false,
+            shell: false,
+          },
+        ),
+      );
+      const [stdout, stderr, exitCode] = yield* Effect.all(
+        [
+          collectUint8StreamText({ stream: child.stdout, maxBytes: 4_096 }),
+          collectUint8StreamText({ stream: child.stderr, maxBytes: 4_096 }),
+          child.exitCode,
+        ],
+        { concurrency: "unbounded" },
+      );
+      if (
+        Number(exitCode) !== 0 ||
+        stdout.bytes !== 0 ||
+        stdout.truncated ||
+        stderr.truncated ||
+        stderr.text !== `${ANTIGRAVITY_AUTH_BROWSER_MARKER}"${browserPreflightUrl}"\n`
+      ) {
+        return yield* authSupportError("Antigravity browser suppression could not be verified.");
+      }
+    }).pipe(
+      Effect.scoped,
+      Effect.timeoutOrElse({
+        duration: "30 seconds",
+        orElse: () =>
+          Effect.fail(authSupportError("Antigravity browser suppression verification timed out.")),
       }),
+      Effect.mapError((error) =>
+        error._tag === "AcpTransportError"
+          ? error
+          : authSupportError("Antigravity browser suppression could not be verified."),
+      ),
     );
-    const [stdout, stderr, exitCode] = yield* Effect.all(
-      [
-        collectUint8StreamText({ stream: child.stdout, maxBytes: 4_096 }),
-        collectUint8StreamText({ stream: child.stderr, maxBytes: 4_096 }),
-        child.exitCode,
-      ],
-      { concurrency: "unbounded" },
-    );
-    if (
-      Number(exitCode) !== 0 ||
-      stdout.bytes !== 0 ||
-      stdout.truncated ||
-      stderr.truncated ||
-      stderr.text !== `${ANTIGRAVITY_AUTH_BROWSER_MARKER}"${browserPreflightUrl}"\n`
-    ) {
-      return yield* authSupportError("Antigravity browser suppression could not be verified.");
-    }
-  }).pipe(
-    Effect.scoped,
-    Effect.timeoutOrElse({
-      duration: "30 seconds",
-      orElse: () =>
-        Effect.fail(authSupportError("Antigravity browser suppression verification timed out.")),
-    }),
-    Effect.mapError((error) =>
-      error._tag === "AcpTransportError"
-        ? error
-        : authSupportError("Antigravity browser suppression could not be verified."),
-    ),
-  );
+  }
 
   for (const directory of [geminiHome, acpDirectory, tempDirectory]) {
     yield* fs
@@ -586,6 +596,50 @@ export function buildAntigravityAcpSpawnInput(input: {
       input.runtimeTempDirectory,
     ),
     extendEnv: false,
+  };
+}
+
+/**
+ * Isolated environment for an opt-in manual `agy -p /usage` invocation.
+ * Points root `agy` at the instance's own ACP profile directory and strips display variables
+ * so the command can never open a browser window or touch another account's home.
+ */
+export function buildAntigravityCliUsageSpawnInput(input: {
+  readonly installation: { readonly executablePath: string };
+  readonly profile: AntigravityProfile;
+  readonly cwd: string;
+  readonly baseEnv?: NodeJS.ProcessEnv;
+  readonly auth?: AntigravityAuthConfig;
+  readonly runtimeTempDirectory?: string;
+  readonly printTimeout?: string;
+}) {
+  const {
+    DISPLAY: _display,
+    WAYLAND_DISPLAY: _wayland,
+    ...env
+  } = antigravityEnvironment(
+    input.profile,
+    input.baseEnv ?? process.env,
+    input.auth ?? ANTIGRAVITY_PERSONAL_AUTH,
+    input.runtimeTempDirectory,
+  );
+  return {
+    command: input.installation.executablePath,
+    args: [
+      "-p",
+      "/usage",
+      "--output-format",
+      "json",
+      "--print-timeout",
+      input.printTimeout ?? "20s",
+    ] as const,
+    cwd: input.cwd,
+    env: {
+      ...env,
+      ANTIGRAVITY_GEMINI_DIR: input.profile.geminiHome,
+      ANTIGRAVITY_APP_DATA_DIR: "antigravity-acp",
+    },
+    extendEnv: false as const,
   };
 }
 

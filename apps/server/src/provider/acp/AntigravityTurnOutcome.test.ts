@@ -36,6 +36,18 @@ const RETIRED_QUOTA_ERROR = errorPayload(
 const INVALID_ARGUMENT_ERROR = errorPayload(
   "Error 400, Message: Request contains an invalid argument., Status: INVALID_ARGUMENT, Details: []",
 );
+const TOS_SUSPENSION_ERROR = errorPayload(
+  "PERMISSION_DENIED (code 403): Antigravity access is disabled in this account due to a violation of Google's Terms of Service.",
+);
+const RAW_JSON_TOS_SUSPENSION_ERROR = errorPayload(
+  `HTTP 403 Forbidden\n\n${JSON.stringify({
+    error: {
+      code: 403,
+      status: "PERMISSION_DENIED",
+      message: "This account has been suspended for a violation of Terms of Service.",
+    },
+  })}`,
+);
 // The harness renders a gateway failure with its HTTP status line in place of a gRPC status.
 const BAD_GATEWAY_ERROR = Buffer.concat([
   errorPayload(
@@ -142,6 +154,21 @@ describe("watchAntigravityPromptOutcome", () => {
           [PLANNER_RESPONSE, reply],
         ]),
       );
+      for (const payload of [TOS_SUSPENSION_ERROR, RAW_JSON_TOS_SUSPENSION_ERROR]) {
+        assert.deepEqual(
+          yield* turn([
+            [USER_INPUT, input],
+            [ERROR_MESSAGE, payload],
+          ]),
+          reusable({
+            class: "permission_error",
+            message:
+              "Google has restricted Antigravity access on this account (Terms of Service). Automatic retries are disabled; review Google's Antigravity account status or submit an appeal before retrying.",
+            code: "TOS_VIOLATION",
+            retryable: false,
+          }),
+        );
+      }
       assert.deepEqual(
         yield* turn([
           [USER_INPUT, input],

@@ -27,7 +27,6 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
-import { HttpClient } from "effect/http";
 import * as AcpErrors from "effect-acp/errors";
 
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
@@ -45,6 +44,7 @@ import {
   antigravityAuthLabel,
   antigravityAuthUsesBrowser,
   buildAntigravityAcpSpawnInput,
+  buildAntigravityCliUsageSpawnInput,
   isAntigravitySignInRequiredError,
   prepareAntigravityProfile,
   resolveAntigravityInstanceDirectories,
@@ -52,9 +52,11 @@ import {
 } from "../antigravityAuthSupport.ts";
 import {
   antigravityModelOptions,
+  antigravityServesT3Code,
   antigravitySessionMode,
   antigravityThinkingConfig,
   makeAntigravityAcpRuntime,
+  OPEN_MODEL_ACCESS_RELEASE,
   type AntigravityAcpRuntimeInput,
 } from "../acp/AntigravityAcpSupport.ts";
 import type * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRuntime";
@@ -72,7 +74,10 @@ import {
 import { makeAcpNativeLoggerFactory } from "@t3tools/provider-acp/server/nativeLogging";
 import { ProviderDriverError } from "../Errors.ts";
 import { makeAntigravityProvider } from "../AntigravityProvider.ts";
-import { makeAntigravityUsageProbe } from "../antigravityUsageLimits.ts";
+import {
+  AntigravityCliUsageQuarantine,
+  makeAntigravityCliUsageProbe,
+} from "../antigravityCliUsage.ts";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
 import * as ModelCatalog from "@t3tools/provider-core/server/ModelCatalog";
 import {
@@ -95,6 +100,12 @@ const RememberedRuntimeModes = Schema.fromJsonString(
 );
 const decodeRememberedRuntimeModes = Schema.decodeUnknownOption(RememberedRuntimeModes);
 const encodeRememberedRuntimeModes = Schema.encodeSync(RememberedRuntimeModes);
+const UsageQuarantineFile = Schema.fromJsonString(AntigravityCliUsageQuarantine);
+const decodeUsageQuarantine = Schema.decodeUnknownOption(UsageQuarantineFile);
+const encodeUsageQuarantine = Schema.encodeSync(UsageQuarantineFile);
+const AccountRestrictionFile = Schema.fromJsonString(Schema.Struct({ restricted: Schema.Boolean }));
+const decodeAccountRestriction = Schema.decodeUnknownOption(AccountRestrictionFile);
+const encodeAccountRestriction = Schema.encodeSync(AccountRestrictionFile);
 const REFRESH_FAILED =
   "Could not refresh Antigravity models. The previous model list is unchanged.";
 const PYTHON_SOCKS_REQUIRED = "python-socks is required to use a SOCKS proxy";
@@ -116,7 +127,6 @@ export type AntigravityDriverEnv =
   | Digest.Digest
   | SecureRandom.SecureRandom
   | FileSystem.FileSystem
-  | HttpClient.HttpClient
   | IdAllocator.IdAllocatorV2
   | McpProviderSessions.McpProviderSessions
   | ModelCatalog.ModelCatalog
@@ -144,7 +154,6 @@ export const AntigravityDriver: ProviderDriver<
     const digest = yield* Digest.Digest;
     const random = yield* SecureRandom.SecureRandom;
     const fileSystem = yield* FileSystem.FileSystem;
-    const httpClient = yield* HttpClient.HttpClient;
     const path = yield* Path.Path;
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const host = yield* ProviderHost.ProviderHost;
@@ -198,6 +207,21 @@ export const AntigravityDriver: ProviderDriver<
         ),
       ),
       Effect.orElseSucceed(() => undefined),
+    );
+    const usageQuarantinePath = path.join(profileDirectory, "t3-usage-quarantine.json");
+    const persistedQuarantine = yield* fileSystem.readFileString(usageQuarantinePath).pipe(
+      Effect.map((contents) => Option.getOrNull(decodeUsageQuarantine(contents))),
+      Effect.orElseSucceed(() => null),
+    );
+    const accountRestrictionPath = path.join(profileDirectory, "t3-account-restriction.json");
+    const persistedRestricted = yield* fileSystem.readFileString(accountRestrictionPath).pipe(
+      Effect.map((contents) =>
+        decodeAccountRestriction(contents).pipe(
+          Option.map((saved) => saved.restricted),
+          Option.getOrElse(() => false),
+        ),
+      ),
+      Effect.orElseSucceed(() => false),
     );
     for (const directory of [
       directories.runtimeTemp,
@@ -330,7 +354,6 @@ export const AntigravityDriver: ProviderDriver<
       );
       const runtime = yield* makeAntigravityAcpRuntime({
         ...runtimeInput,
-        runtimeVersion: executable.version,
         authMethod: auth.authMethod,
         childProcessSpawner: spawner,
         spawn,
@@ -339,18 +362,20 @@ export const AntigravityDriver: ProviderDriver<
       const startCompatible = Effect.fn("AntigravityDriver.startCompatible")(function* () {
         const version = (yield* runtime.initialize()).agentInfo?.version;
         const advisory = version ? yield* installation.compatibility(version) : undefined;
-        const refused =
-          version &&
-          brokenRuntimeError({
-            instanceId,
-            name: "Antigravity",
-            version,
-            advisory,
-            action:
-              executable.source === "managed"
-                ? "Update it in Antigravity setup"
-                : `Update the Antigravity executable at ${executable.executablePath}`,
-          });
+        const action =
+          executable.source === "managed"
+            ? "Update it in Antigravity setup"
+            : `Update the Antigravity executable at ${executable.executablePath}`;
+        const refused = !version
+          ? undefined
+          : (brokenRuntimeError({ instanceId, name: "Antigravity", version, advisory, action }) ??
+            (antigravityServesT3Code(version)
+              ? undefined
+              : new ProviderSetupError({
+                  instanceId,
+                  operation: "runtime",
+                  detail: `Antigravity ${version} only serves allowlisted editors, not T3 Code. ${action} to ${OPEN_MODEL_ACCESS_RELEASE.join(".")} or newer, then retry.`,
+                })));
         if (refused) {
           return yield* new AcpErrors.AcpTransportError({ detail: refused.detail, cause: refused });
         }
@@ -579,21 +604,87 @@ export const AntigravityDriver: ProviderDriver<
       };
     });
 
-    const usage = yield* makeAntigravityUsageProbe({
-      profileDirectory,
+    const prepareCliUsageSpawn = Effect.gen(function* () {
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-antigravity-usage-",
+      });
+      const executable = yield* installation.acquire(settings.binaryPath, processEnvironment);
+      const profile = yield* prepareAntigravityProfile({
+        profileDirectory,
+        baseEnv: processEnvironment,
+        auth,
+        userHome,
+        tempDirectory: directories.runtimeTemp,
+        skipBrowserPreflight: true,
+      }).pipe(
+        Effect.provideService(FileSystem.FileSystem, fileSystem),
+        Effect.provideService(Path.Path, path),
+        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+      );
+      const runtimeTempDirectory = yield* Effect.acquireRelease(
+        fileSystem.makeTempDirectory({ directory: profile.tempDirectory, prefix: "usage-" }),
+        (directory) =>
+          fileSystem
+            .remove(directory, { recursive: true, force: true })
+            .pipe(
+              Effect.catch(() =>
+                Effect.logWarning("Could not remove an Antigravity usage temp directory."),
+              ),
+            ),
+      );
+      return {
+        ...buildAntigravityCliUsageSpawnInput({
+          installation: executable,
+          profile,
+          cwd,
+          baseEnv: processEnvironment,
+          auth,
+          runtimeTempDirectory,
+        }),
+        version: executable.version,
+      };
+    });
+    const persistUsageQuarantine = (quarantine: AntigravityCliUsageQuarantine | null) =>
+      (quarantine === null
+        ? fileSystem.remove(usageQuarantinePath, { force: true })
+        : writeFileStringAtomically({
+            filePath: usageQuarantinePath,
+            contents: encodeUsageQuarantine(quarantine),
+          }).pipe(
+            Effect.provideService(FileSystem.FileSystem, fileSystem),
+            Effect.provideService(Path.Path, path),
+          )
+      ).pipe(Effect.catch(() => Effect.logWarning("Could not save Antigravity quota quarantine.")));
+    const persistAccountRestriction = (restricted: boolean) =>
+      (restricted
+        ? writeFileStringAtomically({
+            filePath: accountRestrictionPath,
+            contents: encodeAccountRestriction({ restricted: true }),
+          }).pipe(
+            Effect.provideService(FileSystem.FileSystem, fileSystem),
+            Effect.provideService(Path.Path, path),
+          )
+        : fileSystem.remove(accountRestrictionPath, { force: true })
+      ).pipe(
+        Effect.catch(() => Effect.logWarning("Could not save Antigravity restriction state.")),
+      );
+    const usage = yield* makeAntigravityCliUsageProbe({
+      usageProbeMode: settings.usageProbeMode,
       authMethod: auth.authMethod,
-    }).pipe(
-      Effect.provideService(FileSystem.FileSystem, fileSystem),
-      Effect.provideService(Path.Path, path),
-      Effect.provideService(Digest.Digest, digest),
-      Effect.provideService(HttpClient.HttpClient, httpClient),
-      Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
-    );
+      prepareSpawn: prepareCliUsageSpawn,
+      withProcess: authFlow.withProcess,
+      persistedQuarantine,
+      persistQuarantine: persistUsageQuarantine,
+    }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
     const provider = yield* makeAntigravityProvider(settings, {
       environment: processEnvironment,
       stampIdentity: classifyModels,
       probe,
       probeUsage: usage.probe,
+      clearUsage: usage.clear,
+      quarantineUsage: usage.quarantineSuspended,
+      persistedRestricted,
+      persistRestricted: persistAccountRestriction,
       auth: { type: auth.authMethod, label: antigravityAuthLabel(auth.authMethod) },
       ...(rememberedRuntimeModes ? { rememberedRuntimeModes } : {}),
       rememberRuntimeModes: (modes) =>
@@ -626,11 +717,20 @@ export const AntigravityDriver: ProviderDriver<
       profileDirectory,
       defaultModel,
       withProcess: authFlow.withProcess,
-      makeRuntime: (cwd: string) =>
-        makeRuntime({
+      makeRuntime: Effect.fn("AntigravityDriver.makeHelperRuntime")(function* (cwd: string) {
+        if (yield* provider.isRestricted) {
+          return yield* new ProviderSetupError({
+            instanceId,
+            operation: "start",
+            detail:
+              "Antigravity helper requests are paused because Google restricted this account.",
+          });
+        }
+        return yield* makeRuntime({
           cwd,
           mcpServers: [],
-        }),
+        });
+      }),
     };
     const samplePromptSuggestion =
       yield* makeAntigravityPromptSuggestionSampler(isolatedHelperOptions);
@@ -641,6 +741,7 @@ export const AntigravityDriver: ProviderDriver<
       withProcess: authFlow.withProcess,
       defaultModel,
       samplePromptSuggestion,
+      onAccountRestricted: () => provider.onAccountRestricted,
       supportsNativeGoals: provider.snapshot.getSnapshot.pipe(
         Effect.map(
           (snapshot) => snapshot.slashCommands?.some((command) => command.name === "goal") === true,
@@ -669,6 +770,7 @@ export const AntigravityDriver: ProviderDriver<
 
     const refreshModels = Effect.fn("AntigravityDriver.refreshModels")(
       function* () {
+        yield* provider.clearAccountRestriction;
         const processScope = yield* Scope.make();
         yield* Effect.addFinalizer((exit) => Scope.close(processScope, exit));
         yield* authFlow
@@ -749,6 +851,7 @@ export const AntigravityDriver: ProviderDriver<
       textGeneration,
       auth: authFlow.controller,
       refreshModels,
+      refreshUsageLimits: () => provider.refreshUsage(),
     } satisfies ProviderInstance;
   }),
 };

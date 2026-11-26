@@ -905,6 +905,15 @@ export const AntigravityAuthMethod = Schema.Literals(
 );
 export type AntigravityAuthMethod = typeof AntigravityAuthMethod.Type;
 
+export const ANTIGRAVITY_USAGE_PROBE_MODES = [
+  { value: "off", label: "Off (ACP only, recommended)" },
+  { value: "manual", label: "Manual refresh via agy CLI" },
+] as const satisfies ReadonlyArray<ProviderSettingsFormOption>;
+export const AntigravityUsageProbeMode = Schema.Literals(
+  ANTIGRAVITY_USAGE_PROBE_MODES.map((mode) => mode.value),
+);
+export type AntigravityUsageProbeMode = typeof AntigravityUsageProbeMode.Type;
+
 export const AntigravitySettings = makeProviderSettingsSchema(
   {
     enabled: Schema.Boolean.pipe(
@@ -962,12 +971,25 @@ export const AntigravitySettings = makeProviderSettingsSchema(
         providerSettingsForm: { placeholder: "Automatic", clearWhenEmpty: "persist" },
       }),
     ),
+    usageProbeMode: AntigravityUsageProbeMode.pipe(
+      Schema.withDecodingDefault(Effect.succeed("off" as const)),
+      Schema.annotateKey({
+        title: "Quota checks",
+        description:
+          "Off uses ACP only with zero extra CLI calls. Manual runs the official agy CLI `/usage` command only when you click Refresh.",
+        providerSettingsForm: {
+          control: "select",
+          options: ANTIGRAVITY_USAGE_PROBE_MODES,
+          clearWhenEmpty: "omit",
+        },
+      }),
+    ),
     customModels: Schema.Array(CustomModelSetting).pipe(
       Schema.withDecodingDefault(Effect.succeed([])),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
   },
-  { order: ["authMethod", "apiKey", "gcpProject", "gcpLocation", "binaryPath"] },
+  { order: ["authMethod", "apiKey", "gcpProject", "gcpLocation", "binaryPath", "usageProbeMode"] },
 );
 export type AntigravitySettings = typeof AntigravitySettings.Type;
 

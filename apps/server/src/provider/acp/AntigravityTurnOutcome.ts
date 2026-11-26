@@ -39,6 +39,17 @@ const decodeVerificationError = Schema.decodeUnknownOption(
     }),
   ),
 );
+const decodeForbiddenError = Schema.decodeUnknownOption(
+  Schema.fromJsonString(
+    Schema.Struct({
+      error: Schema.Struct({
+        code: Schema.Literal(403),
+        status: Schema.optional(Schema.String),
+        message: Schema.optional(Schema.String),
+      }),
+    }),
+  ),
+);
 const decodeVerificationErrorInfo = Schema.decodeUnknownOption(
   Schema.Struct({
     "@type": Schema.Literal("type.googleapis.com/google.rpc.ErrorInfo"),
@@ -50,6 +61,8 @@ const decodeVerificationErrorInfo = Schema.decodeUnknownOption(
   }),
 );
 const QUOTA_EXHAUSTED = /\breason:QUOTA_EXHAUSTED\b/;
+const TOS_SUSPENSION =
+  /(?:violation of (?:google'?s )?terms of service|terms of service[\s\S]{0,160}(?:disabled|suspended|violation)|antigravity(?: access)? (?:is|has been) disabled in this account|account has been (?:suspended|disabled))/i;
 // Claude rejects a saved thinking block without a valid signature. It sits in the native
 // history, so every later prompt to that session fails the same way.
 const INVALID_THINKING_SIGNATURE =
@@ -196,6 +209,16 @@ function verificationErrorInfo(text: string) {
   return undefined;
 }
 
+function forbiddenJsonError(text: string) {
+  for (const match of text.matchAll(ERROR_JSON_START)) {
+    const json = balancedJsonObject(text, match.index);
+    if (json === undefined) continue;
+    const response = Option.getOrUndefined(decodeForbiddenError(json));
+    if (response !== undefined) return response.error;
+  }
+  return undefined;
+}
+
 function turnFailure(
   stopReason: EffectAcpSchema.StopReason,
   step: LastStep | undefined,
@@ -249,6 +272,26 @@ function turnFailure(
         code: "VALIDATION_REQUIRED",
         retryable: false,
         verificationUrl: verification.metadata?.validation_url,
+      }),
+    );
+  }
+  const forbiddenJson = forbiddenJsonError(text);
+  const isForbidden =
+    apiError?.[1] === "403" || apiError?.[3] === "PERMISSION_DENIED" || forbiddenJson !== undefined;
+  const suspensionText = forbiddenJson?.message ? `${text}\n${forbiddenJson.message}` : text;
+  if (
+    (isForbidden && TOS_SUSPENSION.test(suspensionText)) ||
+    /violation of (?:google'?s )?terms of service|antigravity(?: access)? (?:is|has been) disabled in this account/i.test(
+      suspensionText,
+    )
+  ) {
+    return reusable(
+      makeProviderFailure({
+        class: "permission_error",
+        message:
+          "Google has restricted Antigravity access on this account (Terms of Service). Automatic retries are disabled; review Google's Antigravity account status or submit an appeal before retrying.",
+        code: "TOS_VIOLATION",
+        retryable: false,
       }),
     );
   }

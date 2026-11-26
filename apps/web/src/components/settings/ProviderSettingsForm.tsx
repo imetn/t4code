@@ -114,6 +114,7 @@ const PACKAGE_FIELD_TEXT: ReadonlyMap<string, string> = new Map([
   ["API key", msg("API key")],
   ["GCP project", msg("GCP project")],
   ["GCP location", msg("GCP location")],
+  ["Quota checks", msg("Quota checks")],
   ["ACP source", msg("ACP source")],
   ["Registry agent ID", msg("Registry agent ID")],
   ["Executable override", msg("Executable override")],
@@ -180,6 +181,12 @@ const PACKAGE_FIELD_TEXT: ReadonlyMap<string, string> = new Map([
   [
     "Custom ACP executable. Leave empty to select automatically.",
     msg("Custom ACP executable. Leave empty to select automatically."),
+  ],
+  [
+    "Off uses ACP only with zero extra CLI calls. Manual runs the official agy CLI `/usage` command only when you click Refresh.",
+    msg(
+      "Off uses ACP only with zero extra CLI calls. Manual runs the official agy CLI `/usage` command only when you click Refresh.",
+    ),
   ],
   [
     "Agent identifier from the official ACP Registry, for example 'devin'.",
@@ -251,6 +258,8 @@ const PACKAGE_FIELD_TEXT: ReadonlyMap<string, string> = new Map([
   ["Use default", msg("Use default")],
   ["Google account", msg("Google account")],
   ["Gemini API key", msg("Gemini API key")],
+  ["Off (ACP only, recommended)", msg("Off (ACP only, recommended)")],
+  ["Manual refresh via agy CLI", msg("Manual refresh via agy CLI")],
   ["Local command", msg("Local command")],
 ]);
 

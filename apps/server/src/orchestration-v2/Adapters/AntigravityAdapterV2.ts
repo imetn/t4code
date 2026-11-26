@@ -109,6 +109,8 @@ export interface AntigravityAdapterV2Options {
   readonly nativeLogging?: Parameters<typeof makeAcpAdapterV2>[0]["nativeLogging"];
   readonly continuationRequests?: Parameters<typeof makeAcpAdapterV2>[0]["continuationRequests"];
   readonly samplePromptSuggestion?: AcpAdapterV2Flavor["samplePromptSuggestion"];
+  /** Triggered when a turn reports a confirmed Google ToS account restriction so automated traffic stops. */
+  readonly onAccountRestricted?: () => Effect.Effect<void>;
   /** The agent's GEMINI_HOME. Its session logs show turns that ended on an upstream error. */
   readonly profileDirectory?: string;
 }
@@ -327,7 +329,23 @@ export function makeAntigravityAcpAdapterFlavor(
       ? {}
       : {
           watchPromptOutcome: (sessionId: string) =>
-            watchAntigravityPromptOutcome(profileDirectory, sessionId),
+            watchAntigravityPromptOutcome(profileDirectory, sessionId).pipe(
+              Effect.map((check) =>
+                Effect.fn("AntigravityAdapterV2.checkPromptOutcome")(function* (
+                  result: EffectAcpSchema.PromptResponse,
+                  checkOptions?: { readonly retired?: boolean },
+                ) {
+                  const outcome = yield* check(result, checkOptions);
+                  if (
+                    outcome?.failure.code === "TOS_VIOLATION" &&
+                    options.onAccountRestricted !== undefined
+                  ) {
+                    yield* options.onAccountRestricted();
+                  }
+                  return outcome;
+                }),
+              ),
+            ),
           subagentsOutlivingPrompt: ({ sessionId, nativeTaskIds }) =>
             readAntigravityChildrenAtWork({
               profileDirectory,

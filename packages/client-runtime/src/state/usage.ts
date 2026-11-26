@@ -18,7 +18,10 @@ export function usageSummaryInput(
 }
 
 const limitsRefreshAfter = new Map<EnvironmentId, number>();
-const limitsRefreshes = new Map<EnvironmentId, Promise<unknown>>();
+const limitsRefreshes = new Map<
+  EnvironmentId,
+  { readonly promise: Promise<unknown>; readonly automatic: boolean }
+>();
 
 export async function refreshUsageLimits<A>(
   environmentId: EnvironmentId,
@@ -27,19 +30,31 @@ export async function refreshUsageLimits<A>(
 ): Promise<A | undefined> {
   const pending = limitsRefreshes.get(environmentId);
   if (pending !== undefined) {
-    return automatic ? undefined : ((await pending) as A);
+    if (automatic) return undefined;
+    // A manual click carries extra opt-in probes (such as manual CLI quota checks); do not let an
+    // earlier automatic page-mount refresh swallow it. Queue the manual refresh right behind it.
+    if (!pending.automatic) return (await pending.promise) as A;
+    await pending.promise.catch(() => undefined);
+    return refreshUsageLimits(environmentId, refresh, false);
   }
   const refreshAfter = limitsRefreshAfter.get(environmentId) ?? 0;
   // @effect-diagnostics-next-line globalDate:off
   if (automatic && Date.now() < refreshAfter) return;
+  const entry: { promise: Promise<A>; automatic: boolean } = {
+    promise: undefined as unknown as Promise<A>,
+    automatic,
+  };
   const current = Promise.resolve()
     .then(refresh)
     .finally(() => {
-      limitsRefreshes.delete(environmentId);
+      if (limitsRefreshes.get(environmentId) === entry) {
+        limitsRefreshes.delete(environmentId);
+      }
       // @effect-diagnostics-next-line globalDate:off
       limitsRefreshAfter.set(environmentId, Date.now() + 5 * 60_000);
     });
-  limitsRefreshes.set(environmentId, current);
+  entry.promise = current;
+  limitsRefreshes.set(environmentId, entry);
   return await current;
 }
 
