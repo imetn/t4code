@@ -554,6 +554,38 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     ),
   );
 
+  it.effect(
+    "defaults the desktop GitHub update feed to imetn/t4code when no env override is set",
+    () =>
+      Effect.gen(function* () {
+        const release = yield* createBuildConfig(
+          "mac",
+          "dmg",
+          "0.1.13",
+          false,
+          false,
+          undefined,
+          undefined,
+        );
+        const mock = yield* createBuildConfig("mac", "dmg", "0.1.13", false, true, 4321, undefined);
+
+        assert.deepStrictEqual(release.publish, [
+          {
+            provider: "github",
+            owner: "imetn",
+            repo: "t4code",
+            releaseType: "release",
+          },
+        ]);
+        assert.deepStrictEqual(mock.publish, [
+          {
+            provider: "generic",
+            url: "http://localhost:4321",
+          },
+        ]);
+      }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
+  );
+
   it.effect("names the Electron window class in the Linux desktop entry", () =>
     Effect.gen(function* () {
       const linux = yield* createBuildConfig(
