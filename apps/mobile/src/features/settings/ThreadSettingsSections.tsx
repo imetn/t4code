@@ -136,28 +136,32 @@ export function AutoSettleSettingsRows(props: {
 
   return (
     <View className="gap-6">
-      {!projectSelected ? (
-        <SettingsSection title={gt("Usage limits")}>
-          <SettingsSwitchRow
-            icon="clock"
-            label={gt("Resume after usage limits")}
-            subtitle={gt(
-              "Automatically resume threads when their usage limits reset. You can cancel auto-resume in each thread.",
-            )}
-            value={uniformMobileSetting(displayTargets, "autoResumeLimitedThreads")}
-            disabled={disabledFor("autoResumeLimitedThreads")}
-            onValueChange={(value) => writeToAll({ autoResumeLimitedThreads: value })}
-          />
-          <SettingsSwitchRow
-            icon="clock"
-            label={gt("Snooze until limits reset")}
-            subtitle={gt(
-              "Snooze threads until their usage limits reset. Enable auto-resume to continue the agent after the reset.",
-            )}
-            value={uniformMobileSetting(displayTargets, "snoozeLimitedThreads")}
-            disabled={disabledFor("snoozeLimitedThreads")}
-            onValueChange={(value) => writeToAll({ snoozeLimitedThreads: value })}
-          />
+      <SettingsSection title={gt("Usage limits")}>
+        <SettingsSwitchRow
+          icon="clock"
+          label={gt("Resume after usage limits")}
+          subtitle={gt(
+            "Automatically resume threads when their usage limits reset. You can cancel auto-resume in each thread.",
+          )}
+          value={uniformMobileSetting(displayTargets, "autoResumeLimitedThreads")}
+          disabled={disabledFor("autoResumeLimitedThreads")}
+          onValueChange={(value) => writeToAll({ autoResumeLimitedThreads: value })}
+        />
+        <SettingsSwitchRow
+          icon="clock"
+          label={gt("Snooze until limits reset")}
+          subtitle={
+            projectSelected
+              ? gt("Environment-wide setting. Select All projects to change it.")
+              : gt(
+                  "Snooze threads until their usage limits reset. Enable auto-resume to continue the agent after the reset.",
+                )
+          }
+          value={uniformMobileSetting(displayTargets, "snoozeLimitedThreads")}
+          disabled={disabledFor("snoozeLimitedThreads") || projectSelected}
+          onValueChange={(value) => writeToAll({ snoozeLimitedThreads: value })}
+        />
+        {!projectSelected ? (
           <SettingsSwitchRow
             icon="chart.bar.xaxis"
             label={gt("Agents see usage limits")}
@@ -168,8 +172,8 @@ export function AutoSettleSettingsRows(props: {
             disabled={disabledFor("agentUsageLimitsVisible")}
             onValueChange={(value) => writeToAll({ agentUsageLimitsVisible: value })}
           />
-        </SettingsSection>
-      ) : null}
+        ) : null}
+      </SettingsSection>
       <SettingsSection title={gt("Auto-settle")}>
         <SettingsSwitchRow
           icon="arrow.triangle.branch"

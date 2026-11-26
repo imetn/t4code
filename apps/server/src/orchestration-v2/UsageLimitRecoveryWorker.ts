@@ -3,12 +3,14 @@ import {
   MessageId,
   type OrchestrationV2Command,
   type OrchestrationV2DomainEvent,
+  ProjectId,
   type ProviderInstanceId,
   type ServerProvider,
   type ServerSettings as ServerSettingsContract,
 } from "@t3tools/contracts";
 import { modelSelectionsEqual } from "@t3tools/shared/model";
 import { routineSpan } from "@t3tools/shared/observability";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import {
   availableAccountSelection,
   isFallbackOriginRestorable,
@@ -36,6 +38,32 @@ export const MAX_OVERDUE_ARM_MS = 24 * 60 * 60 * 1000;
 // Only limits hit this recently move accounts, so turning the setting on never wakes old threads.
 const ACCOUNT_SWITCH_WINDOW_MS = 10 * 60 * 1000;
 const MAX_FALLBACK_SWITCH_AGE_MS = 10 * 60 * 1000;
+
+function resolveLimitRecoveryPolicy(
+  settings: ServerSettingsContract,
+  thread: Pick<ProjectionStore.ProjectionLimitRecoveryCandidate, "projectId">,
+): { readonly autoResume: boolean; readonly snooze: boolean } {
+  return {
+    autoResume: resolveProjectSettings(settings, thread.projectId).settings
+      .autoResumeLimitedThreads,
+    snooze: settings.snoozeLimitedThreads,
+  };
+}
+
+/** Narrows the sweep's query to candidates whose project could auto-arm. */
+function limitAutoResumeScope(settings: ServerSettingsContract) {
+  const enabled: Array<ProjectId> = [];
+  const disabled: Array<ProjectId> = [];
+  for (const [projectId, overrides] of Object.entries(settings.projectSettingsOverrides ?? {})) {
+    if (overrides.autoResumeLimitedThreads === true) enabled.push(ProjectId.make(projectId));
+    if (overrides.autoResumeLimitedThreads === false) disabled.push(ProjectId.make(projectId));
+  }
+  return {
+    autoResume: settings.autoResumeLimitedThreads,
+    autoResumeEnabledProjectIds: enabled,
+    autoResumeDisabledProjectIds: disabled,
+  };
+}
 
 /** Continues a thread that just hit a usage limit on another account with usage left. */
 export function limitSwitchCommand(
@@ -319,7 +347,7 @@ const makeSweep = Effect.gen(function* () {
       preferences.fallbackOnUsageLimit === true && preferences.fallbackModelSelection !== null;
     const candidates = yield* projections.getLimitRecoveryCandidates({
       now,
-      autoResume: preferences.autoResumeLimitedThreads,
+      ...limitAutoResumeScope(preferences),
       snooze: preferences.snoozeLimitedThreads,
       ...(preferences.fallbackToAvailableAccounts
         ? { switchAccountsSince: DateTime.makeUnsafe(nowMs - ACCOUNT_SWITCH_WINDOW_MS) }
@@ -406,6 +434,7 @@ const makeSweep = Effect.gen(function* () {
         );
         continue;
       }
+      const policy = resolveLimitRecoveryPolicy(preferences, thread);
       const command =
         (providers !== null
           ? fallbackSwitchCommand({
@@ -415,13 +444,7 @@ const makeSweep = Effect.gen(function* () {
               cooldowns: activeCooldowns,
               nowMs,
             })
-          : null) ??
-        limitRecoveryCommand(
-          thread,
-          preferences.autoResumeLimitedThreads,
-          nowMs,
-          preferences.snoozeLimitedThreads,
-        );
+          : null) ?? limitRecoveryCommand(thread, policy.autoResume, nowMs, policy.snooze);
       if (command === null) continue;
       acted = true;
       yield* Effect.gen(function* () {

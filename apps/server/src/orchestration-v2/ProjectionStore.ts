@@ -696,7 +696,10 @@ export interface ProjectionStoreV2Shape {
   ) => Effect.Effect<OrchestrationV2AppThread | null, ProjectionStoreV2Error>;
   readonly getLimitRecoveryCandidates: (options: {
     readonly now: DateTime.Utc;
+    /** Arms unarmed candidates by default; the project lists flip it, and the worker still decides per candidate. */
     readonly autoResume: boolean;
+    readonly autoResumeEnabledProjectIds?: ReadonlyArray<ProjectId>;
+    readonly autoResumeDisabledProjectIds?: ReadonlyArray<ProjectId>;
     readonly snooze: boolean;
     /** Also returns limits hit since then whose window has not reset, to move to another account. */
     readonly switchAccountsSince?: DateTime.Utc;
@@ -5141,7 +5144,11 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                       OR json_extract(t.payload_json, '$.limitRecovery.resetAt') IS NOT json_extract(item.payload_json, '$.failure.resetAt')
                     )
                     AND (
-                      ${booleanInt(options.autoResume)}
+                      CASE
+                        WHEN t.project_id IN (SELECT value FROM json_each(${encodeIdList(options.autoResumeDisabledProjectIds ?? [])})) THEN 0
+                        WHEN t.project_id IN (SELECT value FROM json_each(${encodeIdList(options.autoResumeEnabledProjectIds ?? [])})) THEN 1
+                        ELSE ${booleanInt(options.autoResume)}
+                      END
                       OR (${booleanInt(options.snooze)} AND julianday(json_extract(item.payload_json, '$.failure.resetAt')) > julianday(${DateTime.formatIso(options.now)}))
                     )
                     -- A subagent of a settled, archived or deleted parent is abandoned work.
