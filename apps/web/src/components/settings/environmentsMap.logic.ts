@@ -1,6 +1,8 @@
-import type {
-  ConnectionRouteKind,
-  EnvironmentConnectionPhase,
+import {
+  addressTransportKind,
+  type ConnectionRouteKind,
+  type ConnectionRouteTransport,
+  type EnvironmentConnectionPhase,
 } from "@t3tools/client-runtime/connection";
 import { linkBackOffer } from "@t3tools/client-runtime/link-batch";
 import { peerLinkHealth, type PeerLinkHealth } from "@t3tools/client-runtime/state/peerLinks";
@@ -29,7 +31,15 @@ export interface FleetRouteInput {
   readonly kind: ConnectionRouteKind;
   /** The route's own label when it says more than its kind, such as "Tailscale HTTPS". */
   readonly label?: string;
+  /** How it reaches the environment. Without one, it follows from `kind`. */
+  readonly transport?: ConnectionRouteTransport;
+  /** The host the transport names, such as a public address or a self-hosted relay. */
+  readonly host?: string;
 }
+
+/** The transport a route kind implies when nothing more is known of it. */
+const transportOfKind = (kind: ConnectionRouteKind): ConnectionRouteTransport =>
+  kind === "relay" ? "relay-official" : kind === "tailnet" ? "tailscale" : kind;
 
 export interface FleetEnvironmentInput {
   readonly environmentId: EnvironmentId;
@@ -127,6 +137,8 @@ export type FleetEdge =
       readonly routeId: string;
       readonly routeKind: ConnectionRouteKind;
       readonly routeLabel?: string;
+      readonly routeTransport: ConnectionRouteTransport;
+      readonly routeHost?: string;
       readonly state: FleetRouteState;
     }
   | {
@@ -137,6 +149,8 @@ export type FleetEdge =
       readonly sourceEnvironmentId: EnvironmentId;
       readonly link: PeerLinkSummary;
       readonly health: PeerLinkHealth;
+      /** How the source reaches the target: the address that answered when it was linked. */
+      readonly transport: ConnectionRouteTransport | null;
     };
 
 export type FleetRouteEdge = Extract<FleetEdge, { kind: "route" }>;
@@ -224,6 +238,8 @@ export function buildFleetGraph(input: {
         routeId: route.id,
         routeKind: route.kind,
         ...(route.label === undefined ? {} : { routeLabel: route.label }),
+        routeTransport: route.transport ?? transportOfKind(route.kind),
+        ...(route.host === undefined ? {} : { routeHost: route.host }),
         state: routeState(environment, route.id),
       });
     }
@@ -246,6 +262,7 @@ export function buildFleetGraph(input: {
       to: id,
       routeId: "offer",
       routeKind: "relay",
+      routeTransport: "relay-official",
       state: "offered",
     });
   }
@@ -273,6 +290,7 @@ export function buildFleetGraph(input: {
         sourceEnvironmentId: environment.environmentId,
         link,
         health: peerLinkHealth(link, input.now),
+        transport: link.urls[0] === undefined ? null : addressTransportKind(link.urls[0]),
       });
     }
   }
@@ -695,6 +713,32 @@ export function fleetLinkOffer(
     path: target.kind === "environment" && target.mintable ? "code-less" : "pairing-code",
     target: { kind: "machine", environmentId: target.environmentId },
   };
+}
+
+const FLEET_TRANSPORT_ORDER: ReadonlyArray<ConnectionRouteTransport> = [
+  "loopback",
+  "lan",
+  "tailscale",
+  "vpn",
+  "cloudflare-tunnel",
+  "public",
+  "ssh",
+  "relay-official",
+  "relay-self-hosted",
+];
+
+/** The transports the map draws, in a fixed order, for its legend. */
+export function fleetTransports(graph: FleetGraph): ReadonlyArray<ConnectionRouteTransport> {
+  const present = new Set(
+    graph.edges.flatMap((edge) =>
+      edge.kind === "route"
+        ? [edge.routeTransport]
+        : edge.transport === null
+          ? []
+          : [edge.transport],
+    ),
+  );
+  return FLEET_TRANSPORT_ORDER.filter((transport) => present.has(transport));
 }
 
 /** Some of a stack's linked machines do not answer: its card grows a line to say how many do. */

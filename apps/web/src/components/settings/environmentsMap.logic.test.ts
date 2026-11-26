@@ -27,6 +27,7 @@ import {
   fleetShapeKey,
   fleetStacks,
   fleetSummary,
+  fleetTransports,
   fleetTwoWayLinks,
   isLinkEdge,
   isRouteEdge,
@@ -1435,5 +1436,68 @@ describe("fitting the view", () => {
   it("zooms around the anchor", () => {
     const view = zoomFleetView({ x: 10, y: 20, scale: 1 }, 2, { x: 100, y: 100 });
     expect(view).toEqual({ scale: 2, x: -80, y: -60 });
+  });
+});
+
+describe("how machines are connected", () => {
+  it("names each route's transport, and a link's from the address that answered", () => {
+    const graph = build(
+      [
+        environment(
+          "desk",
+          [link("lab", { urls: ["http://192.168.1.20:3773/", "https://lab.example.com/"] })],
+          {
+            routes: [
+              { id: "tailnet", kind: "tailnet" },
+              {
+                id: "relay",
+                kind: "relay",
+                transport: "relay-self-hosted",
+                host: "relay.home.example",
+              },
+              {
+                id: "tunnel",
+                kind: "public",
+                transport: "cloudflare-tunnel",
+                host: "desk.trycloudflare.com",
+              },
+            ],
+          },
+        ),
+        environment("cloud", [link("box", { urls: ["https://box.example.com/"] })], {
+          routes: [{ id: "relay", kind: "relay" }],
+        }),
+      ],
+      [connectMachine("gpu")],
+    );
+    const routes = graph.edges.filter(isRouteEdge);
+    expect(routes.find((edge) => edge.id === `route:${node("desk")}:tailnet`)).toMatchObject({
+      routeTransport: "tailscale",
+    });
+    expect(routes.find((edge) => edge.id === `route:${node("desk")}:relay`)).toMatchObject({
+      routeTransport: "relay-self-hosted",
+      routeHost: "relay.home.example",
+    });
+    expect(routes.find((edge) => edge.id === `route:${node("cloud")}:relay`)?.routeTransport).toBe(
+      "relay-official",
+    );
+    const links = graph.edges.filter(isLinkEdge);
+    expect(Object.fromEntries(links.map((edge) => [edge.to, edge.transport]))).toEqual({
+      [node("lab")]: "lan",
+      [node("box")]: "public",
+    });
+    expect(fleetTransports(graph)).toEqual([
+      "lan",
+      "tailscale",
+      "cloudflare-tunnel",
+      "public",
+      "relay-official",
+      "relay-self-hosted",
+    ]);
+  });
+
+  it("lists in the legend only the transports on the map", () => {
+    expect(fleetTransports(build([environment("desk")]))).toEqual(["tailscale"]);
+    expect(fleetTransports(build([]))).toEqual([]);
   });
 });

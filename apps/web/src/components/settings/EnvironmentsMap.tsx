@@ -1,10 +1,13 @@
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import {
-  type ConnectionRouteKind,
+  type ConnectionRouteTransport,
   connectionRouteId,
   connectionRouteKind,
   connectionRouteLabelText,
   connectionRoutes,
+  connectionRouteTransport,
+  connectionTransportHost,
+  relayTransportKind,
   routeHttpBaseUrl,
 } from "@t3tools/client-runtime/connection";
 import {
@@ -48,7 +51,11 @@ import {
   useState,
 } from "react";
 
-import { hasCloudPublicConfig } from "~/cloud/publicConfig";
+import {
+  hasCloudPublicConfig,
+  resolveCloudPublicConfig,
+  resolveDefaultRelayUrl,
+} from "~/cloud/publicConfig";
 import { isElectron } from "~/env";
 import { useLiveRefresh } from "~/hooks/useLiveRefresh";
 import { useNowMinute } from "~/hooks/useNowMinute";
@@ -94,6 +101,7 @@ import {
   fleetShapeKey,
   fleetStackPartial,
   fleetStacks,
+  fleetTransports,
   fleetTwoWayLinks,
   type FleetArrow,
   type FleetColumn,
@@ -131,6 +139,7 @@ import {
   HealthGlyph,
   healthLabel,
   healthTone,
+  transportLabel,
 } from "./EnvironmentsMapDetails";
 import { LinkEnvironmentDialog, type LinkEnvironmentPrefill } from "./LinkedEnvironmentsSettings";
 import { LinkSeveralEnvironmentsDialog } from "./LinkSeveralEnvironments";
@@ -202,24 +211,9 @@ const ROUTE_STYLES: Record<
   offered: { wire: "text-muted-foreground/50", width: 1, dash: "1 4", pill: "border-dotted" },
 };
 
-function routeKindLabel(kind: ConnectionRouteKind, gt: GT): string {
-  switch (kind) {
-    case "relay":
-      return "T3 Connect";
-    case "loopback":
-      return gt("This device");
-    case "lan":
-      return "LAN";
-    case "tailnet":
-      return "Tailscale";
-    case "vpn":
-      return "VPN";
-    case "ssh":
-      return "SSH";
-    case "public":
-      return gt("Public", { $context: "kind of network route: a public internet address" });
-  }
-}
+/** A route's name on its pill: its own label, else its transport. */
+const routeName = (edge: FleetRouteEdge, gt: GT) =>
+  edge.routeLabel ?? transportLabel(edge.routeTransport, gt, edge.routeHost);
 
 function routeStateLabel(state: FleetRouteState, gt: GT): string {
   switch (state) {
@@ -302,6 +296,8 @@ function useFleetGraph() {
   });
   const machineById = new Map(machines.map((machine) => [machine.environmentId, machine]));
   const listByHost = new Map(hosts.map((host, index) => [host.environmentId, lists[index]]));
+  const relayUrl = resolveCloudPublicConfig().relayUrl;
+  const relay = relayTransportKind(relayUrl, resolveDefaultRelayUrl());
   const inputs = environments.map((environment, index): FleetEnvironmentInput => {
     const list = listByHost.get(environment.environmentId);
     const connected = environment.connection.phase === "connected";
@@ -313,14 +309,25 @@ function useFleetGraph() {
       machine: machineById.get(environment.environmentId)?.machine ?? null,
       phase: environment.connection.phase,
       enabled: environment.entry.enabled,
-      routes: connectionRoutes(environment.entry).map((route) => ({
-        id: connectionRouteId(route.target),
-        kind: connectionRouteKind(route),
-        ...(connectionRouteKind(route) === "tailnet" &&
-        routeHttpBaseUrl(route)?.startsWith("https:") === true
-          ? { label: connectionRouteLabelText(route, m) }
-          : {}),
-      })),
+      routes: connectionRoutes(environment.entry).map((route) => {
+        const transport = connectionRouteTransport(route, relay);
+        const host = connectionTransportHost(
+          transport === "relay-self-hosted"
+            ? relayUrl
+            : transport === "public" || transport === "cloudflare-tunnel"
+              ? routeHttpBaseUrl(route)
+              : null,
+        );
+        return {
+          id: connectionRouteId(route.target),
+          kind: connectionRouteKind(route),
+          transport,
+          ...(host === null ? {} : { host }),
+          ...(transport === "tailscale" && routeHttpBaseUrl(route)?.startsWith("https:") === true
+            ? { label: connectionRouteLabelText(route, m) }
+            : {}),
+        };
+      }),
       activeRouteId: active === null ? null : connectionRouteId(active.target),
       refusedRouteIds: environment.refusedRouteIds,
       offersLinks,
@@ -1045,7 +1052,10 @@ function FleetCanvas({
       </div>
       {/* Below the canvas, not over it: nothing on the map can end up under the controls. */}
       <div className="flex items-center justify-between gap-3 bg-background/50 px-3 py-1">
-        <FleetLegend twoWay={fleetTwoWayLinks(graph).size > 0} />
+        <FleetLegend
+          twoWay={fleetTwoWayLinks(graph).size > 0}
+          transports={fleetTransports(graph)}
+        />
         <div className="flex shrink-0 items-center gap-1 rounded-lg border border-border/60 bg-popover/90 p-0.5 shadow-xs/5">
           <Button
             size="icon-xs"
@@ -1079,7 +1089,13 @@ function FleetCanvas({
 }
 
 /** How the two families of line are read: routes by state, links by weight. */
-function FleetLegend({ twoWay }: { readonly twoWay: boolean }) {
+function FleetLegend({
+  twoWay,
+  transports,
+}: {
+  readonly twoWay: boolean;
+  readonly transports: ReadonlyArray<ConnectionRouteTransport>;
+}) {
   const gt = useGT();
   const sample = (state: FleetRouteState) => (
     <svg aria-hidden viewBox="0 0 18 4" className={cn("h-1 w-4.5", ROUTE_STYLES[state].wire)}>
@@ -1123,6 +1139,22 @@ function FleetLegend({ twoWay }: { readonly twoWay: boolean }) {
           {gt("Two-way", { $context: "in a map legend: a link that goes both ways" })}
         </li>
       ) : null}
+      {transports.length === 0 ? null : (
+        <li className="flex items-center gap-1.5">
+          <span className="text-foreground/70">
+            {gt("Connection", {
+              $context: "in a map legend: the kinds of network a line goes over",
+            })}
+          </span>
+          <ul className="flex items-center gap-1">
+            {transports.map((transport) => (
+              <li key={transport} className="rounded-sm bg-muted px-1 py-0.5 text-3xs leading-none">
+                {transportLabel(transport, gt)}
+              </li>
+            ))}
+          </ul>
+        </li>
+      )}
     </ul>
   );
 }
@@ -1199,7 +1231,8 @@ function connectAvailabilityText(
 }
 
 function linkSummary(edge: FleetLinkEdge, gt: GT, m: Messages): string {
-  return `${m(accessConfig[edge.link.access].label)}, ${healthLabel(edge.health, gt)}`;
+  const via = edge.transport === null ? "" : `, ${transportLabel(edge.transport, gt)}`;
+  return `${m(accessConfig[edge.link.access].label)}, ${healthLabel(edge.health, gt)}${via}`;
 }
 
 /** A link in words, for the pointer and for assistive tech. A two-way link names each direction. */
@@ -1746,9 +1779,7 @@ const FleetScene = memo(function FleetScene({
               fadeName(!routeLit(edge)),
             )}
           >
-            <span className="truncate">
-              {edge.routeLabel ?? routeKindLabel(edge.routeKind, gt)}
-            </span>
+            <span className="truncate">{routeName(edge, gt)}</span>
           </span>
         );
       })}
@@ -1802,6 +1833,11 @@ const FleetScene = memo(function FleetScene({
               className={cn(lit !== null && !lit.edges.has(edge.id) && "opacity-45")}
             />
             <span className="truncate">{m(accessConfig[edge.link.access].label)}</span>
+            {edge.transport === null ? null : (
+              <span className="shrink-0 rounded-sm bg-muted px-1 py-0.5 text-3xs leading-none text-muted-foreground">
+                {transportLabel(edge.transport, gt)}
+              </span>
+            )}
           </button>
         );
       })}
@@ -2166,8 +2202,7 @@ const FleetScene = memo(function FleetScene({
                   node.label,
                   spoken,
                   ...routes.map(
-                    (edge) =>
-                      `${edge.routeLabel ?? routeKindLabel(edge.routeKind, gt)}: ${routeStateLabel(edge.state, gt)}`,
+                    (edge) => `${routeName(edge, gt)}: ${routeStateLabel(edge.state, gt)}`,
                   ),
                 ].join(", "),
               )}

@@ -1,5 +1,9 @@
 import { useAtomValue } from "@effect/atom-react";
-import { connectionStatusTitle } from "@t3tools/client-runtime/connection";
+import {
+  addressTransportKind,
+  connectionStatusTitle,
+  type ConnectionRouteTransport,
+} from "@t3tools/client-runtime/connection";
 import type { PeerLinkHealth } from "@t3tools/client-runtime/state/peerLinks";
 import {
   AuthMcpClientAccess,
@@ -44,6 +48,40 @@ type GT = ReturnType<typeof useGT>;
 
 const ACCESS_LEVELS = AuthMcpClientAccess.literals;
 export const accessLevel = (access: AuthMcpClientAccess) => ACCESS_LEVELS.indexOf(access);
+
+/**
+ * A transport's name. With a host, a self-hosted relay and a public address name it; without
+ * one, as in the legend, they name the kind.
+ */
+export function transportLabel(
+  transport: ConnectionRouteTransport,
+  gt: GT,
+  host?: string | null,
+): string {
+  switch (transport) {
+    case "relay-official":
+      return "T3 Connect";
+    case "relay-self-hosted":
+      return host
+        ? `T3 Connect · ${host}`
+        : gt("T3 Connect (self-hosted)", { $context: "a relay server the user runs themselves" });
+    case "loopback":
+      return gt("This device");
+    case "lan":
+      return "LAN";
+    case "tailscale":
+      return "Tailscale";
+    case "vpn":
+      return "VPN";
+    case "cloudflare-tunnel":
+      // oxlint-disable-next-line t3code/no-untranslated-copy -- product name
+      return "Cloudflare Tunnel";
+    case "ssh":
+      return "SSH";
+    case "public":
+      return host || gt("Public", { $context: "kind of network route: a public internet address" });
+  }
+}
 
 /** Colour says how a link is doing; a healthy one stays neutral so trouble stands out. */
 export function healthTone(health: PeerLinkHealth): string {
@@ -869,11 +907,22 @@ function LinkDetails({
           {gt("Expires", { $context: "label before the date a link expires" })}
         </dt>
         <dd className="text-foreground">{when(link.expiresAt)}</dd>
+        {edge.transport === null ? null : (
+          <>
+            <dt className={term}>
+              {gt("Connected via", { $context: "label before the network a link goes over" })}
+            </dt>
+            <dd className="font-medium text-foreground">{transportLabel(edge.transport, gt)}</dd>
+          </>
+        )}
         <dt className={term}>{gt("Addresses")}</dt>
-        <dd className="min-w-0 font-mono text-2xs break-all text-foreground">
+        <dd className="min-w-0 text-2xs text-foreground">
           {link.urls.map((url) => (
-            <span key={url} className="block">
-              {url}
+            <span key={url} className="flex flex-wrap items-baseline gap-x-2">
+              <span className="font-mono break-all">{url}</span>
+              <span className="text-muted-foreground">
+                {transportLabel(addressTransportKind(url), gt)}
+              </span>
             </span>
           ))}
         </dd>

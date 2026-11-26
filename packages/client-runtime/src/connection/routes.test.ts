@@ -10,15 +10,19 @@ import {
 import { pullRequestRoutingConnectionKey } from "./pullRequestRoutingPermissions.ts";
 import { BearerConnectionTarget, RelayConnectionTarget } from "./model.ts";
 import {
+  addressTransportKind,
   connectionRouteId,
   connectionRouteKind,
   connectionRouteLabel,
+  connectionRouteTransport,
+  connectionTransportHost,
   credentialConnectionId,
   insertRoute,
   entryWithRoutes,
   isNearbyAddress,
   mergeLearnedRoutes,
   pendingRouteOrder,
+  relayTransportKind,
   removedWithRelay,
   routeKeepsItsHost,
   routesAfterRemoving,
@@ -111,6 +115,36 @@ describe("connection routes", () => {
     expect(isNearbyAddress("https://desk.tail1234.ts.net/")).toBe(false);
     expect(isNearbyAddress("https://desk.example.com/")).toBe(false);
     expect(isNearbyAddress("not a url")).toBe(false);
+  });
+
+  it("names the transport a direct address goes over", () => {
+    expect(addressTransportKind("http://127.0.0.1:3773/")).toBe("loopback");
+    expect(addressTransportKind("http://localhost:3773/")).toBe("loopback");
+    expect(addressTransportKind("http://192.168.1.10:3773/")).toBe("lan");
+    expect(addressTransportKind("http://100.64.0.5:3773/")).toBe("vpn");
+    expect(addressTransportKind("https://desk.tail1234.ts.net/")).toBe("tailscale");
+    expect(addressTransportKind("http://[fd7a:115c:a1e0::1]:3773/")).toBe("tailscale");
+    expect(addressTransportKind("http://100.64.0.5:3773/", { tailscale: true })).toBe("tailscale");
+    expect(addressTransportKind("https://foo.trycloudflare.com/")).toBe("cloudflare-tunnel");
+    expect(addressTransportKind("https://example.com/")).toBe("public");
+    expect(addressTransportKind("192.168.1.10:3773")).toBe("lan");
+    expect(addressTransportKind("not a url")).toBe("public");
+  });
+
+  it("tells the build's own relay from a self-hosted one", () => {
+    const official = "wss://relay.t3.codes/";
+    expect(relayTransportKind(null, official)).toBe("relay-official");
+    expect(relayTransportKind("wss://relay.t3.codes/v1", official)).toBe("relay-official");
+    expect(relayTransportKind("wss://relay.home.example/", official)).toBe("relay-self-hosted");
+    expect(relayTransportKind("wss://relay.home.example/", null)).toBe("relay-self-hosted");
+    expect(connectionRouteTransport(RELAY)).toBe("relay-official");
+    expect(connectionRouteTransport(RELAY, "relay-self-hosted")).toBe("relay-self-hosted");
+    expect(connectionRouteTransport(LAN)).toBe("lan");
+    expect(connectionRouteTransport(direct("tunnel", "https://desk.trycloudflare.com/"))).toBe(
+      "cloudflare-tunnel",
+    );
+    expect(connectionTransportHost("wss://relay.home.example/")).toBe("relay.home.example");
+    expect(connectionTransportHost(null)).toBeNull();
   });
 
   it("places a new route after faster kinds and ahead of T3 Connect", () => {

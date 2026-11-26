@@ -90,6 +90,93 @@ function directAddressKind(hostname: string, tailscale = false) {
   return isPrivateNetworkHost(hostname) ? "lan" : "public";
 }
 
+/**
+ * The network a direct address goes over. A quick Cloudflare tunnel is told by its
+ * `trycloudflare.com` name; a named tunnel on a custom domain looks like any public host.
+ */
+export type ConnectionTransportKind =
+  | "loopback"
+  | "lan"
+  | "tailscale"
+  | "vpn"
+  | "cloudflare-tunnel"
+  | "public";
+
+/** How a route reaches its environment: a direct address, T3 Connect, or SSH. */
+export type ConnectionRouteTransport =
+  | ConnectionTransportKind
+  | "relay-official"
+  | "relay-self-hosted"
+  | "ssh";
+
+export type RelayTransportKind = Extract<
+  ConnectionRouteTransport,
+  "relay-official" | "relay-self-hosted"
+>;
+
+function urlHostname(url: string): string | null {
+  for (const candidate of [url, `http://${url}`]) {
+    try {
+      const { hostname } = new URL(candidate);
+      if (hostname !== "") return hostname;
+    } catch {
+      // Tried with a scheme next.
+    }
+  }
+  return null;
+}
+
+export function addressTransportKind(
+  url: string,
+  options: { readonly tailscale?: boolean } = {},
+): ConnectionTransportKind {
+  const hostname = urlHostname(url);
+  if (hostname === null) return "public";
+  if (hostname.toLowerCase().replace(/\.+$/u, "").endsWith(".trycloudflare.com")) {
+    return "cloudflare-tunnel";
+  }
+  const kind = directAddressKind(hostname, options.tailscale);
+  return kind === "tailnet" ? "tailscale" : kind;
+}
+
+/** A relay other than the build's own is one the user runs. */
+export function relayTransportKind(
+  relayUrl: string | null,
+  defaultRelayUrl: string | null,
+): RelayTransportKind {
+  if (relayUrl === null) return "relay-official";
+  const host = urlHostname(relayUrl);
+  return host !== null && host === (defaultRelayUrl === null ? null : urlHostname(defaultRelayUrl))
+    ? "relay-official"
+    : "relay-self-hosted";
+}
+
+export function connectionRouteTransport(
+  route: ConnectionRoute,
+  relay: RelayTransportKind = "relay-official",
+): ConnectionRouteTransport {
+  switch (route.target._tag) {
+    case "RelayConnectionTarget":
+      return relay;
+    case "SshConnectionTarget":
+      return "ssh";
+    case "PrimaryConnectionTarget":
+    case "BearerConnectionTarget": {
+      const httpBaseUrl = routeHttpBaseUrl(route);
+      if (httpBaseUrl === null) return "public";
+      const profile = Option.getOrNull(route.profile);
+      return addressTransportKind(httpBaseUrl, {
+        tailscale: profile?._tag === "BearerConnectionProfile" && profile.network === "tailscale",
+      });
+    }
+  }
+}
+
+/** The host a route's transport names: the address, or the relay's for a self-hosted relay. */
+export function connectionTransportHost(url: string | null): string | null {
+  return url === null ? null : urlHostname(url);
+}
+
 export function connectionRouteKind(route: ConnectionRoute): ConnectionRouteKind {
   switch (route.target._tag) {
     case "RelayConnectionTarget":
