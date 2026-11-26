@@ -175,8 +175,10 @@ function SubscriptionUsage(
     const clampedRemaining = Math.max(0, Math.min(100, remaining));
     const fillColor = monochrome ? primary : clampedRemaining <= 10 ? dangerColor : barColor;
     const showTick = !accessory && pacePct !== undefined && pacePct > 2 && pacePct < 98;
-    const clampedPace = showTick ? Math.max(3, Math.min(97, pacePct!)) : 0;
+    const clampedPace = showTick ? Math.max(2, Math.min(96, pacePct!)) : 0;
     const tickHeight = barHeight + 4;
+    // ParentAwareHStackLayout only resolves child widthFraction when its parent opts into universal percentages.
+    // ZStack resets that environment flag, so wrap each percentage HStack in a VStack(resolvesChildPercentages).
     return (
       <ZStack
         alignment="leading"
@@ -190,36 +192,50 @@ function SubscriptionUsage(
           ]}
         />
         {clampedRemaining > 0 ? (
-          <HStack
+          <VStack
+            alignment="leading"
             spacing={0}
             resolvesChildPercentages
             modifiers={[frame({ maxWidth: Infinity }), frame({ height: barHeight })]}
           >
-            <Capsule
-              modifiers={[
-                foregroundStyle(fillColor),
-                frame({ height: barHeight }),
-                widthFraction(clampedRemaining / 100),
-              ]}
-            />
-            <Spacer minLength={0} />
-          </HStack>
+            <HStack
+              spacing={0}
+              resolvesChildPercentages
+              modifiers={[frame({ maxWidth: Infinity }), frame({ height: barHeight })]}
+            >
+              <Capsule
+                modifiers={[
+                  foregroundStyle(fillColor),
+                  frame({ height: barHeight }),
+                  widthFraction(clampedRemaining / 100),
+                ]}
+              />
+              <Spacer minLength={0} />
+            </HStack>
+          </VStack>
         ) : null}
         {showTick ? (
-          <HStack
+          <VStack
+            alignment="leading"
             spacing={0}
             resolvesChildPercentages
             modifiers={[frame({ maxWidth: Infinity }), frame({ height: tickHeight })]}
           >
-            <Rectangle
-              modifiers={[opacity(0), frame({ height: 1 }), widthFraction(clampedPace / 100)]}
-            />
-            <RoundedRectangle
-              cornerRadius={1}
-              modifiers={[foregroundStyle(primary), frame({ width: 2, height: tickHeight })]}
-            />
-            <Spacer minLength={0} />
-          </HStack>
+            <HStack
+              spacing={0}
+              resolvesChildPercentages
+              modifiers={[frame({ maxWidth: Infinity }), frame({ height: tickHeight })]}
+            >
+              <Rectangle
+                modifiers={[opacity(0), frame({ height: 1 }), widthFraction(clampedPace / 100)]}
+              />
+              <RoundedRectangle
+                cornerRadius={1}
+                modifiers={[foregroundStyle(primary), frame({ width: 2, height: tickHeight })]}
+              />
+              <Spacer minLength={0} />
+            </HStack>
+          </VStack>
         ) : null}
       </ZStack>
     );
