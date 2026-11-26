@@ -289,7 +289,6 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     usageLimitsProviderOrder?: readonly string[];
     hiddenUsageLimitWindows?: readonly string[];
     antigravityIncludeThirdPartyLimits?: boolean;
-    scheduledTaskOrders?: MobilePreferences["scheduledTaskOrders"];
   } = {};
 
   if (Array.isArray(parsed.usageLimitsProviderOrder)) {

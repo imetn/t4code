@@ -7,7 +7,11 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as SqlSchema from "effect/sql/SqlSchema";
 
-import { AuthClientMetadata, AuthEnvironmentScopes, TAILNET_SUBJECT_PREFIX } from "@t3tools/contracts";
+import {
+  AuthClientMetadata,
+  AuthEnvironmentScopes,
+  TAILNET_SUBJECT_PREFIX,
+} from "@t3tools/contracts";
 
 import {
   type AuthPairingLinkRepositoryError,

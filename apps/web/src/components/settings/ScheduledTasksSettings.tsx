@@ -141,6 +141,7 @@ import { TraitsPicker } from "../chat/TraitsPicker";
 import { createModelSelection } from "@t3tools/shared/model";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
+import { Skeleton } from "../ui/skeleton";
 import {
   Combobox,
   ComboboxEmpty,
@@ -598,9 +599,6 @@ function ScheduledTaskEnvironmentList({
   const populated = loaded.flatMap(({ environment, allTasks, tasks, timeZone }) =>
     allTasks && tasks?.length ? [{ environment, allTasks, tasks, timeZone }] : [],
   );
-  const loading = states.some((state) => state.connected && state.error === null && !state.tasks);
-  // Until one machine has tasks to show, rows stand in for the list instead of a status line.
-  const placeholder = loading && populated.length === 0;
   const summaries: Record<string, string[]> = {
     "Not connected:": [],
     "Loading scheduled tasks on": [],

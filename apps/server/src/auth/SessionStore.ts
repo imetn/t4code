@@ -1251,16 +1251,13 @@ const make = Effect.gen(function* () {
 
   const revokeByProofKey: SessionStore["Service"]["revokeByProofKey"] = Effect.fn(
     "SessionStore.revokeByProofKey",
-  )(
-    function* (proofKeyThumbprint) {
-      const revokedAt = yield* DateTime.now;
-      const revokedSessionIds = yield* authSessions
-        .revokeByProofKey({ proofKeyThumbprint, revokedAt })
-        .pipe(Effect.mapError((cause) => new ProofKeySessionsError({ operation: "revoke", cause })));
-      return yield* forgetRevokedSessions(revokedSessionIds);
-    },
-    Effect.uninterruptible,
-  );
+  )(function* (proofKeyThumbprint) {
+    const revokedAt = yield* DateTime.now;
+    const revokedSessionIds = yield* authSessions
+      .revokeByProofKey({ proofKeyThumbprint, revokedAt })
+      .pipe(Effect.mapError((cause) => new ProofKeySessionsError({ operation: "revoke", cause })));
+    return yield* forgetRevokedSessions(revokedSessionIds);
+  }, Effect.uninterruptible);
 
   const revokeAllExcept: SessionStore["Service"]["revokeAllExcept"] = Effect.fn(
     "SessionStore.revokeAllExcept",

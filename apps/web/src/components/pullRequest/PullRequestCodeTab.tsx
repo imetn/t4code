@@ -1818,20 +1818,24 @@ function PullRequestCodeTab({
           </Tooltip>
         ) : null}
         {viewedFileCount > 0 || hideViewedFiles ? (
-          <SharedTooltipTrigger
-            render={
-              <Toggle
-                aria-label={gt("Hide viewed files")}
-                variant="ghost"
-                size="sm"
-                pressed={hideViewedFiles}
-                onPressedChange={(pressed) => setHideViewedFiles(Boolean(pressed))}
-              />
-            }
-            label={hideViewedFiles ? gt("Show viewed files") : gt("Hide viewed files")}
-          >
-            <EyeOffIcon className="size-3.5" />
-          </SharedTooltipTrigger>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Toggle
+                  aria-label={gt("Hide viewed files")}
+                  variant="ghost"
+                  size="sm"
+                  pressed={hideViewedFiles}
+                  onPressedChange={(pressed) => setHideViewedFiles(Boolean(pressed))}
+                />
+              }
+            >
+              <EyeOffIcon className="size-3.5" />
+            </TooltipTrigger>
+            <TooltipPopup side="top">
+              {hideViewedFiles ? gt("Show viewed files") : gt("Hide viewed files")}
+            </TooltipPopup>
+          </Tooltip>
         ) : null}
         {fileKeys.length > 0 ? (
           <Tooltip>
@@ -2005,10 +2009,12 @@ function PullRequestCodeTab({
             <div className="max-h-64 space-y-1 overflow-auto px-1 pb-1">
               {[...orphanFiles].map(([path, threads]) => (
                 <div key={path}>
-                  <SharedTooltipTrigger
-                    render={<p className="truncate px-3 text-xs text-muted-foreground">{path}</p>}
-                    label={path}
-                  />
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={<p className="truncate px-3 text-xs text-muted-foreground">{path}</p>}
+                    />
+                    <TooltipPopup side="top">{path}</TooltipPopup>
+                  </Tooltip>
                   <div className="mt-1 space-y-2">
                     {threads.map((thread) => (
                       <div key={thread.id}>

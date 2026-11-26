@@ -1098,9 +1098,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
             .map((route) => connectionRouteId(route.target))
             .filter((id) => {
               const outcome = outcomes.get(id);
-              return (
-                outcome?.result === "failed" && !active.lease.refusedRouteIds.includes(id)
-              );
+              return outcome?.result === "failed" && !active.lease.refusedRouteIds.includes(id);
             })
         : [];
     const routesToCoolDown = [

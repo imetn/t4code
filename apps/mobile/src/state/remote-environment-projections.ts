@@ -3,11 +3,7 @@ import type {
   PreparedConnection,
 } from "@t3tools/client-runtime/connection";
 import { connectionCatalogDisplayUrl } from "@t3tools/client-runtime/connection";
-import {
-  type EnvironmentId,
-  resolveEnvironmentLabel,
-  type ServerConfig,
-} from "@t3tools/contracts";
+import { type EnvironmentId, resolveEnvironmentLabel, type ServerConfig } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { Atom } from "effect/reactivity";
 

@@ -49,7 +49,10 @@ const usageByWindowAtom = Atom.family((windowKey: string) =>
       if (!access.canReadDiagnostics) {
         statuses.push({
           environmentId,
-          label: resolveEnvironmentLabel(presentation.serverConfig, presentation.entry.target.label),
+          label: resolveEnvironmentLabel(
+            presentation.serverConfig,
+            presentation.entry.target.label,
+          ),
           isConnected: presentation.connection.phase === "connected",
           ...access,
           summary: null,

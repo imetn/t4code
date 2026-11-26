@@ -109,7 +109,9 @@ export async function signInOverTailnet(
       return {
         ok: false,
         error: m(
-          msg("That machine does not offer Tailscale sign-in. Paste a pairing link from it instead."),
+          msg(
+            "That machine does not offer Tailscale sign-in. Paste a pairing link from it instead.",
+          ),
         ),
       };
     }

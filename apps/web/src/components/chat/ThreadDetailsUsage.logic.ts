@@ -121,7 +121,9 @@ function hubPool(
     ],
   ]);
   const pools = collectLimitPools(collectLimitAccounts(presentations), now);
-  return pools.length > 0 ? { kind: "pool", windows: pools.flatMap(displayLimitWindows) } : null;
+  return pools.length > 0
+    ? { kind: "pool", windows: pools.flatMap((pool) => displayLimitWindows(pool)) }
+    : null;
 }
 
 export function poolSources(window: LimitPoolWindow) {

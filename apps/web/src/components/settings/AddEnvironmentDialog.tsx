@@ -254,7 +254,9 @@ export function AddEnvironmentDialog({
       }
       if (result._tag === "Success") {
         onErrorChange(
-          gt("That machine does not offer Tailscale sign-in. Paste a pairing link from it instead."),
+          gt(
+            "That machine does not offer Tailscale sign-in. Paste a pairing link from it instead.",
+          ),
         );
       }
       setIsAddingSavedBackend(false);
