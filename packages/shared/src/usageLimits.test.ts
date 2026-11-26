@@ -2209,4 +2209,71 @@ describe("orderLimitPools & moveLimitPool", () => {
     expect(moveLimitPool(pools, undefined, 0, -1)).toBeNull();
     expect(moveLimitPool(pools, undefined, 2, 1)).toBeNull();
   });
+
+  it("filters Antigravity third-party windows when antigravityOwnModelsOnly is enabled", () => {
+    const accounts = collectLimitAccounts(
+      new Map([
+        [
+          EnvironmentId.make("env-1"),
+          {
+            entry: { target: { label: "Mac" } },
+            serverConfig: {
+              providers: [
+                {
+                  instanceId: ProviderInstanceId.make("antigravity"),
+                  driver: ProviderDriverKind.make("antigravity"),
+                  enabled: true,
+                  installed: true,
+                  version: null,
+                  status: "ready",
+                  auth: { status: "authenticated" },
+                  checkedAt: "2026-09-05T12:00:00.000Z",
+                  models: [],
+                  slashCommands: [],
+                  skills: [],
+                  usageLimits: {
+                    checkedAt: "2026-09-05T12:00:00.000Z",
+                    windows: [
+                      {
+                        id: "3p-weekly",
+                        kind: "weekly",
+                        label: "Claude & GPT (shared) · Weekly",
+                        usedPercent: 80,
+                      },
+                      {
+                        id: "gemini-weekly",
+                        kind: "weekly",
+                        label: "Gemini · Weekly",
+                        usedPercent: 25,
+                      },
+                      {
+                        id: "gemini-5h",
+                        kind: "session",
+                        label: "Gemini · 5-hour",
+                        usedPercent: 10,
+                      },
+                      {
+                        id: "claude-quota",
+                        kind: "other",
+                        label: "Claude · Reported quota",
+                        usedPercent: 50,
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      ]),
+    );
+    const pool = collectLimitPools(accounts, Date.parse("2026-09-05T12:00:00.000Z"))[0]!;
+    expect(displayLimitWindows(pool, { antigravityOwnModelsOnly: true }).map((w) => w.id)).toEqual([
+      "gemini-5h",
+      "gemini-weekly",
+    ]);
+    expect(displayLimitWindows(pool, { antigravityOwnModelsOnly: false }).map((w) => w.id)).toEqual(
+      ["gemini-5h", "gemini-weekly", "3p-weekly", "claude-quota"],
+    );
+  });
 });

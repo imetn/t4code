@@ -141,31 +141,35 @@ const widgetsPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
       {
         name: "SubscriptionUsage",
         displayName: "Subscription usage",
-        description: "Subscription quotas from your connected T3 Code environments.",
+        description: "Subscription quotas and pace from your connected T4 Code environments.",
         ios: {
           configuration: {
             title: "Subscription usage",
             description:
-              "Both shows Session and Weekly when available. The Lock Screen shows the tightest selected limit.",
+              "Choose which providers and limit period to show. Order follows Usage Limits in T4 Code.",
             parameters: {
-              codexPeriod: {
-                title: "Codex limits",
+              provider: {
+                title: "Providers",
                 type: "enum",
-                default: "auto",
+                default: "all",
                 values: [
-                  { name: "Both", value: "auto" },
-                  { name: "Session", value: "session" },
-                  { name: "Weekly", value: "weekly" },
+                  { name: "All (in app order)", value: "all" },
+                  { name: "Codex", value: "codex" },
+                  { name: "Claude", value: "claudeAgent" },
+                  { name: "Antigravity", value: "antigravity" },
+                  { name: "Cursor", value: "cursor" },
+                  { name: "Grok", value: "grok" },
                 ],
               },
-              claudePeriod: {
-                title: "Claude limits",
+              period: {
+                title: "Limit period",
                 type: "enum",
                 default: "auto",
                 values: [
-                  { name: "Both", value: "auto" },
-                  { name: "Session", value: "session" },
+                  { name: "Auto", value: "auto" },
                   { name: "Weekly", value: "weekly" },
+                  { name: "5-hour / Session", value: "session" },
+                  { name: "Weekly & 5-hour", value: "both" },
                 ],
               },
             },
@@ -191,7 +195,7 @@ const widgetsPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
       {
         name: "AgentActivity",
         displayName: "Agent Activity",
-        description: "Shows the current state of active T3 Code agents.",
+        description: "Shows the current state of active T4 Code agents.",
         android: null,
         ios: {
           supportedFamilies: ["systemSmall", "systemMedium", "accessoryRectangular"],

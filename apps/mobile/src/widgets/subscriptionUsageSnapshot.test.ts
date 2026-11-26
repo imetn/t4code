@@ -183,6 +183,83 @@ describe("subscription widget snapshots", () => {
     expect(snapshot.providers[0]?.detail).toBe("Subscription remaining");
     expect(snapshot.providers[0]?.windows[0]?.remaining).toBe(20);
   });
+
+  it("includes Antigravity, Cursor, and Grok in configured order and filters Antigravity 3P limits by default", () => {
+    const ag = provider({
+      instanceId: ProviderInstanceId.make("antigravity"),
+      driver: ProviderDriverKind.make("antigravity"),
+      usageLimits: {
+        checkedAt,
+        windows: [
+          {
+            id: "gemini-5h",
+            kind: "session",
+            label: "Gemini · 5-hour",
+            usedPercent: 20,
+            resetsAt: "2026-09-05T14:30:00.000Z",
+            windowDurationMins: 300,
+          },
+          {
+            id: "gemini-weekly",
+            kind: "weekly",
+            label: "Gemini · Weekly",
+            usedPercent: 30,
+            resetsAt: "2026-09-09T00:00:00.000Z",
+            windowDurationMins: 10080,
+          },
+          {
+            id: "3p-weekly",
+            kind: "weekly",
+            label: "Claude & GPT (shared) · Weekly",
+            usedPercent: 95,
+          },
+        ],
+      },
+    });
+    const cursor = provider({
+      instanceId: ProviderInstanceId.make("cursor"),
+      driver: ProviderDriverKind.make("cursor"),
+      usageLimits: {
+        checkedAt,
+        windows: [{ id: "totalPercentUsed", kind: "monthly", label: "Overall", usedPercent: 35 }],
+      },
+    });
+    const grok = provider({
+      instanceId: ProviderInstanceId.make("grok"),
+      driver: ProviderDriverKind.make("grok"),
+      usageLimits: {
+        checkedAt,
+        windows: [{ id: "weekly", kind: "weekly", label: "Weekly", usedPercent: 15 }],
+      },
+    });
+    const snapshot = buildSubscriptionUsageSnapshot(
+      presentations([provider(), ag, cursor, grok]),
+      deepLink,
+      6,
+      undefined,
+      { providerOrder: ["antigravity", "cursor", "codex", "grok"] },
+    );
+    expect(snapshot.providers.map((p) => p.driver)).toEqual([
+      "antigravity",
+      "cursor",
+      "codex",
+      "grok",
+    ]);
+    const agSnapshot = snapshot.providers[0]!;
+    expect(agSnapshot.windows.map((w) => w.id)).toEqual(["gemini-weekly", "gemini-5h"]);
+    expect(agSnapshot.windows[0]?.paceTimeLeft).toBe(50);
+    expect(agSnapshot.windows[0]?.durationMs).toBe(10080 * 60_000);
+    expect(snapshot.text?.refresh).toContain("T4");
+
+    const withThirdParty = buildSubscriptionUsageSnapshot(
+      presentations([ag]),
+      deepLink,
+      6,
+      undefined,
+      { antigravityOwnModelsOnly: false },
+    );
+    expect(withThirdParty.providers[0]?.windows.map((w) => w.id)).toContain("3p-weekly");
+  });
 });
 
 describe("subscription widget expiry", () => {

@@ -648,9 +648,22 @@ function hasDuplicateCursorTotal(pool: LimitPool): boolean {
   );
 }
 
-export function displayLimitWindows(pool: LimitPool) {
+export function isAntigravityThirdPartyWindow(
+  window: Pick<ServerProviderUsageWindow, "id">,
+): boolean {
+  return /^(3p|claude|gpt)-/i.test(window.id);
+}
+
+export function displayLimitWindows(
+  pool: LimitPool,
+  options?: { readonly antigravityOwnModelsOnly?: boolean },
+) {
   if (pool.driver === "antigravity") {
-    return [...pool.windows].sort(
+    const ownWindows = options?.antigravityOwnModelsOnly
+      ? pool.windows.filter((window) => !isAntigravityThirdPartyWindow(window))
+      : pool.windows;
+    const visible = ownWindows.length > 0 ? ownWindows : pool.windows;
+    return [...visible].sort(
       (left, right) =>
         Number(!left.id.startsWith("gemini-")) - Number(!right.id.startsWith("gemini-")) ||
         left.id

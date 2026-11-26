@@ -8,6 +8,7 @@ import {
   collectLimitAccounts,
   collectLimitPools,
   displayLimitWindows,
+  isAntigravityThirdPartyWindow,
   moveLimitPool,
   orderLimitPools,
   paceRemainingPercent,
@@ -488,6 +489,9 @@ export function UsageLimitsSection({
   const providerOrder = AsyncResult.isSuccess(preferencesResult)
     ? preferencesResult.value.usageLimitsProviderOrder
     : undefined;
+  const includeAntigravityThirdParty =
+    AsyncResult.isSuccess(preferencesResult) &&
+    preferencesResult.value.antigravityIncludeThirdPartyLimits === true;
   const selected =
     selectedEnvironmentIds === null
       ? presentations
@@ -501,6 +505,9 @@ export function UsageLimitsSection({
     if (nextDrivers) {
       void savePreferences({ usageLimitsProviderOrder: nextDrivers });
     }
+  };
+  const toggleAntigravityThirdParty = () => {
+    void savePreferences({ antigravityIncludeThirdPartyLimits: !includeAntigravityThirdParty });
   };
   const quotaSources = collectHttpQuotaSources(selected);
   const m = useMessages();
@@ -544,7 +551,11 @@ export function UsageLimitsSection({
         </View>
       ))}
       {pools.map((pool, index) => {
-        const windows = displayLimitWindows(pool);
+        const hasAntigravityThirdParty =
+          pool.driver === "antigravity" && pool.windows.some(isAntigravityThirdPartyWindow);
+        const windows = displayLimitWindows(pool, {
+          antigravityOwnModelsOnly: !includeAntigravityThirdParty,
+        });
         const label = providerClients.get(pool.driver)?.label ?? String(pool.driver);
         return (
           <Fragment key={pool.driver}>
@@ -559,44 +570,67 @@ export function UsageLimitsSection({
                     {label}
                   </Text>
                 </View>
-                {pools.length > 1 ? (
-                  <View className="flex-row items-center gap-1">
+                <View className="flex-row items-center gap-1.5">
+                  {hasAntigravityThirdParty ? (
                     <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={gt("Move {label} up", { label })}
-                      accessibilityState={{ disabled: index === 0 }}
-                      disabled={index === 0}
-                      hitSlop={6}
-                      onPress={() => movePool(index, -1)}
-                      className="size-8 items-center justify-center rounded-full bg-grouped-card active:opacity-60 disabled:opacity-35"
+                      accessibilityRole="switch"
+                      accessibilityState={{ checked: includeAntigravityThirdParty }}
+                      accessibilityLabel={gt("Show Claude and GPT limits in Antigravity")}
+                      hitSlop={4}
+                      onPress={toggleAntigravityThirdParty}
+                      className={`h-8 flex-row items-center rounded-full px-2.5 active:opacity-60 ${
+                        includeAntigravityThirdParty ? "bg-subtle-strong" : "bg-grouped-card"
+                      }`}
                     >
-                      <SymbolView
-                        name="arrow.up"
-                        size={13}
-                        tintColorClassName="accent-foreground-muted"
-                        type="monochrome"
-                        weight="semibold"
-                      />
+                      <Text
+                        numberOfLines={1}
+                        className={`text-xs font-t3-medium ${
+                          includeAntigravityThirdParty ? "text-foreground" : "text-foreground-muted"
+                        }`}
+                      >
+                        {includeAntigravityThirdParty ? gt("All models") : gt("Gemini only")}
+                      </Text>
                     </Pressable>
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={gt("Move {label} down", { label })}
-                      accessibilityState={{ disabled: index === pools.length - 1 }}
-                      disabled={index === pools.length - 1}
-                      hitSlop={6}
-                      onPress={() => movePool(index, 1)}
-                      className="size-8 items-center justify-center rounded-full bg-grouped-card active:opacity-60 disabled:opacity-35"
-                    >
-                      <SymbolView
-                        name="arrow.down"
-                        size={13}
-                        tintColorClassName="accent-foreground-muted"
-                        type="monochrome"
-                        weight="semibold"
-                      />
-                    </Pressable>
-                  </View>
-                ) : null}
+                  ) : null}
+                  {pools.length > 1 ? (
+                    <View className="flex-row items-center gap-1">
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={gt("Move {label} up", { label })}
+                        accessibilityState={{ disabled: index === 0 }}
+                        disabled={index === 0}
+                        hitSlop={6}
+                        onPress={() => movePool(index, -1)}
+                        className="size-8 items-center justify-center rounded-full bg-grouped-card active:opacity-60 disabled:opacity-35"
+                      >
+                        <SymbolView
+                          name="arrow.up"
+                          size={13}
+                          tintColorClassName="accent-foreground-muted"
+                          type="monochrome"
+                          weight="semibold"
+                        />
+                      </Pressable>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={gt("Move {label} down", { label })}
+                        accessibilityState={{ disabled: index === pools.length - 1 }}
+                        disabled={index === pools.length - 1}
+                        hitSlop={6}
+                        onPress={() => movePool(index, 1)}
+                        className="size-8 items-center justify-center rounded-full bg-grouped-card active:opacity-60 disabled:opacity-35"
+                      >
+                        <SymbolView
+                          name="arrow.down"
+                          size={13}
+                          tintColorClassName="accent-foreground-muted"
+                          type="monochrome"
+                          weight="semibold"
+                        />
+                      </Pressable>
+                    </View>
+                  ) : null}
+                </View>
               </View>
               {windows.map((window) => {
                 const details =

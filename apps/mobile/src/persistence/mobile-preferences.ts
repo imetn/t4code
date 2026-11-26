@@ -190,6 +190,7 @@ export interface Preferences {
   readonly pullRequestSavedViews?: ReadonlyArray<PullRequestSavedView>;
   readonly issueSavedViews?: ReadonlyArray<IssueSavedView>;
   readonly usageLimitsProviderOrder?: readonly string[];
+  readonly antigravityIncludeThirdPartyLimits?: boolean;
 }
 
 export class MobilePreferencesLoadError extends Schema.TaggedError<MobilePreferencesLoadError>()(
@@ -281,12 +282,16 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     pullRequestSavedViews?: ReadonlyArray<PullRequestSavedView>;
     issueSavedViews?: ReadonlyArray<IssueSavedView>;
     usageLimitsProviderOrder?: readonly string[];
+    antigravityIncludeThirdPartyLimits?: boolean;
   } = {};
 
   if (Array.isArray(parsed.usageLimitsProviderOrder)) {
     preferences.usageLimitsProviderOrder = parsed.usageLimitsProviderOrder.filter(
       (driver): driver is string => typeof driver === "string",
     );
+  }
+  if (typeof parsed.antigravityIncludeThirdPartyLimits === "boolean") {
+    preferences.antigravityIncludeThirdPartyLimits = parsed.antigravityIncludeThirdPartyLimits;
   }
 
   if (Array.isArray(parsed.hiddenNavigationTabs)) {
