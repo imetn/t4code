@@ -704,6 +704,8 @@ export interface ProjectionStoreV2Shape {
     /** Also returns limits hit since then whose window has not reset, to move to another account. */
     readonly switchAccountsSince?: DateTime.Utc;
     readonly fallbackOnUsageLimit?: boolean;
+    /** Recency cutoff for fallback model switching, matching MAX_FALLBACK_SWITCH_AGE_MS. */
+    readonly fallbackSwitchSince?: DateTime.Utc;
   }) => Effect.Effect<ReadonlyArray<ProjectionLimitRecoveryCandidate>, ProjectionStoreV2Error>;
   /** Idle threads currently switched to a fallback model whose origin usage may have recovered. */
   readonly getFallbackRestoreCandidates: Effect.Effect<
@@ -5167,6 +5169,10 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               )
               OR (
                 ${booleanInt(options.fallbackOnUsageLimit === true)}
+                AND (
+                  ${booleanInt(options.fallbackSwitchSince === undefined)}
+                  OR julianday(COALESCE(r.completed_at, json_extract(t.payload_json, '$.updatedAt'))) >= julianday(${DateTime.formatIso(options.fallbackSwitchSince ?? options.now)})
+                )
                 AND NOT EXISTS (
                   SELECT 1 FROM orchestration_v2_projection_threads parent
                   WHERE json_extract(t.payload_json, '$.lineage.relationshipToParent') = 'subagent'

@@ -139,7 +139,8 @@ export function fallbackSwitchCommand(input: {
     !thread.modelSelection ||
     thread.archivedAt !== null ||
     thread.settledOverride === "settled" ||
-    thread.pendingRuntimeRequest !== null
+    thread.pendingRuntimeRequest !== null ||
+    (thread.snoozedUntil != null && DateTime.toEpochMillis(thread.snoozedUntil) > nowMs)
   ) {
     return null;
   }
@@ -352,7 +353,12 @@ const makeSweep = Effect.gen(function* () {
       ...(preferences.fallbackToAvailableAccounts
         ? { switchAccountsSince: DateTime.makeUnsafe(nowMs - ACCOUNT_SWITCH_WINDOW_MS) }
         : {}),
-      ...(fallbackEnabled ? { fallbackOnUsageLimit: true } : {}),
+      ...(fallbackEnabled
+        ? {
+            fallbackOnUsageLimit: true,
+            fallbackSwitchSince: DateTime.makeUnsafe(nowMs - MAX_FALLBACK_SWITCH_AGE_MS),
+          }
+        : {}),
     });
     const providers = providerRegistry === undefined ? null : yield* providerRegistry.getProviders;
     const restoreCandidates =
@@ -435,8 +441,8 @@ const makeSweep = Effect.gen(function* () {
         continue;
       }
       const policy = resolveLimitRecoveryPolicy(preferences, thread);
-      const command =
-        (providers !== null
+      const fallbackCommand =
+        providers !== null
           ? fallbackSwitchCommand({
               thread,
               settings: preferences,
@@ -444,8 +450,15 @@ const makeSweep = Effect.gen(function* () {
               cooldowns: activeCooldowns,
               nowMs,
             })
+          : null;
+      const command =
+        (fallbackCommand !== null && !attemptedSwitches.has(fallbackCommand.commandId)
+          ? fallbackCommand
           : null) ?? limitRecoveryCommand(thread, policy.autoResume, nowMs, policy.snooze);
       if (command === null) continue;
+      if (fallbackCommand !== null && command === fallbackCommand) {
+        attemptedSwitches.add(command.commandId);
+      }
       acted = true;
       yield* Effect.gen(function* () {
         if (command.type === "thread.metadata.update" && command.limitRecovery != null) {
@@ -493,7 +506,14 @@ const makeSweep = Effect.gen(function* () {
     const accountWakeAt = preferences.fallbackToAvailableAccounts
       ? Math.min(...Array.from(limitedUntil.values()).filter((expiry) => expiry > nowMs))
       : Infinity;
-    yield* due.record(readVersion, Math.min(wakeAt ?? Infinity, accountWakeAt), nowMs);
+    const cooldownWakeAt = Math.min(
+      ...activeCooldowns.map((entry) => entry.resetsAtMs).filter((expiry) => expiry > nowMs),
+    );
+    yield* due.record(
+      readVersion,
+      Math.min(wakeAt ?? Infinity, accountWakeAt, cooldownWakeAt),
+      nowMs,
+    );
   });
 });
 

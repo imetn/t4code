@@ -556,16 +556,16 @@ export const sendToThread = Effect.fn("ThreadMessageIntake.sendToThread")(functi
 export const launchThread = Effect.fn("ThreadMessageIntake.launchThread")(function* (
   incoming: ThreadLaunch.ThreadLaunchInput,
 ) {
-  const fallbackResolved = yield* resolveLaunchFallback(incoming);
   const launches = yield* ThreadLaunch.ThreadLaunchService;
-  const choose = fallbackResolved.fallbackOrigin !== undefined ? null : yield* readAccountChoice();
-  const input =
+  const choose = yield* readAccountChoice();
+  const afterAccountChoice =
     choose === null
-      ? fallbackResolved
+      ? incoming
       : {
-          ...fallbackResolved,
-          modelSelection: choose(fallbackResolved.modelSelection, fallbackResolved.projectId),
+          ...incoming,
+          modelSelection: choose(incoming.modelSelection, incoming.projectId),
         };
+  const input = yield* resolveLaunchFallback(afterAccountChoice);
   yield* AttachmentClaims.validateAttachmentLimits(input.initialMessage?.attachments ?? []);
   if (!input.initialMessage?.attachments.some(AttachmentClaims.attachmentIsPendingUpload)) {
     return yield* launches.launch(input);

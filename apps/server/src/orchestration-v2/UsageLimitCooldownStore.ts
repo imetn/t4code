@@ -3,6 +3,7 @@ import {
   DEFAULT_UNKNOWN_RESET_COOLDOWN_MS,
   type UsageLimitCooldownEntry,
 } from "@t3tools/shared/usageLimits";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -36,13 +37,16 @@ const keyOf = (instanceId: ProviderInstanceId, model: string) => `${instanceId}\
 
 const make = Effect.gen(function* () {
   const entries = yield* Ref.make(new Map<string, UsageLimitCooldownEntry>());
+  const clearedAt = yield* Ref.make(new Map<string, number>());
 
-  const record: UsageLimitCooldownStoreShape["record"] = ({
-    instanceId,
-    model,
-    failedAtMs,
-    resetAt,
-  }) => {
+  const record: UsageLimitCooldownStoreShape["record"] = Effect.fn(
+    "UsageLimitCooldownStore.record",
+  )(function* ({ instanceId, model, failedAtMs, resetAt }) {
+    const key = keyOf(instanceId, model);
+    const lastClearedAt = (yield* Ref.get(clearedAt)).get(key);
+    if (lastClearedAt !== undefined && failedAtMs <= lastClearedAt) {
+      return;
+    }
     const parsedReset = resetAt !== null ? Date.parse(resetAt) : Number.NaN;
     const resetsAtMs =
       Number.isFinite(parsedReset) && parsedReset > failedAtMs
@@ -55,9 +59,8 @@ const make = Effect.gen(function* () {
       resetsAtMs,
       resetAt: Number.isFinite(parsedReset) && parsedReset > failedAtMs ? resetAt : null,
     };
-    return Ref.update(entries, (current) => {
+    yield* Ref.update(entries, (current) => {
       const updated = new Map(current);
-      const key = keyOf(instanceId, model);
       const previous = updated.get(key);
       if (previous !== undefined && previous.resetsAtMs > next.resetsAtMs) {
         return current;
@@ -65,16 +68,26 @@ const make = Effect.gen(function* () {
       updated.set(key, next);
       return updated;
     });
-  };
+  });
 
-  const clear: UsageLimitCooldownStoreShape["clear"] = ({ instanceId, model }) =>
-    Ref.update(entries, (current) => {
+  const clear: UsageLimitCooldownStoreShape["clear"] = Effect.fn("UsageLimitCooldownStore.clear")(
+    function* ({ instanceId, model }) {
+      const nowMs = yield* Clock.currentTimeMillis;
       const key = keyOf(instanceId, model);
-      if (!current.has(key)) return current;
-      const updated = new Map(current);
-      updated.delete(key);
-      return updated;
-    });
+      yield* Ref.update(clearedAt, (current) => {
+        const updated = new Map(current);
+        const previous = updated.get(key);
+        updated.set(key, previous === undefined ? nowMs : Math.max(previous, nowMs));
+        return updated;
+      });
+      yield* Ref.update(entries, (current) => {
+        if (!current.has(key)) return current;
+        const updated = new Map(current);
+        updated.delete(key);
+        return updated;
+      });
+    },
+  );
 
   const getActive: UsageLimitCooldownStoreShape["getActive"] = (nowMs) =>
     Ref.modify(entries, (current) => {
