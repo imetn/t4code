@@ -239,6 +239,8 @@ const layerRelayApi = Layer.mergeAll(
   RelayHttpApi.layerServerApi,
 );
 
+const OFFICIAL_CLERK_PUBLISHABLE_KEY = "pk_live_Y2xlcmsudDMuY29kZXMk";
+
 const StandaloneConfig = Config.all({
   port: Config.Number("PORT").pipe(Config.withDefault(8787)),
   host: Config.String("HOST").pipe(Config.withDefault("127.0.0.1")),
@@ -247,7 +249,7 @@ const StandaloneConfig = Config.all({
   stateDir: Config.String("RELAY_STATE_DIR").pipe(Config.withDefault("/var/lib/t4-relay")),
   migrationsDir: Config.String("RELAY_MIGRATIONS_DIR").pipe(Config.withDefault("")),
   clerkPublishableKey: Config.String("CLERK_PUBLISHABLE_KEY").pipe(
-    Config.withDefault("pk_live_Y2xlcmsudDMuY29kZXMk"),
+    Config.withDefault(OFFICIAL_CLERK_PUBLISHABLE_KEY),
   ),
   clerkSecretKey: Config.String("CLERK_SECRET_KEY").pipe(Config.withDefault("")),
   clerkJwtAudience: Config.String("CLERK_JWT_AUDIENCE").pipe(Config.withDefault("t3-code-relay")),
@@ -260,6 +262,7 @@ const StandaloneConfig = Config.all({
   maxManagedTunnels: Config.Number("RELAY_MAX_MANAGED_TUNNELS").pipe(Config.withDefault(100)),
   allowedUserIds: Config.String("RELAY_ALLOWED_USER_IDS").pipe(Config.withDefault("")),
   exposeDocs: Config.Boolean("RELAY_EXPOSE_DOCS").pipe(Config.withDefault(false)),
+  allowAllUsers: Config.Boolean("RELAY_ALLOW_ALL_USERS").pipe(Config.withDefault(false)),
 });
 
 const program = Effect.scoped(
@@ -295,6 +298,20 @@ const program = Effect.scoped(
       .split(",")
       .map((entry) => entry.trim())
       .filter((entry) => entry.length > 0);
+    // With the official T3 Clerk instance every T3 account can sign in, so an open allowlist
+    // would let any of them provision tunnels on this operator's Cloudflare zone.
+    if (
+      allowedUserIds.length === 0 &&
+      env.clerkPublishableKey.trim() === OFFICIAL_CLERK_PUBLISHABLE_KEY &&
+      !env.allowAllUsers
+    ) {
+      return yield* Effect.die(
+        new Error(
+          "RELAY_ALLOWED_USER_IDS is empty while CLERK_PUBLISHABLE_KEY is the official T3 instance. " +
+            "Set RELAY_ALLOWED_USER_IDS, use your own Clerk instance, or set RELAY_ALLOW_ALL_USERS=true.",
+        ),
+      );
+    }
 
     const relaySettings: RelayConfiguration.RelayConfiguration["Service"] = {
       relayIssuer: relayPublicOrigin,
