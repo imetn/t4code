@@ -40,7 +40,12 @@ export function ListSection(props: {
         {props.children}
       </View>
       {props.footer ? (
-        <Text textRole="footnote" className="px-4 text-foreground-muted">
+        <Text
+          textRole="footnote"
+          className={
+            Platform.OS === "android" ? "px-4 text-foreground-muted" : "px-2 text-foreground-muted"
+          }
+        >
           {props.footer}
         </Text>
       ) : null}

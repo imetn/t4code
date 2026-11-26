@@ -49,6 +49,7 @@ export function ConnectionsRouteScreen() {
         showsVerticalScrollIndicator={false}
         className="flex-1"
         contentContainerStyle={{
+          gap: 20,
           paddingBottom: Math.max(insets.bottom, 18) + 18,
           paddingHorizontal: 20,
           paddingTop: 16,

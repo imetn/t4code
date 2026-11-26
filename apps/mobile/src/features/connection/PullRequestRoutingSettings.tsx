@@ -52,72 +52,70 @@ export function PullRequestRoutingSettings() {
   if (catalog.entries.size === 0) return null;
 
   return (
-    <View className="mt-5 gap-3">
-      <SettingsSection title={gt("Pull request routing")}>
-        {[...catalog.entries.values()].map((entry) => {
-          const environmentId = entry.target.environmentId;
-          const selected = pullRequestRoutingPermissionFor(entry, permissions);
-          const disabled =
-            !catalog.isReady || saving || pullRequestRoutingConnectionKey(entry) === null;
-          return (
-            <View key={environmentId}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={gt("{environment} pull request routing", {
-                  environment: entry.target.label,
-                })}
-                accessibilityState={{ expanded: expanded === environmentId }}
-                className="flex-row items-center gap-3 p-4"
-                onPress={() => setExpanded(expanded === environmentId ? null : environmentId)}
-              >
-                <View className="min-w-0 flex-1 gap-0.5">
-                  <Text className="text-base font-t3-bold text-foreground">
-                    {entry.target.label}
-                  </Text>
-                  <Text className="text-xs text-foreground-muted" numberOfLines={1}>
-                    {connectionCatalogDisplayUrl(entry) ?? "T3 Connect"}
-                  </Text>
-                </View>
-                <Text className="text-sm text-foreground-muted">
-                  {m(options.find((option) => option.value === selected)?.label ?? "")}
+    <SettingsSection
+      title={gt("Pull request routing")}
+      footer={gt(
+        "Choose environments you trust to share PR data and use each other's source control access. Enable both environments. This applies only to this client.",
+      )}
+    >
+      {[...catalog.entries.values()].map((entry) => {
+        const environmentId = entry.target.environmentId;
+        const selected = pullRequestRoutingPermissionFor(entry, permissions);
+        const disabled =
+          !catalog.isReady || saving || pullRequestRoutingConnectionKey(entry) === null;
+        return (
+          <View key={environmentId}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={gt("{environment} pull request routing", {
+                environment: entry.target.label,
+              })}
+              accessibilityState={{ expanded: expanded === environmentId }}
+              className="flex-row items-center gap-3 px-4 py-3.5"
+              onPress={() => setExpanded(expanded === environmentId ? null : environmentId)}
+            >
+              <View className="min-w-0 flex-1 gap-0.5">
+                <Text className="text-base font-t3-bold text-foreground">{entry.target.label}</Text>
+                <Text className="text-xs text-foreground-muted" numberOfLines={1}>
+                  {connectionCatalogDisplayUrl(entry) ?? "T4 Connect"}
                 </Text>
-                <SymbolView
-                  name={expanded === environmentId ? "chevron.up" : "chevron.down"}
-                  size={12}
-                  tintColorClassName="accent-icon-muted"
-                />
-              </Pressable>
-              {expanded === environmentId
-                ? options.map((option) => (
-                    <ListChoiceRow
-                      key={option.value}
-                      label={m(option.label)}
-                      description={m(option.description)}
-                      selected={selected === option.value}
-                      disabled={disabled}
-                      onPress={() => {
-                        setSaving(true);
-                        void update({ environmentId, permission: option.value }).then((result) => {
-                          setSaving(false);
-                          if (result._tag === "Failure")
-                            Dialog.alert(
-                              gt("Could not save pull request routing permission"),
-                              gt("Try again before leaving this screen."),
-                            );
-                        });
-                      }}
-                    />
-                  ))
-                : null}
-            </View>
-          );
-        })}
-      </SettingsSection>
-      <Text className="px-2 text-sm text-foreground-muted">
-        {gt(
-          "Choose environments you trust to share PR data and use each other's source control access. Enable both environments. This applies only to this client.",
-        )}
-      </Text>
-    </View>
+              </View>
+              <Text className="text-sm text-foreground-muted">
+                {m(options.find((option) => option.value === selected)?.label ?? "")}
+              </Text>
+              <SymbolView
+                name={expanded === environmentId ? "chevron.up" : "chevron.down"}
+                size={13}
+                tintColorClassName="accent-chevron"
+                type="monochrome"
+                weight="semibold"
+              />
+            </Pressable>
+            {expanded === environmentId
+              ? options.map((option) => (
+                  <ListChoiceRow
+                    key={option.value}
+                    label={m(option.label)}
+                    description={m(option.description)}
+                    selected={selected === option.value}
+                    disabled={disabled}
+                    onPress={() => {
+                      setSaving(true);
+                      void update({ environmentId, permission: option.value }).then((result) => {
+                        setSaving(false);
+                        if (result._tag === "Failure")
+                          Dialog.alert(
+                            gt("Could not save pull request routing permission"),
+                            gt("Try again before leaving this screen."),
+                          );
+                      });
+                    }}
+                  />
+                ))
+              : null}
+          </View>
+        );
+      })}
+    </SettingsSection>
   );
 }

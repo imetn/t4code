@@ -26,6 +26,7 @@ import * as Layer from "effect/Layer";
 import { AsyncResult, Atom } from "effect/reactivity";
 
 import { runtime } from "../lib/runtime";
+import { readCustomRelayUrlOverride } from "./publicConfig";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 
 const managedRelayAtomRuntime = Atom.runtime(
@@ -151,14 +152,23 @@ export function useManagedRelayDevices() {
 export type ManagedTunnelUpgrade = "link" | "pro" | "premier" | null;
 
 // Mirrors the relay's cap: a manual override is exact, otherwise the T3 Chat plan raises the default.
-function managedTunnelCap(t3Chat: RelayT3ChatLinkResponse): {
-  readonly limit: number;
+export function managedTunnelCap(
+  t3Chat: RelayT3ChatLinkResponse,
+  options?: { readonly isCustomRelay?: boolean },
+): {
+  readonly limit: number | null;
   readonly upgrade: ManagedTunnelUpgrade;
 } {
   if (t3Chat.maxTunnelsOverride !== undefined) {
     return { limit: t3Chat.maxTunnelsOverride, upgrade: null };
   }
-  if (!t3Chat.available) return { limit: DEFAULT_MANAGED_TUNNEL_LIMIT, upgrade: null };
+  if (!t3Chat.available) {
+    // Self-hosted relays configure their own limit and have no T3 Chat billing tier.
+    return {
+      limit: options?.isCustomRelay ? null : DEFAULT_MANAGED_TUNNEL_LIMIT,
+      upgrade: null,
+    };
+  }
   switch (t3Chat.link?.plan) {
     case "premier":
       return { limit: T3CHAT_PLAN_TUNNEL_LIMITS.premier, upgrade: null };
@@ -183,13 +193,17 @@ export function refreshManagedTunnelUsage() {
 export function useManagedTunnelUsage() {
   const environments = useManagedRelayEnvironments();
   const t3Chat = useManagedRelayT3ChatLink();
+  const isCustomRelay = readCustomRelayUrlOverride() !== null;
   const used =
     environments.accountId === null
       ? null
       : (environments.data?.filter(
           (environment) => environment.endpoint.providerKind === "cloudflare_tunnel",
         ).length ?? null);
-  const cap = t3Chat.accountId !== null && t3Chat.data ? managedTunnelCap(t3Chat.data) : null;
+  const cap =
+    t3Chat.accountId !== null && t3Chat.data
+      ? managedTunnelCap(t3Chat.data, { isCustomRelay })
+      : null;
   return {
     used,
     limit: cap?.limit ?? null,

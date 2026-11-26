@@ -2,7 +2,7 @@ import { EnvironmentId } from "@t3tools/contracts";
 import type { RelayClientEnvironmentRecord } from "@t3tools/contracts/relay";
 import { describe, expect, it } from "vite-plus/test";
 import type { ConnectedEnvironmentSummary } from "../../state/remote-runtime-types";
-import { splitEnvironmentSections } from "./environmentSections";
+import { shouldShowLocalEnvironmentList, splitEnvironmentSections } from "./environmentSections";
 
 function connectedEnvironment(
   input: Omit<Partial<ConnectedEnvironmentSummary>, "environmentId"> & {
@@ -95,5 +95,35 @@ describe("mobile environment settings sections", () => {
     expect(
       sections.availableCloudEnvironments.map((environment) => environment.environmentId),
     ).toEqual([EnvironmentId.make("environment-cloud")]);
+  });
+
+  it("hides the local empty state when a cloud environment is already connected", () => {
+    const local = connectedEnvironment({
+      environmentId: "environment-local",
+      isRelayManaged: false,
+    });
+    const cloud = connectedEnvironment({
+      environmentId: "environment-cloud",
+      isRelayManaged: true,
+    });
+
+    expect(
+      shouldShowLocalEnvironmentList({
+        localEnvironments: [],
+        connectedCloudEnvironments: [cloud],
+      }),
+    ).toBe(false);
+    expect(
+      shouldShowLocalEnvironmentList({
+        localEnvironments: [],
+        connectedCloudEnvironments: [],
+      }),
+    ).toBe(true);
+    expect(
+      shouldShowLocalEnvironmentList({
+        localEnvironments: [local],
+        connectedCloudEnvironments: [cloud],
+      }),
+    ).toBe(true);
   });
 });

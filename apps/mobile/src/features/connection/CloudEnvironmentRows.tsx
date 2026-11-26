@@ -33,6 +33,7 @@ import { ConnectionStatusDot } from "./ConnectionStatusDot";
 import { useConnectionDiagnosis } from "./ConnectionDiagnosisDetails";
 import { environmentStatusText } from "./environmentStatusText";
 import { type RelayEnvironmentView, useConnectionController } from "./useConnectionController";
+import { SettingsSection } from "../settings/components/SettingsSection";
 
 interface CloudEnvironmentRowsProps {
   readonly connectedCloudEnvironments: ReadonlyArray<ConnectedEnvironmentSummary>;
@@ -96,17 +97,16 @@ function CloudEnvironmentRowsContent(
   };
 
   const showHeader = props.showHeader ?? true;
+  const showErrorCard =
+    discoveryAvailable &&
+    Boolean(controller.relayDiscovery.error) &&
+    !controller.relayDiscovery.isRefreshing;
+  const sectionTitle = showHeader ? "T4 Connect" : undefined;
 
   return (
-    <View collapsable={false} className={cn("gap-3", showHeader && "mt-5")}>
-      {showHeader ? (
-        <View className="px-1">
-          <Text className="text-sm font-t3-bold uppercase text-foreground-muted">T3 Connect</Text>
-        </View>
-      ) : null}
-
+    <View collapsable={false} className="gap-3">
       {hasCloudRows ? (
-        <View collapsable={false} className="overflow-hidden rounded-[24px] bg-grouped-card">
+        <SettingsSection title={sectionTitle}>
           {props.connectedCloudEnvironments.map((environment) => (
             <ConnectedCloudEnvironmentRow
               key={environment.environmentId}
@@ -135,41 +135,45 @@ function CloudEnvironmentRowsContent(
               onToggleError={() => handleToggleCloudError(environment.environment.environmentId)}
             />
           ))}
-        </View>
+        </SettingsSection>
       ) : controller.relayDiscovery.isRefreshing ? (
-        <View collapsable={false} className="items-center gap-3 rounded-[24px] bg-grouped-card p-6">
-          <AppActivityIndicator colorClassName={"accent-icon"} />
-          <Text className="text-center text-sm leading-normal text-foreground-muted">
-            <T>Loading linked cloud environments.</T>
-          </Text>
-        </View>
+        <SettingsSection title={sectionTitle}>
+          <View collapsable={false} className="items-center gap-3 p-6">
+            <AppActivityIndicator colorClassName={"accent-icon"} />
+            <Text className="text-center text-sm leading-normal text-foreground-muted">
+              <T>Loading linked cloud environments.</T>
+            </Text>
+          </View>
+        </SettingsSection>
       ) : controller.relayDiscovery.error ? null : (
-        <View collapsable={false} className="rounded-[24px] bg-grouped-card p-5">
-          <Text className="text-sm leading-normal text-foreground-muted">
-            <T>No additional linked cloud environments.</T>
-          </Text>
-        </View>
+        <SettingsSection title={sectionTitle}>
+          <View collapsable={false} className="p-5">
+            <Text className="text-sm leading-normal text-foreground-muted">
+              <T>No additional linked cloud environments.</T>
+            </Text>
+          </View>
+        </SettingsSection>
       )}
 
-      {discoveryAvailable &&
-      controller.relayDiscovery.error &&
-      !controller.relayDiscovery.isRefreshing ? (
-        <View collapsable={false} className="gap-3 rounded-[24px] bg-grouped-card p-5">
-          <Text className="text-base font-t3-bold text-foreground">
-            {gt("Could not load {product} environments", { product: "T3 Connect" })}
-          </Text>
-          <Text className="text-sm text-foreground-muted">{controller.relayDiscovery.error}</Text>
-          {controller.relayDiscovery.errorTraceId ? (
-            <CopyTraceIdButton traceId={controller.relayDiscovery.errorTraceId} />
-          ) : null}
-          <Button
-            label={gt("Try again")}
-            tone="secondary"
-            onPress={() => {
-              void controller.refreshRelayEnvironments();
-            }}
-          />
-        </View>
+      {showErrorCard ? (
+        <SettingsSection title={!hasCloudRows ? sectionTitle : undefined}>
+          <View collapsable={false} className="gap-3 p-5">
+            <Text className="text-base font-t3-bold text-foreground">
+              {gt("Could not load {product} environments", { product: "T4 Connect" })}
+            </Text>
+            <Text className="text-sm text-foreground-muted">{controller.relayDiscovery.error}</Text>
+            {controller.relayDiscovery.errorTraceId ? (
+              <CopyTraceIdButton traceId={controller.relayDiscovery.errorTraceId} />
+            ) : null}
+            <Button
+              label={gt("Try again")}
+              tone="secondary"
+              onPress={() => {
+                void controller.refreshRelayEnvironments();
+              }}
+            />
+          </View>
+        </SettingsSection>
       ) : null}
     </View>
   );
@@ -349,75 +353,76 @@ function CloudEnvironmentRowShell(props: {
       ? gt("Remove {environment} from this device", { environment: props.label })
       : undefined;
   return (
-    <View collapsable={false} className="flex-row items-center gap-3 bg-grouped-card px-4 py-3.5">
+    <View collapsable={false} className="flex-row items-center gap-3 bg-grouped-card px-4 py-3">
       <ContentContainer
-        className="min-w-0 flex-1 gap-0.5 active:opacity-70"
+        className="min-w-0 flex-1 flex-row items-center gap-3 active:opacity-70"
         accessibilityHint={props.onRemove ? gt("Long press to remove from this device") : undefined}
         accessibilityRole={props.onOpen ? "button" : undefined}
         accessibilityLabel={rowActionLabel}
         onPress={props.onOpen}
         onLongPress={props.onRemove}
       >
-        <View className="min-w-0 flex-row items-center gap-2">
-          <ConnectionStatusDot state={props.connectionState} pulse={shouldPulse} size={7} />
+        <View className="size-8 shrink-0 items-center justify-center rounded-[10px] bg-subtle">
           <EnvironmentMachineSymbol
             kind={props.machine}
-            size={14}
+            size={15}
             tintColorClassName="accent-foreground-muted"
           />
+        </View>
+        <View className="min-w-0 flex-1 gap-0.5">
           <Text
-            className="min-w-0 flex-shrink text-base font-t3-bold leading-snug text-foreground"
+            className="min-w-0 text-base font-t3-bold leading-snug text-foreground"
             numberOfLines={1}
           >
             {props.label}
           </Text>
-        </View>
-        {props.connectionError ? (
-          <Text
-            aria-hidden
-            pointerEvents="none"
-            onTextLayout={onMeasuredErrorTextLayout}
-            className={cn("absolute inset-x-0 -z-[1] text-xs opacity-0", statusClassName)}
+          {props.connectionError ? (
+            <Text
+              aria-hidden
+              pointerEvents="none"
+              onTextLayout={onMeasuredErrorTextLayout}
+              className={cn("absolute inset-x-0 -z-[1] text-xs opacity-0", statusClassName)}
+            >
+              {measuredErrorText}
+            </Text>
+          ) : null}
+          <StatusContainer
+            {...(errorCanExpand
+              ? { accessibilityRole: "button" as const, onPress: props.onToggleError }
+              : {})}
+            className="min-w-0 flex-row items-center gap-1.5"
           >
-            {measuredErrorText}
-          </Text>
-        ) : null}
-        <StatusContainer
-          {...(errorCanExpand
-            ? { accessibilityRole: "button" as const, onPress: props.onToggleError }
-            : {})}
-          className="min-w-0 flex-row items-start gap-1"
-        >
-          <Text
-            className={cn("min-w-0 flex-1 text-xs", statusClassName)}
-            numberOfLines={isErrorExpanded ? undefined : 1}
-          >
-            {statusText}
-            {errorTraceId ? (
-              <ConnectionTraceId
-                traceId={errorTraceId}
-                tone={
-                  props.connectionError && props.connectionState !== "unsupported"
-                    ? "danger"
-                    : "muted"
-                }
-                activation="longPress"
+            <ConnectionStatusDot state={props.connectionState} pulse={shouldPulse} size={7} />
+            <Text
+              className={cn("min-w-0 flex-1 text-xs", statusClassName)}
+              numberOfLines={isErrorExpanded ? undefined : 1}
+            >
+              {statusText}
+              {errorTraceId ? (
+                <ConnectionTraceId
+                  traceId={errorTraceId}
+                  tone={
+                    props.connectionError && props.connectionState !== "unsupported"
+                      ? "danger"
+                      : "muted"
+                  }
+                  activation="longPress"
+                />
+              ) : null}
+            </Text>
+            {errorCanExpand ? (
+              <SymbolView
+                name="chevron.down"
+                size={10}
+                tintColorClassName={"accent-chevron"}
+                type="monochrome"
+                style={{
+                  transform: [{ rotate: isErrorExpanded ? "180deg" : "0deg" }],
+                }}
               />
             ) : null}
-          </Text>
-          {errorCanExpand ? (
-            <SymbolView
-              name="chevron.down"
-              size={10}
-              tintColorClassName={"accent-chevron"}
-              type="monochrome"
-              style={{
-                marginTop: 3,
-                transform: [{ rotate: isErrorExpanded ? "180deg" : "0deg" }],
-              }}
-            />
-          ) : null}
-        </StatusContainer>
+          </StatusContainer>
+        </View>
       </ContentContainer>
       <ThemedSwitch
         accessibilityLabel={gt("Enable {environment}", { environment: props.label })}
@@ -431,17 +436,22 @@ function CloudEnvironmentRowShell(props: {
           accessible={false}
           accessibilityElementsHidden
           importantForAccessibility="no-hide-descendants"
+          hitSlop={12}
           onPress={props.onOpen}
           onLongPress={props.onRemove}
           style={{
             opacity: props.opensDetails ? 1 : 0.4,
-            minWidth: 44,
-            minHeight: 44,
             alignItems: "center",
             justifyContent: "center",
           }}
         >
-          <SymbolView name="chevron.right" size={12} tintColorClassName="accent-icon-subtle" />
+          <SymbolView
+            name="chevron.right"
+            size={13}
+            tintColorClassName="accent-chevron"
+            type="monochrome"
+            weight="semibold"
+          />
         </ChevronContainer>
       ) : null}
     </View>

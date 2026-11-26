@@ -12,7 +12,10 @@ import { SettingsScreen } from "./components/SettingsScreen";
 import { CloudEnvironmentRows } from "../connection/CloudEnvironmentRows";
 import { LocalEnvironmentList } from "../connection/LocalEnvironmentList";
 import { PullRequestRoutingSettings } from "../connection/PullRequestRoutingSettings";
-import { splitEnvironmentSections } from "../connection/environmentSections";
+import {
+  shouldShowLocalEnvironmentList,
+  splitEnvironmentSections,
+} from "../connection/environmentSections";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { useRemoteConnections } from "../../state/use-remote-environment-registry";
 import { relayEnvironmentDiscovery } from "../../state/relay";
@@ -117,7 +120,7 @@ export function SettingsEnvironmentsRouteScreen() {
         contentInsetAdjustmentBehavior="automatic"
         showsVerticalScrollIndicator={false}
         className="flex-1"
-        contentContainerClassName="px-5 pt-4"
+        contentContainerClassName="gap-5 px-5 pt-4"
         contentContainerStyle={{
           paddingBottom: Math.max(insets.bottom, 18) + 18,
         }}
@@ -130,16 +133,18 @@ export function SettingsEnvironmentsRouteScreen() {
           ) : undefined
         }
       >
-        <LocalEnvironmentList
-          environments={localEnvironments}
-          expandedId={null}
-          onToggle={openEnvironment}
-          opensDetails
-          onReconnect={onReconnectEnvironment}
-          onRemove={onRemoveEnvironmentPress}
-          onSetEnabled={onSetEnvironmentEnabled}
-          onUpdate={handleUpdateEnvironment}
-        />
+        {shouldShowLocalEnvironmentList({ localEnvironments, connectedCloudEnvironments }) ? (
+          <LocalEnvironmentList
+            environments={localEnvironments}
+            expandedId={null}
+            onToggle={openEnvironment}
+            opensDetails
+            onReconnect={onReconnectEnvironment}
+            onRemove={onRemoveEnvironmentPress}
+            onSetEnabled={onSetEnvironmentEnabled}
+            onUpdate={handleUpdateEnvironment}
+          />
+        ) : null}
 
         {/* Keep connected relays visible and removable without cloud config or sign-in; this component gates discovery. */}
         <CloudEnvironmentRows

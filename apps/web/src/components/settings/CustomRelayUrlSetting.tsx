@@ -1,3 +1,4 @@
+import { AuthRelayWriteScope } from "@t3tools/contracts";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { normalizeSecureRelayUrl } from "@t3tools/shared/relayUrl";
 import { T, useGT } from "gt-react";
@@ -7,10 +8,12 @@ import {
   ChevronDownIcon,
   InfoIcon,
   TriangleAlertIcon,
+  Unlink2Icon,
 } from "lucide-react";
 import { useEffect, useEffectEvent, useId, useRef, useState } from "react";
 
 import { usePrimaryCloudLinkState } from "~/cloud/cloudLinkState";
+import { unlinkEnvironment as unlinkEnvironmentAtom } from "~/cloud/linkEnvironmentAtoms";
 import {
   normalizeClerkPublishableKey,
   readCustomClerkCliOAuthClientIdOverride,
@@ -19,8 +22,10 @@ import {
   resolveDefaultRelayUrl,
   writeWebCustomCloudConfigOverride,
 } from "~/cloud/publicConfig";
+import { useAtomCommand } from "~/state/use-atom-command";
 import { m } from "~/i18n/messages";
 import { cn } from "~/lib/utils";
+import { useEnvironmentScope } from "~/state/session";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Spinner } from "../ui/spinner";
@@ -31,7 +36,7 @@ import {
   resolveRelayVerificationState,
   type RelayProbeResult,
 } from "./CustomRelayUrlSetting.logic";
-import { SettingsSection } from "./settingsLayout";
+import { SettingsRow, SettingsSection } from "./settingsLayout";
 import { useSearchableSetting } from "./settingsSearch";
 
 const OFFICIAL_RELAY_FALLBACK = "https://relay.t3.codes";
@@ -88,9 +93,10 @@ export function CustomRelayUrlSetting() {
   const [clerkKeyDraft, setClerkKeyDraft] = useState(() => savedClerkKey ?? "");
   const [cliClientIdDraft, setCliClientIdDraft] = useState(() => savedCliClientId ?? "");
   const [isSaving, setIsSaving] = useState(false);
+  const [isUnlinking, setIsUnlinking] = useState(false);
+  const [unlinkError, setUnlinkError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [probeState, setProbeState] = useState<ProbeState>({ status: "idle" });
-  // Fields stay collapsed by default; the header still shows the active relay and its latency.
   const [isExpanded, setIsExpanded] = useState(false);
   const probeSerialRef = useRef(0);
 
@@ -99,6 +105,11 @@ export function CustomRelayUrlSetting() {
   const cliClientIdInputId = useId();
 
   const cloudLinkState = usePrimaryCloudLinkState();
+  const canWriteRelay = useEnvironmentScope(
+    cloudLinkState.target?.environmentId ?? null,
+    AuthRelayWriteScope,
+  );
+  const unlinkEnvironment = useAtomCommand(unlinkEnvironmentAtom);
   const effectiveDefaultRelayUrl = defaultRelayUrl ?? OFFICIAL_RELAY_FALLBACK;
 
   const trimmedRelay = relayDraft.trim();
@@ -211,6 +222,24 @@ export function CustomRelayUrlSetting() {
     }
   };
 
+  const handleUnlinkOldRelay = async () => {
+    if (!cloudLinkState.target || !canWriteRelay) return;
+    setIsUnlinking(true);
+    setUnlinkError(null);
+    const result = await unlinkEnvironment({
+      target: cloudLinkState.target,
+      clerkToken: null,
+    });
+    setIsUnlinking(false);
+    if (result._tag === "Failure") {
+      setUnlinkError(
+        gt("Couldn't unlink the previous relay. Try again or run `t3 connect unlink`."),
+      );
+      return;
+    }
+    cloudLinkState.refresh();
+  };
+
   const isProbing = probeState.status === "probing";
   const headerHost =
     probeState.status !== "idle" && probeState.targetHost
@@ -228,44 +257,58 @@ export function CustomRelayUrlSetting() {
   const showMissingClerkWarning = verification.missingClerkKeyWarning || draftNeedsClerkKey;
   const tunnelHostname = cloudLinkState.data?.tunnelHostname ?? null;
 
-  const verificationBanner =
+  const statusDescription =
     verification.linkAlignment === "mismatched" ? (
-      <div className="flex items-start gap-2 px-3 py-2.5 text-xs leading-relaxed text-muted-foreground sm:px-4">
-        <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0 text-warning-foreground" />
-        <p>
-          {gt(
-            "This machine is still linked to {linkedHost}. Unlink and re-link T3 Connect in Sharing & access to switch to {activeHost}.",
-            {
-              linkedHost: verification.linkedHost ?? gt("another relay"),
-              activeHost: verification.activeHost ?? "relay.t3.codes",
-            },
-          )}
-        </p>
-      </div>
+      <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1.5">
+        <span className="inline-flex items-center gap-1.5">
+          <TriangleAlertIcon className="size-3.5 shrink-0 text-warning-foreground" />
+          <span>
+            {gt(
+              "This machine is still linked to {linkedHost}. Unlink it before reconnecting to {activeHost}.",
+              {
+                linkedHost: verification.linkedHost ?? gt("another relay"),
+                activeHost: verification.activeHost ?? "relay.t3.codes",
+              },
+            )}
+          </span>
+        </span>
+        {cloudLinkState.target && canWriteRelay ? (
+          <Button
+            type="button"
+            size="xs"
+            variant="outline"
+            disabled={isUnlinking || isSaving}
+            onClick={() => void handleUnlinkOldRelay()}
+          >
+            {isUnlinking ? <Spinner size="xs" /> : <Unlink2Icon className="size-3" />}
+            {isUnlinking ? gt("Unlinking…") : gt("Unlink old relay")}
+          </Button>
+        ) : null}
+      </span>
     ) : showMissingClerkWarning ? (
-      <div className="flex items-start gap-2 px-3 py-2.5 text-xs leading-relaxed text-muted-foreground sm:px-4">
+      <span className="inline-flex items-start gap-1.5">
         <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0 text-warning-foreground" />
-        <p>
+        <span>
           <T>
-            Self-hosted relays usually require a matching Clerk publishable key. After saving, sign
-            out and sign back in so tunnels are provisioned on your relay.
+            Self-hosted relays require a matching Clerk publishable key. After saving, sign out and
+            sign back in so tunnels are provisioned on your relay.
           </T>
-        </p>
-      </div>
+        </span>
+      </span>
     ) : verification.isCustomRelay && verification.linkAlignment === "revoked" ? (
-      <div className="flex items-start gap-2 px-3 py-2.5 text-xs leading-relaxed text-muted-foreground sm:px-4">
+      <span className="inline-flex items-start gap-1.5">
         <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0 text-warning-foreground" />
-        <p>
+        <span>
           {gt(
             "Using {activeHost}, but this machine's T3 Connect link was revoked. Re-link in Sharing & access.",
             { activeHost: verification.activeHost ?? "" },
           )}
-        </p>
-      </div>
+        </span>
+      </span>
     ) : verification.isCustomRelay && verification.linkAlignment === "matched" ? (
-      <div className="flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground sm:px-4">
+      <span className="inline-flex min-w-0 items-center gap-1.5">
         <CheckCircle2Icon className="size-3.5 shrink-0 text-success-foreground" />
-        <p className="min-w-0 truncate">
+        <span className="min-w-0 truncate">
           <span className="font-medium text-foreground">
             <T>Active on this machine</T>
           </span>
@@ -275,96 +318,100 @@ export function CustomRelayUrlSetting() {
               <span className="font-mono">{tunnelHostname}</span>
             </>
           ) : null}
-        </p>
-      </div>
+        </span>
+      </span>
     ) : verification.isCustomRelay && verification.linkAlignment === "unlinked" ? (
-      <div className="flex items-start gap-2 px-3 py-2.5 text-xs leading-relaxed text-muted-foreground sm:px-4">
+      <span className="inline-flex items-start gap-1.5">
         <InfoIcon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
-        <p>
+        <span>
           {gt(
             "Configured for {activeHost}. Turn on T3 Connect in Sharing & access to provision a tunnel on this relay.",
             { activeHost: verification.activeHost ?? "" },
           )}
-        </p>
-      </div>
-    ) : null;
+        </span>
+      </span>
+    ) : (
+      gt("Route T3 Connect through your own relay and Clerk instance.")
+    );
+
+  const latencyReadout = isProbing ? (
+    <span className="text-xs font-normal text-muted-foreground">
+      <T>Checking…</T>
+    </span>
+  ) : probeState.status === "done" ? (
+    probeState.result.ok ? (
+      <span
+        className={cn(
+          "shrink-0 font-mono text-xs font-normal tabular-nums",
+          latencyToneClassName(probeState.result.latencyMs),
+        )}
+      >
+        {gt("{ms} ms", { ms: probeState.result.latencyMs })}
+      </span>
+    ) : (
+      <span className="shrink-0 text-xs font-normal text-destructive">
+        {probeFailureLabel(probeState.result, gt)}
+      </span>
+    )
+  ) : verification.isCustomRelay ? (
+    <span className="text-xs font-normal text-muted-foreground">
+      <T>Custom</T>
+    </span>
+  ) : (
+    <span className="text-xs font-normal text-muted-foreground">
+      <T>Default</T>
+    </span>
+  );
 
   return (
-    <SettingsSection
-      id={search.id}
-      title={search.title}
-      // Collapsed with nothing to report: drop the empty card so only the header row shows.
-      variant={showFields || verificationBanner !== null ? "grouped" : "plain"}
-      titleAction={
-        <div className="ms-1.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-          <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", statusDotClassName)} />
-          <span className="truncate font-mono">{headerHost}</span>
-          <span aria-hidden>·</span>
-          {isProbing ? (
-            <span>
-              <T>Checking…</T>
+    <SettingsSection id={search.id} title={search.title} variant="grouped">
+      <SettingsRow
+        title={
+          <span className="inline-flex min-w-0 flex-wrap items-center gap-2">
+            <span aria-hidden className={cn("size-2 shrink-0 rounded-full", statusDotClassName)} />
+            <span className="truncate font-mono">{headerHost}</span>
+            <span aria-hidden className="text-xs font-normal text-muted-foreground">
+              ·
             </span>
-          ) : probeState.status === "done" ? (
-            probeState.result.ok ? (
-              <span
-                className={cn(
-                  "shrink-0 font-mono tabular-nums",
-                  latencyToneClassName(probeState.result.latencyMs),
-                )}
-              >
-                {gt("{ms} ms", { ms: probeState.result.latencyMs })}
-              </span>
-            ) : (
-              <span className="shrink-0 text-destructive">
-                {probeFailureLabel(probeState.result, gt)}
-              </span>
-            )
-          ) : verification.isCustomRelay ? (
-            <span>
-              <T>Custom</T>
-            </span>
-          ) : (
-            <span>
-              <T>Default</T>
-            </span>
-          )}
-        </div>
-      }
-      headerAction={
-        <div className="flex items-center gap-1.5">
-          <Button
-            type="button"
-            size="xs"
-            variant="outline"
-            disabled={isProbing || isSaving || probeTargetUrl === null}
-            onClick={() => {
-              if (probeTargetUrl !== null) void runProbe(probeTargetUrl);
-            }}
-          >
-            {isProbing ? <Spinner size="xs" /> : <ActivityIcon className="size-3" />}
-            {isProbing
-              ? gt("Testing…")
-              : gt("Test", { $context: "button: test relay reachability and latency" })}
-          </Button>
-          <Button
-            type="button"
-            size="xs"
-            variant="ghost"
-            aria-expanded={showFields}
-            onClick={() => {
-              if (showFields) setError(null);
-              setIsExpanded(!showFields);
-            }}
-          >
-            {showFields ? gt("Hide") : gt("Set up")}
-            <ChevronDownIcon
-              className={cn("size-3 transition-transform", showFields && "rotate-180")}
-            />
-          </Button>
-        </div>
-      }
-    >
-      {verificationBanner}
+            {latencyReadout}
+          </span>
+        }
+        description={statusDescription}
+        status={unlinkError ? <span className="text-destructive">{unlinkError}</span> : undefined}
+        control={
+          <div className="flex items-center gap-1.5">
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              disabled={isProbing || isSaving || probeTargetUrl === null}
+              onClick={() => {
+                if (probeTargetUrl !== null) void runProbe(probeTargetUrl);
+              }}
+            >
+              {isProbing ? <Spinner size="xs" /> : <ActivityIcon className="size-3" />}
+              {isProbing
+                ? gt("Testing…")
+                : gt("Test", { $context: "button: test relay reachability and latency" })}
+            </Button>
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              aria-expanded={showFields}
+              onClick={() => {
+                if (showFields) setError(null);
+                setIsExpanded(!showFields);
+              }}
+            >
+              {showFields ? gt("Hide") : gt("Set up")}
+              <ChevronDownIcon
+                className={cn("size-3 transition-transform", showFields && "rotate-180")}
+              />
+            </Button>
+          </div>
+        }
+      />
       {showFields ? (
         <>
           <div className="space-y-2 px-3 py-3.5 sm:px-4">

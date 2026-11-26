@@ -26,6 +26,12 @@ export function relayManagedEnvironmentIds(
   );
 }
 
+export function shouldShowLocalEnvironmentList(
+  sections: Pick<EnvironmentSections, "localEnvironments" | "connectedCloudEnvironments">,
+): boolean {
+  return sections.localEnvironments.length > 0 || sections.connectedCloudEnvironments.length === 0;
+}
+
 export function splitEnvironmentSections(input: EnvironmentSectionsInput): EnvironmentSections {
   const savedEnvironmentIds = relayManagedEnvironmentIds(input.connectedEnvironments);
 
