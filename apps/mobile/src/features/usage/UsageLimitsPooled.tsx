@@ -33,6 +33,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
+import { Menu } from "../../components/ui/Menu";
 import { ProviderIcon } from "../../components/ProviderIcon";
 import type { MessageResolver } from "../../i18n/messages";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
@@ -597,6 +598,10 @@ export function UsageLimitsSection({
   const providerOrder = AsyncResult.isSuccess(preferencesResult)
     ? preferencesResult.value.usageLimitsProviderOrder
     : undefined;
+  const hiddenWindowKeys = AsyncResult.isSuccess(preferencesResult)
+    ? (preferencesResult.value.hiddenUsageLimitWindows ?? [])
+    : [];
+  const hiddenWindowSet = new Set(hiddenWindowKeys);
   const includeAntigravityThirdParty =
     AsyncResult.isSuccess(preferencesResult) &&
     preferencesResult.value.antigravityIncludeThirdPartyLimits === true;
@@ -616,6 +621,19 @@ export function UsageLimitsSection({
   };
   const toggleAntigravityThirdParty = () => {
     void savePreferences({ antigravityIncludeThirdPartyLimits: !includeAntigravityThirdParty });
+  };
+  const toggleWindowVisibility = (driver: string, windowId: string) => {
+    const key = `${driver}:${windowId}`;
+    const next = hiddenWindowKeys.includes(key)
+      ? hiddenWindowKeys.filter((entry) => entry !== key)
+      : [...hiddenWindowKeys, key];
+    void savePreferences({ hiddenUsageLimitWindows: next });
+  };
+  const showAllWindowsForDriver = (driver: string) => {
+    const prefix = `${driver}:`;
+    void savePreferences({
+      hiddenUsageLimitWindows: hiddenWindowKeys.filter((entry) => !entry.startsWith(prefix)),
+    });
   };
   const quotaSources = collectHttpQuotaSources(selected);
   const m = useMessages();
@@ -678,10 +696,34 @@ export function UsageLimitsSection({
           pool.driver === "antigravity" &&
           pool.windows.some(isAntigravityThirdPartyWindow) &&
           pool.windows.some((window) => !isAntigravityThirdPartyWindow(window));
-        const windows = displayLimitWindows(pool, {
+        const allWindows = displayLimitWindows(pool, {
           antigravityOwnModelsOnly: !includeAntigravityThirdParty,
         });
+        const windows = allWindows.filter(
+          (window) => !hiddenWindowSet.has(`${pool.driver}:${window.id}`),
+        );
+        const hiddenCount = allWindows.length - windows.length;
         const label = providerClients.get(pool.driver)?.label ?? String(pool.driver);
+        const visibilityActions = [
+          ...allWindows.map((window) => {
+            const key = `${pool.driver}:${window.id}`;
+            const details =
+              pool.driver === "cursor" ? cursorUsageWindowDetails(window.id, pool, m) : undefined;
+            return {
+              id: `toggle:${window.id}`,
+              title: details?.label ?? window.label,
+              state: hiddenWindowSet.has(key) ? ("off" as const) : ("on" as const),
+            };
+          }),
+          ...(hiddenCount > 0
+            ? [
+                {
+                  id: "show-all",
+                  title: gt("Show all", { $context: "restore hidden quota windows" }),
+                },
+              ]
+            : []),
+        ];
         const header = (
           <View
             className={
@@ -773,29 +815,82 @@ export function UsageLimitsSection({
                   </Pressable>
                 </View>
               ) : null}
+              {visibilityActions.length > 0 ? (
+                <Menu
+                  title={gt("Shown windows")}
+                  actions={visibilityActions}
+                  onPressAction={({ nativeEvent }) => {
+                    const eventId = nativeEvent.event;
+                    if (eventId === "show-all") {
+                      showAllWindowsForDriver(String(pool.driver));
+                    } else if (eventId.startsWith("toggle:")) {
+                      toggleWindowVisibility(String(pool.driver), eventId.slice("toggle:".length));
+                    }
+                  }}
+                >
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={gt("More options for {label}", { label })}
+                    hitSlop={6}
+                    className={`${
+                      wide ? "size-8 bg-grouped-card" : "size-6 bg-subtle"
+                    } relative items-center justify-center rounded-full active:opacity-60`}
+                  >
+                    <SymbolView
+                      name="ellipsis"
+                      size={wide ? 13 : 11}
+                      tintColorClassName="accent-foreground-muted"
+                      type="monochrome"
+                      weight="semibold"
+                    />
+                    {hiddenCount > 0 ? (
+                      <View className="absolute top-0.5 right-0.5 size-1.5 rounded-full bg-primary" />
+                    ) : null}
+                  </Pressable>
+                </Menu>
+              ) : null}
             </View>
           </View>
         );
-        const windowCards = windows.map((window, windowIndex) => {
-          const details =
-            pool.driver === "cursor" ? cursorUsageWindowDetails(window.id, pool, m) : undefined;
-          return (
-            <Fragment key={`${window.kind}:${window.id}`}>
-              {!wide && windowIndex > 0 ? <View className="h-px bg-border-subtle/50" /> : null}
-              <PoolWindowCard
-                pool={window}
-                color={colors[usageProviderKind(pool.driver) ?? "codex"]}
-                now={now}
-                environmentIds={
-                  selectedEnvironmentIds === null ? null : [...selectedEnvironmentIds]
-                }
-                label={details?.label}
-                description={details?.description}
-                wide={wide}
-              />
-            </Fragment>
+        const windowCards =
+          windows.length === 0 ? (
+            <View className="flex-row items-center justify-between gap-2 py-1">
+              <Text className="text-xs text-foreground-muted">
+                <T>All quota windows hidden.</T>
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                hitSlop={6}
+                onPress={() => showAllWindowsForDriver(String(pool.driver))}
+                className="active:opacity-60"
+              >
+                <Text className="text-xs font-t3-medium text-primary">
+                  <T>Show all</T>
+                </Text>
+              </Pressable>
+            </View>
+          ) : (
+            windows.map((window, windowIndex) => {
+              const details =
+                pool.driver === "cursor" ? cursorUsageWindowDetails(window.id, pool, m) : undefined;
+              return (
+                <Fragment key={`${window.kind}:${window.id}`}>
+                  {!wide && windowIndex > 0 ? <View className="h-px bg-border-subtle/50" /> : null}
+                  <PoolWindowCard
+                    pool={window}
+                    color={colors[usageProviderKind(pool.driver) ?? "codex"]}
+                    now={now}
+                    environmentIds={
+                      selectedEnvironmentIds === null ? null : [...selectedEnvironmentIds]
+                    }
+                    label={details?.label}
+                    description={details?.description}
+                    wide={wide}
+                  />
+                </Fragment>
+              );
+            })
           );
-        });
         return (
           <Fragment key={pool.driver}>
             {wide ? (

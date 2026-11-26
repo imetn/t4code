@@ -5211,11 +5211,14 @@
   "f78edbddd70ee41d": "分段 {index}，{account}，剩余 {remaining}%，{credits, plural, other {已存有 {credits} 个重置额度}}",
   "d2d071e45a2d6b89": "选择一个环境即可查看限制。",
   "f411a8cef140a5ea": "选中的环境上没有提供方报告订阅限制。",
+  "69f04c2e4734ad8e": "全部显示",
   "bece3f19146d8861": "在 Antigravity 中显示 Claude 和 GPT 额度",
   "bb5251fd919e346b": "全部模型",
   "cbb66364f04ac84a": "仅 Gemini",
   "90505e3bfadccee0": "上移 {label}",
   "33234f46946de376": "下移 {label}",
+  "58a47f5aca56a53b": "显示额度项",
+  "aaf076e546e9f6a4": "{label} 的更多选项",
   "b29a752dd8ee9aa7": "账户",
   "55a38e69338c54ee": "隐藏账户邮箱",
   "0d3e9f1f27c0e780": "显示账户邮箱",
@@ -5237,6 +5240,8 @@
       ]
     }
   ],
+  "ed69629d0016513f": "所有额度项已隐藏。",
+  "6bc7d41e095831d3": "全部显示",
   "6af5e3cf03861f55": [
     {
       "i": 1,

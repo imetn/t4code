@@ -10,7 +10,14 @@ import {
   type UsageProviderKind,
   type UsageSummaryInput,
 } from "@t3tools/contracts";
-import { CircleAlertIcon, ChevronDownIcon, InfoIcon, SlidersHorizontalIcon } from "lucide-react";
+import {
+  CircleAlertIcon,
+  ChevronDownIcon,
+  InfoIcon,
+  LayoutGridIcon,
+  LayoutListIcon,
+  SlidersHorizontalIcon,
+} from "lucide-react";
 import { T, useGT, useLocale, useMessages, Var } from "gt-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { settlePromise } from "@t3tools/client-runtime/state/runtime";
@@ -410,9 +417,30 @@ export function UsagePage() {
         </span>
       ) : null}
       <div className="ms-auto hidden shrink-0 items-center justify-end gap-2 @4xl/usage-header:flex">
-        {/* Limits are always current, so they have no period. The period sits before the metric
-            tabs so dropping it never moves them. */}
-        {showingLimits ? null : (
+        {/* Limits are always current, so they have no period. The view-mode switch occupies the
+            period slot so switching between tabs never shifts the metric toggle. */}
+        {showingLimits ? (
+          <ToggleGroup
+            aria-label={gt("Limits layout")}
+            variant="segmented"
+            value={[preferences.limitsViewMode ?? "standard"]}
+            onValueChange={(next) => {
+              const value = next[0];
+              if (value === "standard" || value === "compact") {
+                updatePreferences({ limitsViewMode: value });
+              }
+            }}
+          >
+            <Toggle value="standard" title={gt("Standard view")}>
+              <LayoutListIcon className="size-3.5" aria-hidden />
+              <T context="usage limits view mode">Standard</T>
+            </Toggle>
+            <Toggle value="compact" title={gt("Compact view")}>
+              <LayoutGridIcon className="size-3.5" aria-hidden />
+              <T context="usage limits view mode">Compact</T>
+            </Toggle>
+          </ToggleGroup>
+        ) : (
           <ToggleGroup
             aria-label={gt("Usage period")}
             variant="segmented"
@@ -456,7 +484,30 @@ export function UsagePage() {
         </Button>
       </div>
       <div className="ms-auto flex shrink-0 items-center justify-end gap-1 @4xl/usage-header:hidden">
-        {showingLimits ? null : (
+        {showingLimits ? (
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            aria-label={
+              (preferences.limitsViewMode ?? "standard") === "compact"
+                ? gt("Switch to standard view")
+                : gt("Switch to compact view")
+            }
+            onClick={() =>
+              updatePreferences({
+                limitsViewMode:
+                  (preferences.limitsViewMode ?? "standard") === "compact" ? "standard" : "compact",
+              })
+            }
+          >
+            {(preferences.limitsViewMode ?? "standard") === "compact" ? (
+              <LayoutListIcon className="size-4" aria-hidden />
+            ) : (
+              <LayoutGridIcon className="size-4" aria-hidden />
+            )}
+          </Button>
+        ) : (
           <Select value={windowId} onValueChange={selectWindow}>
             <SelectTrigger
               aria-label={gt("Usage period")}
@@ -537,6 +588,11 @@ export function UsagePage() {
                 hiddenProviders={hiddenProviders}
                 providerOrder={preferences.limitsProviderOrder}
                 onProviderOrderChange={(next) => updatePreferences({ limitsProviderOrder: next })}
+                viewMode={preferences.limitsViewMode ?? "standard"}
+                hiddenWindowKeys={preferences.hiddenLimitWindows}
+                onHiddenWindowKeysChange={(next) =>
+                  updatePreferences({ hiddenLimitWindows: next.length > 0 ? next : undefined })
+                }
                 now={limitsNow}
               />
             ) : shown === null ? (

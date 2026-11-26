@@ -5223,11 +5223,14 @@
   "f78edbddd70ee41d": "Segment {index}, {account}, {remaining} % restant, {credits, plural, one {{credits} crédit de réinitialisation en réserve} other {{credits} crédits de réinitialisation en réserve}}",
   "d2d071e45a2d6b89": "Sélectionnez un environnement pour voir les limites.",
   "f411a8cef140a5ea": "Aucun fournisseur des environnements sélectionnés ne signale de limites d’abonnement.",
+  "69f04c2e4734ad8e": "Show all",
   "bece3f19146d8861": "Show Claude and GPT limits in Antigravity",
   "bb5251fd919e346b": "All models",
   "cbb66364f04ac84a": "Gemini only",
   "90505e3bfadccee0": "Move {label} up",
   "33234f46946de376": "Move {label} down",
+  "58a47f5aca56a53b": "Shown windows",
+  "aaf076e546e9f6a4": "More options for {label}",
   "b29a752dd8ee9aa7": "Compte",
   "55a38e69338c54ee": "Masquer l’e-mail du compte",
   "0d3e9f1f27c0e780": "Afficher l’e-mail du compte",
@@ -5249,6 +5252,8 @@
     " ",
     "restants"
   ],
+  "ed69629d0016513f": "All quota windows hidden.",
+  "6bc7d41e095831d3": "Show all",
   "6af5e3cf03861f55": [
     {
       "i": 1,

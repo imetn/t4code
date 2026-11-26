@@ -190,6 +190,7 @@ export interface Preferences {
   readonly pullRequestSavedViews?: ReadonlyArray<PullRequestSavedView>;
   readonly issueSavedViews?: ReadonlyArray<IssueSavedView>;
   readonly usageLimitsProviderOrder?: readonly string[];
+  readonly hiddenUsageLimitWindows?: readonly string[];
   readonly antigravityIncludeThirdPartyLimits?: boolean;
 }
 
@@ -282,12 +283,18 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     pullRequestSavedViews?: ReadonlyArray<PullRequestSavedView>;
     issueSavedViews?: ReadonlyArray<IssueSavedView>;
     usageLimitsProviderOrder?: readonly string[];
+    hiddenUsageLimitWindows?: readonly string[];
     antigravityIncludeThirdPartyLimits?: boolean;
   } = {};
 
   if (Array.isArray(parsed.usageLimitsProviderOrder)) {
     preferences.usageLimitsProviderOrder = parsed.usageLimitsProviderOrder.filter(
       (driver): driver is string => typeof driver === "string",
+    );
+  }
+  if (Array.isArray(parsed.hiddenUsageLimitWindows)) {
+    preferences.hiddenUsageLimitWindows = parsed.hiddenUsageLimitWindows.filter(
+      (key): key is string => typeof key === "string",
     );
   }
   if (typeof parsed.antigravityIncludeThirdPartyLimits === "boolean") {

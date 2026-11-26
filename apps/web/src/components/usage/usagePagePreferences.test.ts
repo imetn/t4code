@@ -50,13 +50,21 @@ describe("Usage page preferences", () => {
     });
   });
 
-  it("round-trips limitsProviderOrder", () => {
+  it("round-trips limitsProviderOrder, limitsViewMode, and hiddenLimitWindows", () => {
     saveUsagePagePreferences({
       metric: "limits",
       window: "30d",
       limitsProviderOrder: ["claudeAgent", "codex"],
+      limitsViewMode: "compact",
+      hiddenLimitWindows: ["antigravity:3p-5h", "antigravity:3p-weekly"],
     });
-    expect(readUsagePagePreferences().limitsProviderOrder).toEqual(["claudeAgent", "codex"]);
+    expect(readUsagePagePreferences()).toEqual({
+      metric: "limits",
+      window: "30d",
+      limitsProviderOrder: ["claudeAgent", "codex"],
+      limitsViewMode: "compact",
+      hiddenLimitWindows: ["antigravity:3p-5h", "antigravity:3p-weekly"],
+    });
   });
 
   // regression: #10189 an invalid saved usage selection was never replaced

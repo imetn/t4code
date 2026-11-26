@@ -5301,11 +5301,14 @@
   "f78edbddd70ee41d": "Сегмент {index}, {account}, осталось {remaining}%, {credits, plural, one {накоплен {credits} кредит на сброс} few {накоплено {credits} кредита на сброс} many {накоплено {credits} кредитов на сброс} other {накоплено {credits} кредита на сброс}}",
   "d2d071e45a2d6b89": "Выберите окружение, чтобы увидеть лимиты.",
   "f411a8cef140a5ea": "Ни один провайдер в выбранных окружениях не сообщает лимиты подписки.",
+  "69f04c2e4734ad8e": "Show all",
   "bece3f19146d8861": "Show Claude and GPT limits in Antigravity",
   "bb5251fd919e346b": "All models",
   "cbb66364f04ac84a": "Gemini only",
   "90505e3bfadccee0": "Move {label} up",
   "33234f46946de376": "Move {label} down",
+  "58a47f5aca56a53b": "Shown windows",
+  "aaf076e546e9f6a4": "More options for {label}",
   "b29a752dd8ee9aa7": "Аккаунт",
   "55a38e69338c54ee": "Скрыть email аккаунта",
   "0d3e9f1f27c0e780": "Показать email аккаунта",
@@ -5327,6 +5330,8 @@
       ]
     }
   ],
+  "ed69629d0016513f": "All quota windows hidden.",
+  "6bc7d41e095831d3": "Show all",
   "6af5e3cf03861f55": [
     {
       "i": 1,

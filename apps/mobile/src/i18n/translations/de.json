@@ -5229,11 +5229,14 @@
   "f78edbddd70ee41d": "Segment {index}, {account}, {remaining} % übrig, {credits, plural, one {{credits} Reset-Guthaben angespart} other {{credits} Reset-Guthaben angespart}}",
   "d2d071e45a2d6b89": "Wähle eine Umgebung, um Limits zu sehen.",
   "f411a8cef140a5ea": "Kein Anbieter in den ausgewählten Umgebungen meldet Abo-Limits.",
+  "69f04c2e4734ad8e": "Show all",
   "bece3f19146d8861": "Show Claude and GPT limits in Antigravity",
   "bb5251fd919e346b": "All models",
   "cbb66364f04ac84a": "Gemini only",
   "90505e3bfadccee0": "Move {label} up",
   "33234f46946de376": "Move {label} down",
+  "58a47f5aca56a53b": "Shown windows",
+  "aaf076e546e9f6a4": "More options for {label}",
   "b29a752dd8ee9aa7": "Konto",
   "55a38e69338c54ee": "Konto-E-Mail ausblenden",
   "0d3e9f1f27c0e780": "Konto-E-Mail anzeigen",
@@ -5255,6 +5258,8 @@
       ]
     }
   ],
+  "ed69629d0016513f": "All quota windows hidden.",
+  "6bc7d41e095831d3": "Show all",
   "6af5e3cf03861f55": [
     {
       "i": 1,

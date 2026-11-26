@@ -22,6 +22,7 @@ import {
   ArrowDownIcon,
   ArrowUpIcon,
   ExternalLinkIcon,
+  MoreHorizontalIcon,
   TicketIcon,
 } from "lucide-react";
 import {
@@ -30,6 +31,8 @@ import {
   type ReactNode,
   type RefObject,
   use,
+  useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -45,8 +48,30 @@ import { RedactedSensitiveText } from "../settings/RedactedSensitiveText";
 import { Button } from "../ui/button";
 import { OpenAI } from "../Icons";
 import { Alert, AlertTitle } from "../ui/alert";
+import {
+  Menu,
+  MenuCheckboxItem,
+  MenuGroup,
+  MenuGroupLabel,
+  MenuItem,
+  MenuPopup,
+  MenuSeparator,
+  MenuTrigger,
+} from "../ui/menu";
 import { Popover, PopoverCreateHandle, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { PaceIcon, ResetCreditDialog, barColor, usePaceMark, useResetCredit } from "./UsageLimits";
+import {
+  appendLimitHistory,
+  buildPaceCurveModel,
+  clearHiddenLimitWindowsForDriver,
+  limitWindowVisibilityKey,
+  readLimitHistory,
+  recordUsageLimitHistory,
+  toggleHiddenLimitWindow,
+  type LimitHistoryStore,
+  type PaceCurveModel,
+} from "./usageLimitHistory";
+import type { UsageLimitsViewMode } from "./usagePagePreferences";
 import {
   collectExternalUsageLinks,
   collectLimitNotices,
@@ -320,6 +345,7 @@ function PoolSegment({
   readonly now: number;
   readonly index: number;
   readonly showAccountName: boolean;
+  readonly compact?: boolean | undefined;
 }) {
   return account.redeem ? (
     <RedeemableSegment account={account} redeemAt={account.redeem} {...props} />
@@ -367,12 +393,14 @@ function SegmentTriggers({
   now,
   index,
   showAccountName,
+  compact = false,
 }: SegmentPayload & {
   readonly refillPercent: number;
   readonly color: string;
   readonly now: number;
   readonly index: number;
   readonly showAccountName: boolean;
+  readonly compact?: boolean | undefined;
 }) {
   const popover = use(SegmentPopoverContext) ?? undefined;
   const payload: SegmentPayload = { account, window, reset, redeem };
@@ -413,22 +441,34 @@ function SegmentTriggers({
             type="button"
             style={{ gridColumn: index, gridRow: 1, ...paceMark?.gappedTrack }}
             aria-label={segmentLabel}
-            className="relative h-5 min-w-0 cursor-pointer rounded-md bg-muted text-start outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background data-[popup-open]:ring-1 data-[popup-open]:ring-inset data-[popup-open]:ring-border @2xl/pool:h-8"
+            className={cn(
+              "relative min-w-0 cursor-pointer bg-muted text-start outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background data-[popup-open]:ring-1 data-[popup-open]:ring-inset data-[popup-open]:ring-border",
+              compact ? "h-2 rounded-full" : "h-5 rounded-md @2xl/pool:h-8",
+            )}
           />
         }
       >
-        <div aria-hidden className="absolute inset-0 overflow-hidden rounded-md">
+        <div
+          aria-hidden
+          className={cn(
+            "absolute inset-0 overflow-hidden",
+            compact ? "rounded-full" : "rounded-md",
+          )}
+        >
           {/* Clipped inside the rounded clip so the bar's own corners keep their antialiasing. */}
           <div className="absolute inset-0" style={paceMark?.gap}>
             <div
               aria-hidden
-              className="absolute inset-y-0 left-0 rounded-md opacity-35"
+              className={cn(
+                "absolute inset-y-0 left-0",
+                compact ? "rounded-full opacity-80" : "rounded-md opacity-35",
+              )}
               style={{ width: `${remaining}%`, backgroundColor: color }}
             />
             {remaining < 100 && reset && refillPercent > 0 ? (
               <div
                 aria-hidden
-                className="absolute inset-y-0 right-0 opacity-20"
+                className="absolute inset-y-0 right-0 opacity-25"
                 style={{
                   width: `${Math.min(100 - remaining, refillPercent)}%`,
                   // A bare 45° gradient repeats every 5√2px, so some stripes rasterize thinner; a whole-pixel tile doesn't.
@@ -442,50 +482,57 @@ function SegmentTriggers({
         {paceMark ? (
           <span
             aria-hidden
-            className="absolute inset-y-0.5 w-0.5 -translate-x-1/2 rounded-full bg-foreground"
+            className={cn(
+              "absolute w-0.5 -translate-x-1/2 rounded-full bg-foreground",
+              compact ? "-inset-y-0.5" : "inset-y-0.5",
+            )}
             style={paceMark.tick}
           />
         ) : null}
-        <span
-          aria-hidden
-          className="absolute inset-0 flex items-center justify-center overflow-hidden rounded-md text-3xs leading-none font-semibold text-foreground/80 tabular-nums @2xl/pool:hidden"
-        >
-          {index}
-        </span>
-        <div className="relative hidden h-full min-w-0 items-center gap-1.5 overflow-hidden rounded-md px-2 text-xs @2xl/pool:flex">
-          {showAccountName ? (
-            <AccountName
-              account={account}
-              className="min-w-0 truncate font-medium text-foreground"
-            />
-          ) : null}
-          {/* A single-account bar repeats the headline percentage. */}
-          {showAccountName ? (
-            <span className="shrink-0 font-semibold text-foreground tabular-nums">
-              {remaining}%
+        {compact ? null : (
+          <>
+            <span
+              aria-hidden
+              className="absolute inset-0 flex items-center justify-center overflow-hidden rounded-md text-3xs leading-none font-semibold text-foreground/80 tabular-nums @2xl/pool:hidden"
+            >
+              {index}
             </span>
-          ) : null}
-          {resetsIn || credits ? (
-            <span className="ms-auto flex min-w-0 items-center gap-1.5 overflow-hidden rounded-sm bg-background/85 px-1.5 py-0.5 text-2xs whitespace-nowrap text-foreground tabular-nums">
-              {refillIn ?? ""}
-              {credits ? (
-                <>
-                  {resetsIn ? (
-                    <span aria-hidden className="text-muted-foreground">
-                      ·
-                    </span>
-                  ) : null}
-                  <span aria-hidden className="inline-flex items-center gap-0.5 font-semibold">
-                    <TicketIcon className="size-3" aria-hidden />
-                    {credits}
-                  </span>
-                </>
+            <div className="relative hidden h-full min-w-0 items-center gap-1.5 overflow-hidden rounded-md px-2 text-xs @2xl/pool:flex">
+              {showAccountName ? (
+                <AccountName
+                  account={account}
+                  className="min-w-0 truncate font-medium text-foreground"
+                />
               ) : null}
-            </span>
-          ) : null}
-        </div>
+              {/* A single-account bar repeats the headline percentage. */}
+              {showAccountName ? (
+                <span className="shrink-0 font-semibold text-foreground tabular-nums">
+                  {remaining}%
+                </span>
+              ) : null}
+              {resetsIn || credits ? (
+                <span className="ms-auto flex min-w-0 items-center gap-1.5 overflow-hidden rounded-sm bg-background/85 px-1.5 py-0.5 text-2xs whitespace-nowrap text-foreground tabular-nums">
+                  {refillIn ?? ""}
+                  {credits ? (
+                    <>
+                      {resetsIn ? (
+                        <span aria-hidden className="text-muted-foreground">
+                          ·
+                        </span>
+                      ) : null}
+                      <span aria-hidden className="inline-flex items-center gap-0.5 font-semibold">
+                        <TicketIcon className="size-3" aria-hidden />
+                        {credits}
+                      </span>
+                    </>
+                  ) : null}
+                </span>
+              ) : null}
+            </div>
+          </>
+        )}
       </PopoverTrigger>
-      <LegendRow payload={payload} color={color} now={now} index={index} />
+      {compact ? null : <LegendRow payload={payload} color={color} now={now} index={index} />}
     </>
   );
 }
@@ -556,10 +603,12 @@ function PoolBar({
   pool,
   color,
   now,
+  compact = false,
 }: {
   readonly pool: LimitPoolWindow;
   readonly color: string;
   readonly now: number;
+  readonly compact?: boolean | undefined;
 }) {
   const restores = new Map(pool.resets.map((reset) => [reset.member.account.key, reset]));
   const gt = useGT();
@@ -581,23 +630,448 @@ function PoolBar({
               now={now}
               index={position + 1}
               showAccountName={pool.columns.length > 1}
+              compact={compact}
             />
           ) : pool.kind === "monthly" && member.account.limits.zeroSpendCap ? (
             <div
               key={member.account.key}
               style={{ gridColumn: position + 1, gridRow: 1 }}
-              className="flex h-5 min-w-0 items-center justify-center gap-1.5 overflow-hidden rounded-md border border-dashed border-border text-3xs whitespace-nowrap text-muted-foreground @2xl/pool:h-8 @2xl/pool:justify-start @2xl/pool:px-2 @2xl/pool:text-xs"
+              className={cn(
+                "flex min-w-0 items-center justify-center overflow-hidden border border-dashed border-border text-3xs whitespace-nowrap text-muted-foreground",
+                compact
+                  ? "h-2 rounded-full"
+                  : "h-5 gap-1.5 rounded-md @2xl/pool:h-8 @2xl/pool:justify-start @2xl/pool:px-2 @2xl/pool:text-xs",
+              )}
             >
-              <AccountName
-                account={member.account}
-                className="hidden min-w-0 truncate @2xl/pool:inline-flex"
-              />
-              {gt("$0 cap")}
+              {compact ? null : (
+                <>
+                  <AccountName
+                    account={member.account}
+                    className="hidden min-w-0 truncate @2xl/pool:inline-flex"
+                  />
+                  {gt("$0 cap")}
+                </>
+              )}
             </div>
           ) : null,
         )}
       </div>
     </div>
+  );
+}
+
+function ProviderVisibilityMenu({
+  pool,
+  label,
+  windows,
+  hiddenSet,
+  onToggleWindow,
+  onShowAll,
+}: {
+  readonly pool: LimitPool;
+  readonly label: string;
+  readonly windows: readonly LimitPoolWindow[];
+  readonly hiddenSet: ReadonlySet<string>;
+  readonly onToggleWindow: (windowId: string) => void;
+  readonly onShowAll: () => void;
+}) {
+  const gt = useGT();
+  const m = useMessages();
+  const hiddenCount = windows.filter((w) =>
+    hiddenSet.has(limitWindowVisibilityKey(String(pool.driver), w.id)),
+  ).length;
+  if (windows.length === 0) return null;
+  return (
+    <Menu>
+      <MenuTrigger
+        render={
+          <Button
+            type="button"
+            size="icon-xs"
+            variant="ghost-muted"
+            aria-label={
+              hiddenCount > 0
+                ? gt("More options for {label} ({count} hidden)", { label, count: hiddenCount })
+                : gt("More options for {label}", { label })
+            }
+            className="relative"
+          />
+        }
+      >
+        <MoreHorizontalIcon className="size-3.5" aria-hidden="true" />
+        {hiddenCount > 0 ? (
+          <span
+            aria-hidden
+            className="absolute top-0.5 right-0.5 size-1.5 rounded-full bg-primary"
+          />
+        ) : null}
+      </MenuTrigger>
+      <MenuPopup align="end">
+        <MenuGroup>
+          <MenuGroupLabel>
+            <T context="usage limits window visibility menu header">Shown windows</T>
+          </MenuGroupLabel>
+          {windows.map((window) => {
+            const key = limitWindowVisibilityKey(String(pool.driver), window.id);
+            const details =
+              pool.driver === "cursor" ? cursorUsageWindowDetails(window.id, pool, m) : undefined;
+            const windowLabel = details?.label ?? window.label;
+            return (
+              <MenuCheckboxItem
+                key={key}
+                checked={!hiddenSet.has(key)}
+                onCheckedChange={() => onToggleWindow(window.id)}
+              >
+                {windowLabel}
+              </MenuCheckboxItem>
+            );
+          })}
+        </MenuGroup>
+        {hiddenCount > 0 ? (
+          <>
+            <MenuSeparator />
+            <MenuItem onClick={onShowAll}>
+              <T context="restore all hidden quota windows">Show all</T>
+            </MenuItem>
+          </>
+        ) : null}
+      </MenuPopup>
+    </Menu>
+  );
+}
+
+function CompactPaceCurve({
+  entries,
+  color,
+  now,
+}: {
+  readonly entries: ReadonlyArray<{
+    readonly label: string;
+    readonly model: PaceCurveModel;
+  }>;
+  readonly color: string;
+  readonly now: number;
+}) {
+  const gt = useGT();
+  const m = useMessages();
+  const timestampFormat = usePrimarySettings((settings) => settings.timestampFormat);
+  const gradientId = useId().replace(/:/g, "");
+  const primary = entries[0];
+  if (!primary) return null;
+
+  const width = 240;
+  const height = 44;
+  const padY = 4;
+  const usableH = height - padY * 2;
+  const toX = (x: number) => Number((Math.max(0, Math.min(1, x)) * width).toFixed(1));
+  const toY = (y: number) =>
+    Number((padY + (1 - Math.max(0, Math.min(100, y)) / 100) * usableH).toFixed(1));
+
+  const polyline = (points: readonly { readonly x: number; readonly y: number }[]) =>
+    points.map((point) => `${toX(point.x)},${toY(point.y)}`).join(" ");
+
+  const primaryPoints = primary.model.actualPoints;
+  const lastPrimary = primaryPoints.at(-1)!;
+  const areaPath = [
+    `M ${toX(primaryPoints[0]!.x)} ${height - padY}`,
+    ...primaryPoints.map((point) => `L ${toX(point.x)} ${toY(point.y)}`),
+    `L ${toX(lastPrimary.x)} ${height - padY}`,
+    "Z",
+  ].join(" ");
+
+  const primaryDepletes = primary.model.depletesAtMs;
+  const statusText =
+    primaryDepletes !== null
+      ? gt("Depletes ~{time}", {
+          time: formatUpcomingTimestamp(
+            new Date(primaryDepletes).toISOString(),
+            timestampFormat,
+            now,
+            undefined,
+            m,
+          ),
+        })
+      : gt("On track to reset");
+
+  return (
+    <div className="flex flex-col gap-1 border-t border-border/40 pt-2.5">
+      <div className="flex items-center justify-between gap-2 text-2xs">
+        <span className="truncate text-muted-foreground">
+          {entries.length > 1 ? gt("{label} pace", { label: primary.label }) : gt("Pace curve")}
+        </span>
+        <span
+          className={cn(
+            "shrink-0 tabular-nums",
+            primaryDepletes !== null ? "text-warning-foreground" : "text-muted-foreground",
+          )}
+        >
+          {statusText}
+        </span>
+      </div>
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        preserveAspectRatio="none"
+        className="h-10 w-full overflow-visible"
+        aria-hidden
+      >
+        <defs>
+          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity={0.22} />
+            <stop offset="100%" stopColor={color} stopOpacity={0.0} />
+          </linearGradient>
+        </defs>
+        {/* Even-pace reference diagonal from 100% at window start to 0% at reset */}
+        <line
+          x1={0}
+          y1={toY(100)}
+          x2={width}
+          y2={toY(0)}
+          stroke="currentColor"
+          strokeOpacity={0.22}
+          strokeWidth={1}
+          strokeDasharray="3 3"
+          vectorEffect="non-scaling-stroke"
+        />
+        {/* Secondary timed window (subtle overlay if present) */}
+        {entries[1] ? (
+          <polyline
+            fill="none"
+            stroke="currentColor"
+            strokeOpacity={0.35}
+            strokeWidth={1.25}
+            vectorEffect="non-scaling-stroke"
+            points={polyline(entries[1].model.actualPoints)}
+          />
+        ) : null}
+        {/* Primary window soft area fill */}
+        <path d={areaPath} fill={`url(#${gradientId})`} />
+        {/* Primary window actual trajectory */}
+        <polyline
+          fill="none"
+          stroke={color}
+          strokeWidth={1.75}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          vectorEffect="non-scaling-stroke"
+          points={polyline(primaryPoints)}
+        />
+        {/* Projected burn line from current point to reset / depletion */}
+        <line
+          x1={toX(lastPrimary.x)}
+          y1={toY(lastPrimary.y)}
+          x2={toX(primary.model.projectedEnd.x)}
+          y2={toY(primary.model.projectedEnd.y)}
+          stroke={color}
+          strokeOpacity={0.55}
+          strokeWidth={1.25}
+          strokeDasharray="3 3"
+          vectorEffect="non-scaling-stroke"
+        />
+        <circle cx={toX(lastPrimary.x)} cy={toY(lastPrimary.y)} r={2.25} fill={color} />
+      </svg>
+    </div>
+  );
+}
+
+function CompactWindowTile({
+  pool,
+  window,
+  color,
+  now,
+  fullWidth,
+  paceModel,
+}: {
+  readonly pool: LimitPool;
+  readonly window: LimitPoolWindow;
+  readonly color: string;
+  readonly now: number;
+  readonly fullWidth: boolean;
+  readonly paceModel: PaceCurveModel | null;
+}) {
+  const m = useMessages();
+  const details =
+    pool.driver === "cursor" ? cursorUsageWindowDetails(window.id, pool, m) : undefined;
+  const label = details?.label ?? window.label;
+  const nextReset = window.resets.find((reset) => reset.at > now);
+  const resetCompact = nextReset
+    ? `↻ ${formatDuration(nextReset.at - now, m)}`
+    : window.members[0]
+      ? formatResetsIn(window.members[0].window, now, m, "refill")
+      : null;
+  const delta = paceModel?.paceDeltaPercent ?? null;
+  const deltaText = delta === null ? null : delta > 0 ? `+${delta}%` : `${delta}%`;
+  return (
+    <div className={cn("flex min-w-0 flex-col gap-1.5", fullWidth && "sm:col-span-2")}>
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="truncate text-xs font-medium text-muted-foreground">{label}</span>
+        <span className="shrink-0 text-sm font-semibold text-foreground tabular-nums">
+          {window.remainingPercent}%
+        </span>
+      </div>
+      <PoolBar pool={window} color={color} now={now} compact />
+      <div className="flex items-center justify-between gap-2 text-2xs tabular-nums">
+        <span className="truncate text-muted-foreground">{resetCompact ?? ""}</span>
+        {deltaText !== null ? (
+          <span
+            className={cn(
+              "shrink-0",
+              delta! <= -15
+                ? "text-destructive"
+                : delta! < 0
+                  ? "text-warning-foreground"
+                  : "text-muted-foreground",
+            )}
+          >
+            {deltaText}
+          </span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function CompactPoolCard({
+  pool,
+  now,
+  canMoveUp,
+  canMoveDown,
+  onMoveUp,
+  onMoveDown,
+  hiddenSet,
+  onToggleWindow,
+  onShowAllWindows,
+  history,
+}: {
+  readonly pool: LimitPool;
+  readonly now: number;
+  readonly canMoveUp: boolean;
+  readonly canMoveDown: boolean;
+  readonly onMoveUp?: (() => void) | undefined;
+  readonly onMoveDown?: (() => void) | undefined;
+  readonly hiddenSet: ReadonlySet<string>;
+  readonly onToggleWindow?: ((windowId: string) => void) | undefined;
+  readonly onShowAllWindows?: (() => void) | undefined;
+  readonly history: LimitHistoryStore;
+}) {
+  const color = barColor(pool.driver);
+  const label = providerClients.get(pool.driver)?.label ?? String(pool.driver);
+  const allWindows = displayLimitWindows(pool);
+  const visibleWindows = allWindows.filter(
+    (window) => !hiddenSet.has(limitWindowVisibilityKey(String(pool.driver), window.id)),
+  );
+  const gt = useGT();
+  const m = useMessages();
+
+  const windowModels = visibleWindows.map((window) => {
+    const key = limitWindowVisibilityKey(String(pool.driver), window.id);
+    return {
+      window,
+      model: buildPaceCurveModel(window, history[key], now),
+    };
+  });
+
+  // Prefer weekly first for the card's primary pace curve, then session/other timed windows.
+  const timedCurveEntries = [
+    ...windowModels.filter((entry) => entry.window.kind === "weekly" && entry.model !== null),
+    ...windowModels.filter((entry) => entry.window.kind !== "weekly" && entry.model !== null),
+  ]
+    .slice(0, 2)
+    .map((entry) => {
+      const details =
+        pool.driver === "cursor" ? cursorUsageWindowDetails(entry.window.id, pool, m) : undefined;
+      return {
+        label: details?.label ?? entry.window.label,
+        model: entry.model!,
+      };
+    });
+
+  return (
+    <section className="flex min-w-0 flex-col justify-between gap-3 rounded-xl border border-border/60 bg-card/40 p-3.5">
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="flex min-w-0 items-center gap-2 text-sm font-medium text-foreground">
+            <ProviderInstanceIcon
+              driverKind={pool.driver}
+              displayName={label}
+              indicatorBackground="var(--background)"
+              className="size-4.5 shrink-0"
+              iconClassName="size-3.5 text-foreground/80"
+            />
+            <span className="truncate">{label}</span>
+            {pool.accounts.length > 1 ? (
+              <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-3xs font-normal text-muted-foreground tabular-nums">
+                {gt("{count} accounts", { count: pool.accounts.length })}
+              </span>
+            ) : null}
+          </h2>
+          <div className="flex shrink-0 items-center gap-0.5">
+            {onMoveUp || onMoveDown ? (
+              <>
+                <Button
+                  type="button"
+                  size="icon-xs"
+                  variant="ghost-muted"
+                  disabled={!canMoveUp}
+                  onClick={onMoveUp}
+                  aria-label={gt("Move {label} up", { label })}
+                >
+                  <ArrowUpIcon className="size-3.5" aria-hidden="true" />
+                </Button>
+                <Button
+                  type="button"
+                  size="icon-xs"
+                  variant="ghost-muted"
+                  disabled={!canMoveDown}
+                  onClick={onMoveDown}
+                  aria-label={gt("Move {label} down", { label })}
+                >
+                  <ArrowDownIcon className="size-3.5" aria-hidden="true" />
+                </Button>
+              </>
+            ) : null}
+            {onToggleWindow && onShowAllWindows ? (
+              <ProviderVisibilityMenu
+                pool={pool}
+                label={label}
+                windows={allWindows}
+                hiddenSet={hiddenSet}
+                onToggleWindow={onToggleWindow}
+                onShowAll={onShowAllWindows}
+              />
+            ) : null}
+          </div>
+        </div>
+        {visibleWindows.length === 0 ? (
+          <div className="flex items-center justify-between gap-2 rounded-lg border border-dashed border-border/60 px-3 py-2 text-xs text-muted-foreground">
+            <span>
+              <T>All quota windows hidden.</T>
+            </span>
+            {onShowAllWindows ? (
+              <Button type="button" size="xs" variant="ghost" onClick={onShowAllWindows}>
+                <T context="restore all hidden quota windows">Show all</T>
+              </Button>
+            ) : null}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-x-4 gap-y-2.5 sm:grid-cols-2">
+            {windowModels.map(({ window, model }) => (
+              <CompactWindowTile
+                key={`${window.kind}:${window.id}`}
+                pool={pool}
+                window={window}
+                color={color}
+                now={now}
+                fullWidth={visibleWindows.length === 1}
+                paceModel={model}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+      {timedCurveEntries.length > 0 ? (
+        <CompactPaceCurve entries={timedCurveEntries} color={color} now={now} />
+      ) : null}
+    </section>
   );
 }
 
@@ -659,6 +1133,9 @@ function PoolSection({
   canMoveDown,
   onMoveUp,
   onMoveDown,
+  hiddenSet,
+  onToggleWindow,
+  onShowAllWindows,
 }: {
   readonly pool: LimitPool;
   readonly now: number;
@@ -666,10 +1143,16 @@ function PoolSection({
   readonly canMoveDown: boolean;
   readonly onMoveUp?: (() => void) | undefined;
   readonly onMoveDown?: (() => void) | undefined;
+  readonly hiddenSet: ReadonlySet<string>;
+  readonly onToggleWindow?: ((windowId: string) => void) | undefined;
+  readonly onShowAllWindows?: (() => void) | undefined;
 }) {
   const color = barColor(pool.driver);
   const label = providerClients.get(pool.driver)?.label ?? String(pool.driver);
-  const windows = displayLimitWindows(pool);
+  const allWindows = displayLimitWindows(pool);
+  const windows = allWindows.filter(
+    (window) => !hiddenSet.has(limitWindowVisibilityKey(String(pool.driver), window.id)),
+  );
   const gt = useGT();
   const m = useMessages();
   return (
@@ -685,45 +1168,70 @@ function PoolSection({
           />
           {label}
         </h2>
-        {onMoveUp || onMoveDown ? (
-          <div className="flex items-center gap-0.5">
-            <Button
-              type="button"
-              size="icon-xs"
-              variant="ghost-muted"
-              disabled={!canMoveUp}
-              onClick={onMoveUp}
-              aria-label={gt("Move {label} up", { label })}
-            >
-              <ArrowUpIcon className="size-3.5" aria-hidden="true" />
-            </Button>
-            <Button
-              type="button"
-              size="icon-xs"
-              variant="ghost-muted"
-              disabled={!canMoveDown}
-              onClick={onMoveDown}
-              aria-label={gt("Move {label} down", { label })}
-            >
-              <ArrowDownIcon className="size-3.5" aria-hidden="true" />
-            </Button>
-          </div>
-        ) : null}
+        <div className="flex items-center gap-0.5">
+          {onMoveUp || onMoveDown ? (
+            <>
+              <Button
+                type="button"
+                size="icon-xs"
+                variant="ghost-muted"
+                disabled={!canMoveUp}
+                onClick={onMoveUp}
+                aria-label={gt("Move {label} up", { label })}
+              >
+                <ArrowUpIcon className="size-3.5" aria-hidden="true" />
+              </Button>
+              <Button
+                type="button"
+                size="icon-xs"
+                variant="ghost-muted"
+                disabled={!canMoveDown}
+                onClick={onMoveDown}
+                aria-label={gt("Move {label} down", { label })}
+              >
+                <ArrowDownIcon className="size-3.5" aria-hidden="true" />
+              </Button>
+            </>
+          ) : null}
+          {onToggleWindow && onShowAllWindows ? (
+            <ProviderVisibilityMenu
+              pool={pool}
+              label={label}
+              windows={allWindows}
+              hiddenSet={hiddenSet}
+              onToggleWindow={onToggleWindow}
+              onShowAll={onShowAllWindows}
+            />
+          ) : null}
+        </div>
       </div>
-      {windows.map((window) => {
-        const details =
-          pool.driver === "cursor" ? cursorUsageWindowDetails(window.id, pool, m) : undefined;
-        return (
-          <PoolWindowCard
-            key={`${window.kind}:${window.id}`}
-            pool={window}
-            color={color}
-            now={now}
-            label={details?.label}
-            description={details?.description}
-          />
-        );
-      })}
+      {windows.length === 0 ? (
+        <div className="flex items-center justify-between gap-2 rounded-lg border border-dashed border-border/60 px-4 py-3 text-xs text-muted-foreground">
+          <span>
+            <T>All quota windows hidden.</T>
+          </span>
+          {onShowAllWindows ? (
+            <Button type="button" size="xs" variant="ghost" onClick={onShowAllWindows}>
+              <T context="restore all hidden quota windows">Show all</T>
+            </Button>
+          ) : null}
+        </div>
+      ) : (
+        windows.map((window) => {
+          const details =
+            pool.driver === "cursor" ? cursorUsageWindowDetails(window.id, pool, m) : undefined;
+          return (
+            <PoolWindowCard
+              key={`${window.kind}:${window.id}`}
+              pool={window}
+              color={color}
+              now={now}
+              label={details?.label}
+              description={details?.description}
+            />
+          );
+        })
+      )}
     </section>
   );
 }
@@ -732,31 +1240,58 @@ export function UsageLimitsPooled({
   presentations,
   providerOrder,
   onProviderOrderChange,
+  viewMode = "standard",
+  hiddenWindowKeys,
+  onHiddenWindowKeysChange,
   now,
 }: {
   readonly presentations: Parameters<typeof collectLimitAccounts>[0];
   readonly providerOrder?: readonly string[] | undefined;
   readonly onProviderOrderChange?: ((next: readonly string[]) => void) | undefined;
+  readonly viewMode?: UsageLimitsViewMode | undefined;
+  readonly hiddenWindowKeys?: readonly string[] | undefined;
+  readonly onHiddenWindowKeysChange?: ((next: readonly string[]) => void) | undefined;
   readonly now: number;
 }) {
   const gt = useGT();
   const m = useMessages();
   const [segmentPopover] = useState(() => PopoverCreateHandle<SegmentPayload>());
   const segmentPopoverActions = useRef<PopoverPrimitive.Root.Actions | null>(null);
+  const [initialHistory] = useState<LimitHistoryStore>(() => readLimitHistory());
   const pools = orderLimitPools(
     collectLimitPools(collectLimitAccounts(presentations), now),
     providerOrder,
   );
+  const history =
+    pools.length > 0 ? appendLimitHistory(initialHistory, pools, now) : initialHistory;
+  const hiddenSet = new Set(hiddenWindowKeys ?? []);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- persists sampled usage limits to localStorage for compact pace curves
+  useEffect(() => {
+    if (pools.length === 0) return;
+    recordUsageLimitHistory(pools, now);
+  }, [pools, now]);
+
   const movePool = (index: number, delta: -1 | 1) => {
     if (!onProviderOrderChange) return;
     const nextDrivers = moveLimitPool(pools, providerOrder, index, delta);
     if (nextDrivers) onProviderOrderChange(nextDrivers);
   };
+  const toggleWindowVisibility = (driver: string, windowId: string) => {
+    if (!onHiddenWindowKeysChange) return;
+    onHiddenWindowKeysChange(
+      toggleHiddenLimitWindow(hiddenWindowKeys, limitWindowVisibilityKey(driver, windowId)),
+    );
+  };
+  const showAllWindowsForDriver = (driver: string) => {
+    if (!onHiddenWindowKeysChange) return;
+    onHiddenWindowKeysChange(clearHiddenLimitWindowsForDriver(hiddenWindowKeys, driver));
+  };
   const quotaSources = collectHttpQuotaSources(presentations);
   const notices = collectLimitNotices(presentations, m);
   const externalLinks = collectExternalUsageLinks(presentations, m);
   return (
-    <div className="flex flex-col gap-8">
+    <div className={cn("flex flex-col", viewMode === "compact" ? "gap-5" : "gap-8")}>
       {pools.length === 0 &&
       notices.length === 0 &&
       externalLinks.length === 0 &&
@@ -766,22 +1301,65 @@ export function UsageLimitsPooled({
         </p>
       ) : null}
       <SegmentPopoverContext value={segmentPopover}>
-        {pools.map((pool, index) => (
-          <Fragment key={pool.driver}>
-            <PoolSection
-              pool={pool}
-              now={now}
-              canMoveUp={index > 0}
-              canMoveDown={index < pools.length - 1}
-              onMoveUp={
-                onProviderOrderChange && pools.length > 1 ? () => movePool(index, -1) : undefined
-              }
-              onMoveDown={
-                onProviderOrderChange && pools.length > 1 ? () => movePool(index, 1) : undefined
-              }
-            />
-          </Fragment>
-        ))}
+        {viewMode === "compact" ? (
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+            {pools.map((pool, index) => (
+              <CompactPoolCard
+                key={pool.driver}
+                pool={pool}
+                now={now}
+                canMoveUp={index > 0}
+                canMoveDown={index < pools.length - 1}
+                onMoveUp={
+                  onProviderOrderChange && pools.length > 1 ? () => movePool(index, -1) : undefined
+                }
+                onMoveDown={
+                  onProviderOrderChange && pools.length > 1 ? () => movePool(index, 1) : undefined
+                }
+                hiddenSet={hiddenSet}
+                onToggleWindow={
+                  onHiddenWindowKeysChange
+                    ? (windowId) => toggleWindowVisibility(String(pool.driver), windowId)
+                    : undefined
+                }
+                onShowAllWindows={
+                  onHiddenWindowKeysChange
+                    ? () => showAllWindowsForDriver(String(pool.driver))
+                    : undefined
+                }
+                history={history}
+              />
+            ))}
+          </div>
+        ) : (
+          pools.map((pool, index) => (
+            <Fragment key={pool.driver}>
+              <PoolSection
+                pool={pool}
+                now={now}
+                canMoveUp={index > 0}
+                canMoveDown={index < pools.length - 1}
+                onMoveUp={
+                  onProviderOrderChange && pools.length > 1 ? () => movePool(index, -1) : undefined
+                }
+                onMoveDown={
+                  onProviderOrderChange && pools.length > 1 ? () => movePool(index, 1) : undefined
+                }
+                hiddenSet={hiddenSet}
+                onToggleWindow={
+                  onHiddenWindowKeysChange
+                    ? (windowId) => toggleWindowVisibility(String(pool.driver), windowId)
+                    : undefined
+                }
+                onShowAllWindows={
+                  onHiddenWindowKeysChange
+                    ? () => showAllWindowsForDriver(String(pool.driver))
+                    : undefined
+                }
+              />
+            </Fragment>
+          ))
+        )}
       </SegmentPopoverContext>
       <Popover handle={segmentPopover} actionsRef={segmentPopoverActions}>
         {({ payload }) =>

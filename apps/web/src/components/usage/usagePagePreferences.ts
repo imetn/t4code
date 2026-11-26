@@ -8,20 +8,27 @@ const STORAGE_KEY = "t3code:usage-page-preferences:v1";
 const UsageMetricSchema = Schema.Literals(["cost", "tokens", "limits"]);
 const HiddenProvidersSchema = Schema.optional(Schema.Array(UsageProviderKind));
 const LimitsProviderOrderSchema = Schema.optional(Schema.Array(Schema.String));
+const LimitsViewModeSchema = Schema.optional(Schema.Literals(["standard", "compact"]));
+const HiddenLimitWindowsSchema = Schema.optional(Schema.Array(Schema.String));
 
 const UsagePagePreferencesSchema = Schema.Struct({
   metric: UsageMetricSchema,
   window: Schema.Literals(USAGE_WINDOW_IDS),
   hiddenProviders: HiddenProvidersSchema,
   limitsProviderOrder: LimitsProviderOrderSchema,
+  limitsViewMode: LimitsViewModeSchema,
+  hiddenLimitWindows: HiddenLimitWindowsSchema,
 });
 export type UsagePagePreferences = typeof UsagePagePreferencesSchema.Type;
+export type UsageLimitsViewMode = "standard" | "compact";
 
 const LegacyUsagePagePreferencesSchema = Schema.Struct({
   metric: UsageMetricSchema,
   windowDays: Schema.Literals([1, 7, 30, 90]),
   hiddenProviders: HiddenProvidersSchema,
   limitsProviderOrder: LimitsProviderOrderSchema,
+  limitsViewMode: LimitsViewModeSchema,
+  hiddenLimitWindows: HiddenLimitWindowsSchema,
 });
 
 const StoredUsagePagePreferencesSchema = Schema.Union([
@@ -50,6 +57,10 @@ export function readUsagePagePreferences(): UsagePagePreferences {
       ...(stored.limitsProviderOrder === undefined
         ? {}
         : { limitsProviderOrder: stored.limitsProviderOrder }),
+      ...(stored.limitsViewMode === undefined ? {} : { limitsViewMode: stored.limitsViewMode }),
+      ...(stored.hiddenLimitWindows === undefined
+        ? {}
+        : { hiddenLimitWindows: stored.hiddenLimitWindows }),
     };
   } catch (error) {
     console.error("Could not read Usage page preferences.", error);

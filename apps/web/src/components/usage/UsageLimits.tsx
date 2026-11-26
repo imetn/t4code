@@ -40,6 +40,7 @@ import {
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { UsageLimitsPooled } from "./UsageLimitsPooled";
+import type { UsageLimitsViewMode } from "./usagePagePreferences";
 import { formatResetsIn, resetCreditChoices } from "@t3tools/shared/usageLimitsCopy";
 import { PROVIDER_PRESENTATION } from "./usageProviders";
 
@@ -394,12 +395,18 @@ export function UsageLimitsSection({
   hiddenProviders,
   providerOrder,
   onProviderOrderChange,
+  viewMode,
+  hiddenWindowKeys,
+  onHiddenWindowKeysChange,
   now,
 }: {
   readonly selectedEnvironmentIds: ReadonlySet<EnvironmentId> | null;
   readonly hiddenProviders: ReadonlySet<UsageProviderKind>;
   readonly providerOrder?: readonly string[] | undefined;
   readonly onProviderOrderChange?: ((next: readonly string[]) => void) | undefined;
+  readonly viewMode?: UsageLimitsViewMode | undefined;
+  readonly hiddenWindowKeys?: readonly string[] | undefined;
+  readonly onHiddenWindowKeysChange?: ((next: readonly string[]) => void) | undefined;
   readonly now: number;
 }) {
   const presentations = useAtomValue(environmentPresentations.presentationsWithProvidersAtom);
@@ -437,6 +444,9 @@ export function UsageLimitsSection({
       presentations={selected}
       providerOrder={providerOrder}
       onProviderOrderChange={onProviderOrderChange}
+      viewMode={viewMode}
+      hiddenWindowKeys={hiddenWindowKeys}
+      onHiddenWindowKeysChange={onHiddenWindowKeysChange}
       now={now}
     />
   );
