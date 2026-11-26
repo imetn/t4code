@@ -120,10 +120,10 @@ function KeepRunningInTrayRow() {
       description={
         navigator.platform.toLowerCase().includes("linux")
           ? gt(
-              "Closing the window keeps T3 Code running in the system tray, so agents and remote connections keep working. Open or quit it from the tray icon. Linux requires system tray support. If no icon appears, launch T3 Code again to restore the window.",
+              "Closing the window keeps T4 Code running in the system tray, so agents and remote connections keep working. Open or quit it from the tray icon. Linux requires system tray support. If no icon appears, launch T4 Code again to restore the window.",
             )
           : gt(
-              "Closing the window keeps T3 Code running in the system tray, so agents and remote connections keep working. Open or quit it from the tray icon.",
+              "Closing the window keeps T4 Code running in the system tray, so agents and remote connections keep working. Open or quit it from the tray icon.",
             )
       }
       control={
@@ -370,7 +370,7 @@ function SimlockHostsRow() {
           <Link to="/settings/devices" className="underline underline-offset-2">
             Devices
           </Link>
-          . An alpha that may change or break. T3 Code never installs Simlock.
+          . An alpha that may change or break. T4 Code never installs Simlock.
         </T>
       }
       control={
@@ -434,10 +434,10 @@ const AGENT_FEEDBACK_MODE_LABELS: Record<AgentFeedbackMode, string> = {
 const AGENT_FEEDBACK_MODE_DESCRIPTIONS: Record<AgentFeedbackMode, string> = {
   off: msg("Agents send no feedback to the T3 team."),
   "on-request": msg(
-    "When you ask, agents show you a short report about T3 Code and send it to the T3 team if you approve.",
+    "When you ask, agents show you a short report about T4 Code and send it to the T3 team if you approve.",
   ),
   auto: msg(
-    "Agents also report T3 Code problems they hit on their own, such as a T3 tool that failed.",
+    "Agents also report T4 Code problems they hit on their own, such as a T3 tool that failed.",
   ),
 };
 

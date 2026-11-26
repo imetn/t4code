@@ -532,7 +532,7 @@ export function CustomRelayUrlSetting() {
               ) : hasChanges ? (
                 <p className="text-xs text-muted-foreground">
                   {isDesktop
-                    ? gt("T3 Code restarts to apply changes.")
+                    ? gt("T4 Code restarts to apply changes.")
                     : gt("This page reloads to apply changes.")}
                 </p>
               ) : verification.clerkHostname ? (
