@@ -29,7 +29,8 @@ function makeSnapshotAtom(resolve: MessageResolver) {
       resolve,
       {
         providerOrder: preferences.usageLimitsProviderOrder,
-        antigravityOwnModelsOnly: preferences.antigravityIncludeThirdPartyLimits !== true,
+        // Home screen widgets always show Antigravity's own Gemini quota (never 3P GPT/Claude buckets).
+        antigravityOwnModelsOnly: true,
       },
     );
   }).pipe(Atom.withEquality((a, b) => JSON.stringify(a) === JSON.stringify(b)));

@@ -346,15 +346,20 @@ function subscriptionUsageProps(
       const fresh = Number.isFinite(expiresAt) && expiresAt > now;
       // Preserve displayLimitWindows priority (e.g. primary Gemini before Argon/Carbon) for the
       // primary session/weekly picks, then order the remaining windows by most constrained first.
-      const primarySession = visibleWindows.find((window) => window.kind === "session");
+      const preserveModelPriority = driver === "antigravity" || driver === "cursor";
       const primaryWeekly = visibleWindows.find((window) => window.kind === "weekly");
+      const primarySession = visibleWindows.find((window) => window.kind === "session");
       const sortedByRemaining = [...visibleWindows].sort(
         (a, b) => a.remainingPercent - b.remainingPercent,
       );
-      const selectedWindows = [...new Set([primarySession, primaryWeekly, ...sortedByRemaining])]
-        .filter((window) => window !== undefined)
-        .slice(0, maxWindowsPerProvider)
-        .sort((a, b) => a.remainingPercent - b.remainingPercent);
+      const selectedWindows = preserveModelPriority
+        ? [...new Set([primaryWeekly, primarySession, ...visibleWindows])]
+            .filter((window) => window !== undefined)
+            .slice(0, maxWindowsPerProvider)
+        : [...new Set([primarySession, primaryWeekly, ...sortedByRemaining])]
+            .filter((window) => window !== undefined)
+            .slice(0, maxWindowsPerProvider)
+            .sort((a, b) => a.remainingPercent - b.remainingPercent);
       return {
         driver,
         name,

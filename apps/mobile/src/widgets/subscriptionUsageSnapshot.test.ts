@@ -251,6 +251,7 @@ describe("subscription widget snapshots", () => {
     expect(agSnapshot.windows[0]?.durationMs).toBe(10080 * 60_000);
     expect(snapshot.text?.refresh).toContain("T4");
 
+    // Even when a third-party or sub-model bucket is more constrained, primary Gemini weekly still leads.
     const withThirdParty = buildSubscriptionUsageSnapshot(
       presentations([ag]),
       deepLink,
@@ -258,7 +259,11 @@ describe("subscription widget snapshots", () => {
       undefined,
       { antigravityOwnModelsOnly: false },
     );
-    expect(withThirdParty.providers[0]?.windows.map((w) => w.id)).toContain("3p-weekly");
+    expect(withThirdParty.providers[0]?.windows.map((w) => w.id)).toEqual([
+      "gemini-weekly",
+      "gemini-5h",
+      "3p-weekly",
+    ]);
   });
 });
 

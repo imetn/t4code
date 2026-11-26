@@ -210,10 +210,18 @@ function PoolWindowCard({
       windowKind: pool.kind,
       environmentIds,
     });
-  const summary = (
+  const activeColumns = pool.columns.filter(
+    (column): column is typeof column & { readonly window: NonNullable<typeof column.window> } =>
+      column.window !== null,
+  );
+  const singleAccount = activeColumns.length === 1 ? activeColumns[0] : undefined;
+  const singleReset = singleAccount ? resetLabels(singleAccount.window, now, m) : null;
+  const singleCredits = singleAccount?.account.limits.resetCredits?.availableCount ?? 0;
+
+  const summary = wide ? (
     <>
-      <View className={wide ? "gap-1" : "flex-row items-start justify-between gap-3"}>
-        <View className="gap-1">
+      <View className="gap-1">
+        <View className="gap-0.5">
           {label !== null ? (
             <Text className="text-sm font-t3-medium text-foreground">{label ?? pool.label}</Text>
           ) : null}
@@ -239,7 +247,60 @@ function PoolWindowCard({
         </Text>
       ) : null}
     </>
+  ) : (
+    <View className="gap-0.5">
+      <View className="flex-row items-baseline justify-between gap-2">
+        <View className="min-w-0 flex-1 flex-row items-baseline gap-1.5">
+          {label !== null ? (
+            <Text numberOfLines={1} className="shrink text-xs font-t3-medium text-foreground-muted">
+              {label ?? pool.label}
+            </Text>
+          ) : null}
+          {pool.pace ? (
+            <Text numberOfLines={1} className="shrink-0 text-[11px] text-foreground-tertiary">
+              {m(PACE_LABEL[pool.pace])}
+            </Text>
+          ) : null}
+        </View>
+        <View className="shrink-0 flex-row items-baseline gap-2">
+          {singleReset?.compact ? (
+            <View className="flex-row items-center gap-0.5">
+              <SymbolView
+                name="arrow.clockwise"
+                size={10}
+                tintColorClassName="accent-foreground-muted"
+              />
+              <Text className="text-[11px] tabular-nums text-foreground-muted">
+                {singleReset.compact}
+              </Text>
+            </View>
+          ) : null}
+          {singleCredits > 0 ? (
+            <View className="flex-row items-center gap-0.5">
+              <SymbolView name="ticket" size={11} tintColorClassName="accent-icon" />
+              <Text className="text-[11px] font-t3-medium tabular-nums text-foreground">
+                {singleCredits}
+              </Text>
+            </View>
+          ) : null}
+          <Text className="text-base font-t3-bold tabular-nums text-foreground">
+            {pool.remainingPercent}%
+          </Text>
+        </View>
+      </View>
+      {description ? (
+        <Text numberOfLines={2} className="text-[11px] text-foreground-muted">
+          {description}
+        </Text>
+      ) : null}
+      {!singleAccount && nextRefill ? (
+        <Text numberOfLines={1} className="text-[11px] tabular-nums text-foreground-muted">
+          {refillLabel(nextRefill.member.window, now, nextRefill.restoresPercent, m)}
+        </Text>
+      ) : null}
+    </View>
   );
+  const compactBarHeightClass = singleAccount ? "h-3.5" : "h-5";
   const bar = (
     <View
       className="flex-row gap-1"
@@ -250,7 +311,7 @@ function PoolWindowCard({
           return (
             <View
               key={member.account.key}
-              className={wide ? "h-9 min-w-0 flex-1" : "h-7 min-w-0 flex-1"}
+              className={wide ? "h-9 min-w-0 flex-1" : `${compactBarHeightClass} min-w-0 flex-1`}
             />
           );
         const { account, window } = member;
@@ -279,8 +340,13 @@ function PoolWindowCard({
                   )
             }
             accessibilityHint={gt("Show account details")}
+            hitSlop={singleAccount ? { top: 8, bottom: 8 } : 4}
             onPress={() => openAccount(account)}
-            className={wide ? "h-9 min-w-0 flex-1 rounded-md" : "h-7 min-w-0 flex-1 rounded-md"}
+            className={
+              wide
+                ? "h-9 min-w-0 flex-1 rounded-md"
+                : `${compactBarHeightClass} min-w-0 flex-1 rounded-md`
+            }
           >
             <PaceGap timeLeft={timeLeft}>
               <View className="absolute inset-0 rounded-md bg-subtle" />
@@ -336,14 +402,14 @@ function PoolWindowCard({
                   </View>
                 ) : null}
               </View>
-            ) : (
+            ) : singleAccount ? null : (
               <View
                 pointerEvents="none"
                 className="absolute inset-0 items-center justify-center overflow-hidden rounded-md"
               >
                 <Text
                   numberOfLines={1}
-                  className="max-w-full shrink text-xs font-t3-medium tabular-nums text-foreground"
+                  className="max-w-full shrink text-[11px] font-t3-medium tabular-nums text-foreground"
                 >
                   {index + 1}
                 </Text>
@@ -355,7 +421,7 @@ function PoolWindowCard({
     </View>
   );
   const legend = (
-    <View>
+    <View className={wide ? undefined : "gap-0.5 pt-0.5"}>
       {pool.columns.map(({ account, window }, index) => {
         if (!window) return null;
         const segmentColor = normalizeProviderAccentColor(account.accentColor) ?? color;
@@ -403,25 +469,51 @@ function PoolWindowCard({
             }
             accessibilityHint={gt("Show account details")}
             onPress={() => openAccount(account)}
-            className="min-h-[44px] flex-row items-center gap-2 active:opacity-60"
+            className={
+              wide
+                ? "min-h-[44px] flex-row items-center gap-2 active:opacity-60"
+                : "min-h-[28px] flex-row items-center gap-1.5 py-0.5 active:opacity-60"
+            }
           >
-            <View className="relative size-5 items-center justify-center overflow-hidden rounded-md bg-subtle-strong">
+            <View
+              className={
+                wide
+                  ? "relative size-5 items-center justify-center overflow-hidden rounded-md bg-subtle-strong"
+                  : "relative size-4 items-center justify-center overflow-hidden rounded bg-subtle-strong"
+              }
+            >
               <View
                 pointerEvents="none"
                 className="absolute inset-0"
                 style={{ backgroundColor: segmentColor, opacity: 0.35 }}
               />
-              <Text className="text-xs font-t3-medium tabular-nums text-foreground">
+              <Text
+                className={
+                  wide
+                    ? "text-xs font-t3-medium tabular-nums text-foreground"
+                    : "text-[10px] font-t3-medium tabular-nums text-foreground"
+                }
+              >
                 {index + 1}
               </Text>
             </View>
             <Text
               numberOfLines={1}
-              className="min-w-0 flex-1 text-sm font-t3-medium text-foreground"
+              className={
+                wide
+                  ? "min-w-0 flex-1 text-sm font-t3-medium text-foreground"
+                  : "min-w-0 flex-1 text-xs font-t3-medium text-foreground"
+              }
             >
               {accountName(account, m)}
             </Text>
-            <Text className="text-sm font-t3-medium tabular-nums text-foreground">
+            <Text
+              className={
+                wide
+                  ? "text-sm font-t3-medium tabular-nums text-foreground"
+                  : "text-xs font-t3-semibold tabular-nums text-foreground"
+              }
+            >
               {remainingPercent(window)}%
             </Text>
             <View className="flex-row items-center gap-1">
@@ -429,10 +521,16 @@ function PoolWindowCard({
                 <>
                   <SymbolView
                     name="arrow.clockwise"
-                    size={12}
+                    size={wide ? 12 : 10}
                     tintColorClassName="accent-foreground-muted"
                   />
-                  <Text className="text-xs tabular-nums text-foreground-muted">
+                  <Text
+                    className={
+                      wide
+                        ? "text-xs tabular-nums text-foreground-muted"
+                        : "text-[11px] tabular-nums text-foreground-muted"
+                    }
+                  >
                     {reset?.compact}
                   </Text>
                 </>
@@ -440,8 +538,18 @@ function PoolWindowCard({
               {credits ? (
                 <>
                   {resetsIn ? <Text className="text-xs text-foreground-tertiary">·</Text> : null}
-                  <SymbolView name="ticket" size={13} tintColorClassName="accent-icon" />
-                  <Text className="text-xs font-t3-medium tabular-nums text-foreground">
+                  <SymbolView
+                    name="ticket"
+                    size={wide ? 13 : 11}
+                    tintColorClassName="accent-icon"
+                  />
+                  <Text
+                    className={
+                      wide
+                        ? "text-xs font-t3-medium tabular-nums text-foreground"
+                        : "text-[11px] font-t3-medium tabular-nums text-foreground"
+                    }
+                  >
                     {credits}
                   </Text>
                 </>
@@ -464,10 +572,10 @@ function PoolWindowCard({
     );
   }
   return (
-    <View className="gap-3 rounded-[24px] border-continuous bg-grouped-card p-4">
+    <View className="gap-1.5">
       {summary}
       {bar}
-      {legend}
+      {singleAccount ? null : legend}
     </View>
   );
 }
@@ -516,7 +624,7 @@ export function UsageLimitsSection({
   const colors = useProviderColors();
   const gt = useGT();
   return (
-    <View className="gap-6">
+    <View className={wide ? "gap-6" : "gap-3"}>
       {pools.length === 0 &&
       notices.length === 0 &&
       failedLabels.length === 0 &&
@@ -529,17 +637,32 @@ export function UsageLimitsSection({
         </Text>
       ) : null}
       {quotaSources.map((source) => (
-        <View key={source.key} className="gap-3 rounded-[24px] bg-grouped-card p-4">
-          <Text className="text-base font-t3-medium text-foreground">{source.label}</Text>
+        <View
+          key={source.key}
+          className={
+            wide
+              ? "gap-3 rounded-[24px] bg-grouped-card p-4"
+              : "gap-2 rounded-2xl border-continuous bg-grouped-card px-3.5 py-2.5"
+          }
+        >
+          <Text
+            className={
+              wide
+                ? "text-base font-t3-medium text-foreground"
+                : "text-sm font-t3-semibold text-foreground"
+            }
+          >
+            {source.label}
+          </Text>
           {source.quotaAccounts?.map((account) => (
             <View key={account.id} className="gap-1">
-              <Text className="text-sm font-t3-medium text-foreground">{account.label}</Text>
+              <Text className="text-xs font-t3-medium text-foreground">{account.label}</Text>
               {account.windows.map((window) => {
                 const reset = resetLabels(window, now, m);
                 return (
                   <View key={window.id} className="flex-row justify-between gap-3">
-                    <Text className="shrink text-sm text-foreground-muted">{window.label}</Text>
-                    <Text className="text-sm text-foreground-muted">
+                    <Text className="shrink text-xs text-foreground-muted">{window.label}</Text>
+                    <Text className="text-xs tabular-nums text-foreground-muted">
                       {gt("{remaining}% left", { remaining: remainingPercent(window) })}
                       {reset ? ` · ${reset.compact}` : ""}
                     </Text>
@@ -559,102 +682,133 @@ export function UsageLimitsSection({
           antigravityOwnModelsOnly: !includeAntigravityThirdParty,
         });
         const label = providerClients.get(pool.driver)?.label ?? String(pool.driver);
+        const header = (
+          <View
+            className={
+              wide
+                ? "flex-row items-center justify-between gap-2 px-1"
+                : "flex-row items-center justify-between gap-2"
+            }
+          >
+            <View className="min-w-0 flex-1 flex-row items-center gap-2">
+              <ProviderIcon provider={pool.driver} size={wide ? 18 : 16} />
+              <Text
+                className={
+                  wide
+                    ? "shrink text-base font-t3-medium text-foreground"
+                    : "shrink text-sm font-t3-semibold text-foreground"
+                }
+                numberOfLines={1}
+              >
+                {label}
+              </Text>
+            </View>
+            <View className="flex-row items-center gap-1.5">
+              {hasAntigravityThirdParty ? (
+                <Pressable
+                  accessibilityRole="switch"
+                  accessibilityState={{ checked: includeAntigravityThirdParty }}
+                  accessibilityLabel={gt("Show Claude and GPT limits in Antigravity")}
+                  hitSlop={4}
+                  onPress={toggleAntigravityThirdParty}
+                  className={`${
+                    wide ? "h-8 px-2.5" : "h-6 px-2"
+                  } flex-row items-center rounded-full active:opacity-60 ${
+                    includeAntigravityThirdParty
+                      ? "bg-subtle-strong"
+                      : wide
+                        ? "bg-grouped-card"
+                        : "bg-subtle"
+                  }`}
+                >
+                  <Text
+                    numberOfLines={1}
+                    className={`${wide ? "text-xs" : "text-[11px]"} font-t3-medium ${
+                      includeAntigravityThirdParty ? "text-foreground" : "text-foreground-muted"
+                    }`}
+                  >
+                    {includeAntigravityThirdParty ? gt("All models") : gt("Gemini only")}
+                  </Text>
+                </Pressable>
+              ) : null}
+              {pools.length > 1 ? (
+                <View className="flex-row items-center gap-1">
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={gt("Move {label} up", { label })}
+                    accessibilityState={{ disabled: index === 0 }}
+                    disabled={index === 0}
+                    hitSlop={6}
+                    onPress={() => movePool(index, -1)}
+                    className={`${
+                      wide ? "size-8 bg-grouped-card" : "size-6 bg-subtle"
+                    } items-center justify-center rounded-full active:opacity-60 disabled:opacity-35`}
+                  >
+                    <SymbolView
+                      name="arrow.up"
+                      size={wide ? 13 : 11}
+                      tintColorClassName="accent-foreground-muted"
+                      type="monochrome"
+                      weight="semibold"
+                    />
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={gt("Move {label} down", { label })}
+                    accessibilityState={{ disabled: index === pools.length - 1 }}
+                    disabled={index === pools.length - 1}
+                    hitSlop={6}
+                    onPress={() => movePool(index, 1)}
+                    className={`${
+                      wide ? "size-8 bg-grouped-card" : "size-6 bg-subtle"
+                    } items-center justify-center rounded-full active:opacity-60 disabled:opacity-35`}
+                  >
+                    <SymbolView
+                      name="arrow.down"
+                      size={wide ? 13 : 11}
+                      tintColorClassName="accent-foreground-muted"
+                      type="monochrome"
+                      weight="semibold"
+                    />
+                  </Pressable>
+                </View>
+              ) : null}
+            </View>
+          </View>
+        );
+        const windowCards = windows.map((window, windowIndex) => {
+          const details =
+            pool.driver === "cursor" ? cursorUsageWindowDetails(window.id, pool, m) : undefined;
+          return (
+            <Fragment key={`${window.kind}:${window.id}`}>
+              {!wide && windowIndex > 0 ? <View className="h-px bg-border-subtle/50" /> : null}
+              <PoolWindowCard
+                pool={window}
+                color={colors[usageProviderKind(pool.driver) ?? "codex"]}
+                now={now}
+                environmentIds={
+                  selectedEnvironmentIds === null ? null : [...selectedEnvironmentIds]
+                }
+                label={details?.label}
+                description={details?.description}
+                wide={wide}
+              />
+            </Fragment>
+          );
+        });
         return (
           <Fragment key={pool.driver}>
-            <View className="gap-3">
-              <View className="flex-row items-center justify-between gap-2 px-1">
-                <View className="min-w-0 flex-1 flex-row items-center gap-2">
-                  <ProviderIcon provider={pool.driver} size={18} />
-                  <Text
-                    className="shrink text-base font-t3-medium text-foreground"
-                    numberOfLines={1}
-                  >
-                    {label}
-                  </Text>
-                </View>
-                <View className="flex-row items-center gap-1.5">
-                  {hasAntigravityThirdParty ? (
-                    <Pressable
-                      accessibilityRole="switch"
-                      accessibilityState={{ checked: includeAntigravityThirdParty }}
-                      accessibilityLabel={gt("Show Claude and GPT limits in Antigravity")}
-                      hitSlop={4}
-                      onPress={toggleAntigravityThirdParty}
-                      className={`h-8 flex-row items-center rounded-full px-2.5 active:opacity-60 ${
-                        includeAntigravityThirdParty ? "bg-subtle-strong" : "bg-grouped-card"
-                      }`}
-                    >
-                      <Text
-                        numberOfLines={1}
-                        className={`text-xs font-t3-medium ${
-                          includeAntigravityThirdParty ? "text-foreground" : "text-foreground-muted"
-                        }`}
-                      >
-                        {includeAntigravityThirdParty ? gt("All models") : gt("Gemini only")}
-                      </Text>
-                    </Pressable>
-                  ) : null}
-                  {pools.length > 1 ? (
-                    <View className="flex-row items-center gap-1">
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel={gt("Move {label} up", { label })}
-                        accessibilityState={{ disabled: index === 0 }}
-                        disabled={index === 0}
-                        hitSlop={6}
-                        onPress={() => movePool(index, -1)}
-                        className="size-8 items-center justify-center rounded-full bg-grouped-card active:opacity-60 disabled:opacity-35"
-                      >
-                        <SymbolView
-                          name="arrow.up"
-                          size={13}
-                          tintColorClassName="accent-foreground-muted"
-                          type="monochrome"
-                          weight="semibold"
-                        />
-                      </Pressable>
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel={gt("Move {label} down", { label })}
-                        accessibilityState={{ disabled: index === pools.length - 1 }}
-                        disabled={index === pools.length - 1}
-                        hitSlop={6}
-                        onPress={() => movePool(index, 1)}
-                        className="size-8 items-center justify-center rounded-full bg-grouped-card active:opacity-60 disabled:opacity-35"
-                      >
-                        <SymbolView
-                          name="arrow.down"
-                          size={13}
-                          tintColorClassName="accent-foreground-muted"
-                          type="monochrome"
-                          weight="semibold"
-                        />
-                      </Pressable>
-                    </View>
-                  ) : null}
-                </View>
+            {wide ? (
+              <View className="gap-3">
+                {header}
+                {windowCards}
               </View>
-              {windows.map((window) => {
-                const details =
-                  pool.driver === "cursor"
-                    ? cursorUsageWindowDetails(window.id, pool, m)
-                    : undefined;
-                return (
-                  <PoolWindowCard
-                    key={`${window.kind}:${window.id}`}
-                    pool={window}
-                    color={colors[usageProviderKind(pool.driver) ?? "codex"]}
-                    now={now}
-                    environmentIds={
-                      selectedEnvironmentIds === null ? null : [...selectedEnvironmentIds]
-                    }
-                    label={details?.label}
-                    description={details?.description}
-                    wide={wide}
-                  />
-                );
-              })}
-            </View>
+            ) : (
+              <View className="gap-2.5 rounded-2xl border-continuous bg-grouped-card px-3.5 py-2.5">
+                {header}
+                <View className="gap-2">{windowCards}</View>
+              </View>
+            )}
           </Fragment>
         );
       })}

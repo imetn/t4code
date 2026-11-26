@@ -285,8 +285,8 @@ function UsageScreen(props: {
           contentInsetAdjustmentBehavior="automatic"
           showsVerticalScrollIndicator={false}
           className="flex-1"
-          contentContainerClassName="px-5 pt-4"
-          contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
+          contentContainerClassName={wide ? "px-5 pt-4" : "px-4 pt-2.5"}
+          contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 16) + 16 }}
           onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
           refreshControl={
             showingLimits || canReadDiagnostics ? (
@@ -297,7 +297,10 @@ function UsageScreen(props: {
             ) : undefined
           }
         >
-          <View className="w-full gap-6 self-center" style={{ maxWidth: MAX_CONTENT_WIDTH }}>
+          <View
+            className={wide ? "w-full gap-6 self-center" : "w-full gap-3.5 self-center"}
+            style={{ maxWidth: MAX_CONTENT_WIDTH }}
+          >
             {wide ? (
               <View className="flex-row items-center gap-3">
                 {showingLimits ? (
@@ -325,13 +328,14 @@ function UsageScreen(props: {
                 options={viewOptions}
                 selected={view}
                 onSelect={setView}
+                size="compact"
                 role="tab"
               />
             )}
             <Animated.View
               key={showingLimits ? "limits" : "usage"}
               entering={FadeIn.duration(160).reduceMotion(ReduceMotion.System)}
-              className="gap-6"
+              className={wide ? "gap-6" : "gap-3.5"}
             >
               {showingLimits ? (
                 <UsageLimitsSection

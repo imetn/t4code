@@ -245,9 +245,22 @@ function SubscriptionUsage(
     const stale = provider.windows.length > 0 && now >= provider.expiresAt;
     if (stale)
       return { stale: true, weekly: undefined, session: undefined, shown: [] as SnapshotWindow[] };
-    const weekly = provider.windows.find((w) => w.kind === "weekly");
-    const session = provider.windows.find((w) => w.kind === "session");
-    const fallback = provider.windows[0];
+    const isOwnGemini = (w: SnapshotWindow) =>
+      provider.driver !== "antigravity" || !w.id || /^gemini-/i.test(w.id);
+    const weekly =
+      provider.windows.find(
+        (w) =>
+          w.kind === "weekly" && (provider.driver !== "antigravity" || w.id === "gemini-weekly"),
+      ) ??
+      provider.windows.find((w) => w.kind === "weekly" && isOwnGemini(w)) ??
+      provider.windows.find((w) => w.kind === "weekly");
+    const session =
+      provider.windows.find(
+        (w) => w.kind === "session" && (provider.driver !== "antigravity" || w.id === "gemini-5h"),
+      ) ??
+      provider.windows.find((w) => w.kind === "session" && isOwnGemini(w)) ??
+      provider.windows.find((w) => w.kind === "session");
+    const fallback = provider.windows.find((w) => isOwnGemini(w)) ?? provider.windows[0];
     if (period === "weekly") {
       return {
         stale: false,
