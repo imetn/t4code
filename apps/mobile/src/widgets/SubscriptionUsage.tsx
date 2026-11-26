@@ -237,7 +237,7 @@ function SubscriptionUsage(
         stale: false,
         weekly,
         session: undefined,
-        shown: weekly ? [weekly] : fallback ? [fallback] : [],
+        shown: weekly ? [weekly] : [],
       };
     }
     if (period === "session") {

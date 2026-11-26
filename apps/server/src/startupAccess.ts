@@ -359,23 +359,28 @@ export const issueHeadlessServeAccessInfo = Effect.fn("issueHeadlessServeAccessI
   const httpServer = yield* HttpServer.HttpServer;
   const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
   const platform = yield* HostProcess.Platform;
+  const configuredEndpoint = serverConfig.advertisedUrls?.[0];
   // Direct endpoints list the Serve URL only once it answers as this server.
-  const servedEndpoint = serverConfig.tailscaleServeEnabled
-    ? (yield* (yield* DirectEndpoints.DirectEndpoints).resolve()).find((endpoint) =>
-        endpoint.httpBaseUrl.startsWith("https://"),
-      )
-    : undefined;
-  const connectionString = servedEndpoint
-    ? new URL(servedEndpoint.httpBaseUrl).origin
-    : resolveHeadlessConnectionString(
-        serverConfig.host,
-        resolveListeningPort(httpServer.address, serverConfig.port),
-        {
-          privateNetworkOnly: serverConfig.privateNetworkOnly,
-          platform,
-          tailscaleOnly: serverConfig.tailscaleOnly,
-        },
-      );
+  const servedEndpoint =
+    configuredEndpoint === undefined && serverConfig.tailscaleServeEnabled
+      ? (yield* (yield* DirectEndpoints.DirectEndpoints).resolve()).find((endpoint) =>
+          endpoint.httpBaseUrl.startsWith("https://"),
+        )
+      : undefined;
+  const connectionString =
+    configuredEndpoint !== undefined
+      ? new URL(configuredEndpoint).origin
+      : servedEndpoint
+        ? new URL(servedEndpoint.httpBaseUrl).origin
+        : resolveHeadlessConnectionString(
+            serverConfig.host,
+            resolveListeningPort(httpServer.address, serverConfig.port),
+            {
+              privateNetworkOnly: serverConfig.privateNetworkOnly,
+              platform,
+              tailscaleOnly: serverConfig.tailscaleOnly,
+            },
+          );
   const issued = yield* serverAuth.issueStartupPairingCredential();
 
   return {

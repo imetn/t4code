@@ -579,9 +579,7 @@ function tailnetVerdict(
 ): TailnetVerdict {
   const host = input.hostLabel;
   const local = input.localTailscale;
-  const awake = resolve(
-    msg("Make sure {host} is awake and T3 Code is running on it.", { host }),
-  );
+  const awake = resolve(msg("Make sure {host} is awake and T3 Code is running on it.", { host }));
   if (localTailscaleDown(local?.state)) {
     return {
       headline: tailscaleIssueHeadline("this device", { cause: local.state, fix: "" }, null, now),
@@ -589,11 +587,11 @@ function tailnetVerdict(
         local.state === "needs_machine_approval"
           ? resolve(
               msg(
-                "Approve this device at https://login.tailscale.com/admin/machines. T3 Code reconnects on its own.",
+                "Approve this device at https://login.tailscale.com/admin/machines. T4 Code reconnects on its own.",
               ),
             )
           : resolve(
-              msg("Turn on Tailscale on this device and sign in. T3 Code reconnects on its own."),
+              msg("Turn on Tailscale on this device and sign in. T4 Code reconnects on its own."),
             ),
       ],
     };
@@ -610,7 +608,7 @@ function tailnetVerdict(
   const generic =
     input.relayStatus?.status === "online"
       ? resolve(
-          msg("{host} is online on T3 Connect, but its Tailscale address did not answer", { host }),
+          msg("{host} is online on T4 Connect, but its Tailscale address did not answer", { host }),
         )
       : resolve(msg("{host} did not answer over Tailscale", { host }));
   const peer = local?.state === "running" ? routePeer(local.peers, routes) : undefined;

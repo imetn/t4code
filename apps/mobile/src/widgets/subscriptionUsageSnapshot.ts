@@ -295,7 +295,12 @@ function resolveWidgetDrivers(
     [...activeDrivers].map((driver) => ({ driver })),
     providerOrder && providerOrder.length > 0 ? providerOrder : CORE_WIDGET_DRIVERS,
   );
-  return ordered.map((entry) => entry.driver);
+  const driversWithAccounts = new Set(accounts.map((account) => String(account.driver)));
+  // Prioritize providers that actually have live quota pools so empty ones do not evict them from small widgets.
+  return [
+    ...ordered.filter((entry) => driversWithAccounts.has(entry.driver)),
+    ...ordered.filter((entry) => !driversWithAccounts.has(entry.driver)),
+  ].map((entry) => entry.driver);
 }
 
 function subscriptionUsageProps(

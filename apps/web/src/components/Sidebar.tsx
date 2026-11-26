@@ -22,7 +22,8 @@ import * as Schema from "effect/Schema";
 import {
   closestCenter,
   DndContext,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   type AutoScrollOptions,
@@ -1085,8 +1086,11 @@ function ProjectScopeRowIcon(props: { isSelected: boolean; children: ReactNode }
 }
 
 const ENVIRONMENT_FILTER_SCROLL_EDGE_TOLERANCE = 2;
-const ENVIRONMENT_FILTER_POINTER_SENSOR_OPTIONS = {
+const ENVIRONMENT_FILTER_MOUSE_SENSOR_OPTIONS = {
   activationConstraint: { distance: 5 },
+};
+const ENVIRONMENT_FILTER_TOUCH_SENSOR_OPTIONS = {
+  activationConstraint: { delay: 250, tolerance: 5 },
 };
 const ENVIRONMENT_FILTER_DRAG_MODIFIERS = [
   restrictToHorizontalAxis,
@@ -1113,7 +1117,7 @@ function SortableEnvironmentChip(props: {
         transition,
       }}
       className={cn(
-        "shrink-0 touch-none",
+        "shrink-0 touch-pan-x",
         isDragging
           ? "relative z-10 opacity-75 [&>button]:cursor-grabbing"
           : "[&>button]:cursor-grab [&>button]:active:cursor-grabbing",
@@ -1168,7 +1172,10 @@ function SidebarEnvironmentFilter(props: {
     canScrollRight: false,
   });
 
-  const sensors = useSensors(useSensor(PointerSensor, ENVIRONMENT_FILTER_POINTER_SENSOR_OPTIONS));
+  const sensors = useSensors(
+    useSensor(MouseSensor, ENVIRONMENT_FILTER_MOUSE_SENSOR_OPTIONS),
+    useSensor(TouchSensor, ENVIRONMENT_FILTER_TOUCH_SENSOR_OPTIONS),
+  );
   const environmentIds = environments.map((environment) => environment.id);
 
   const updateScrollEdges = () => {
@@ -1199,7 +1206,13 @@ function SidebarEnvironmentFilter(props: {
     if (scroller.scrollWidth <= scroller.clientWidth) return;
     if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
     if (event.deltaY === 0) return;
-    scroller.scrollLeft += event.deltaY;
+    const deltaPx =
+      event.deltaMode === 1
+        ? event.deltaY * 16
+        : event.deltaMode === 2
+          ? event.deltaY * scroller.clientWidth
+          : event.deltaY;
+    scroller.scrollLeft += deltaPx;
     event.preventDefault();
     updateScrollEdges();
   });

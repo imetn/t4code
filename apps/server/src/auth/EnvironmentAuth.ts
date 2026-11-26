@@ -969,7 +969,7 @@ export const make = Effect.gen(function* () {
   // Counts "revoke all others" runs. An exchange or sign-in approval that began before a run
   // issues its session here, under the lock the run holds, so it cannot leave a session behind.
   const otherSessionRevocations = yield* Ref.make(0);
-  const issueUnlessOthersRevokedSince = <A, E>(since: number, issue: Effect.Effect<A, E>) =>
+  const issueUnlessOthersRevokedSinceLocked = <A, E>(since: number, issue: Effect.Effect<A, E>) =>
     Ref.get(otherSessionRevocations).pipe(
       Effect.flatMap((count): Effect.Effect<A, E | ServerAuthInvalidCredentialError> =>
         count === since
@@ -980,8 +980,9 @@ export const make = Effect.gen(function* () {
               }),
             ),
       ),
-      connectTrustLock.withPermits(1),
     );
+  const issueUnlessOthersRevokedSince = <A, E>(since: number, issue: Effect.Effect<A, E>) =>
+    issueUnlessOthersRevokedSinceLocked(since, issue).pipe(connectTrustLock.withPermits(1));
 
   const createBrowserSession: EnvironmentAuth["Service"]["createBrowserSession"] = Effect.fn(
     "EnvironmentAuth.createBrowserSession",
@@ -1209,10 +1210,11 @@ export const make = Effect.gen(function* () {
                     (cause) => new ServerAuthAuthenticatedAccessTokenIssueError({ cause }),
                   ),
                 );
-              // A proof-key exchange holds the lock from before it spends its credential.
+              // connectTrustLock is always acquired outside the SQLite write transaction so lock
+              // order matches proof-key exchanges, Connect grants, and session revocations.
               return yield* input?.proofKeyThumbprint
                 ? issue
-                : issueUnlessOthersRevokedSince(revocationsAtStart, issue);
+                : issueUnlessOthersRevokedSinceLocked(revocationsAtStart, issue);
             }),
           ),
           sql.withTransaction,
@@ -1221,8 +1223,7 @@ export const make = Effect.gen(function* () {
               Effect.fail(new ServerAuthAuthenticatedAccessTokenIssueError({ cause })),
           }),
           Effect.flatMap(toAccessTokenResult),
-          (exchange) =>
-            input?.proofKeyThumbprint ? connectTrustLock.withPermits(1)(exchange) : exchange,
+          connectTrustLock.withPermits(1),
         );
       return Ref.get(otherSessionRevocations).pipe(
         Effect.flatMap(exchangeSince),

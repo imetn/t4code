@@ -18,7 +18,7 @@ import { Command, Flag } from "effect/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 const DEFAULT_RELEASE_REPOSITORY = "imetn/t4code";
-const SEMVER_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u;
+const SEMVER_PATTERN = /^\d+\.\d+\.\d+-t4\.\d+$/u;
 const MacArch = Schema.Literals(["arm64", "x64", "universal"]);
 
 const RepoRoot = Effect.service(Path.Path).pipe(
@@ -52,6 +52,14 @@ class MissingReleaseAssetError extends Schema.TaggedError<MissingReleaseAssetErr
   }
 }
 
+class DirtyWorktreeError extends Schema.TaggedError<DirtyWorktreeError>()("DirtyWorktreeError", {
+  status: Schema.String,
+}) {
+  override get message(): string {
+    return `Refusing to publish from a dirty git worktree:\n${this.status}`;
+  }
+}
+
 const runCommand = Effect.fn("release-t4.runCommand")(function* (
   command: ChildProcess.Command,
   label: string,
@@ -62,6 +70,17 @@ const runCommand = Effect.fn("release-t4.runCommand")(function* (
   if (exitCode !== 0) {
     return yield* new ReleaseCommandFailedError({ command: label, exitCode });
   }
+});
+
+const runCommandOutput = Effect.fn("release-t4.runCommandOutput")(function* (
+  command: ChildProcess.Command,
+  label: string,
+) {
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  const stdout = yield* spawner
+    .string(command)
+    .pipe(Effect.mapError(() => new ReleaseCommandFailedError({ command: label, exitCode: 1 })));
+  return stdout.trim();
 });
 
 const releaseT4 = Effect.fn("release-t4.run")(function* (input: {
@@ -145,16 +164,29 @@ const releaseT4 = Effect.fn("release-t4.run")(function* (input: {
     return;
   }
 
+  const gitStatus = yield* runCommandOutput(
+    ChildProcess.make("git", ["status", "--porcelain", "--untracked-files=no"], { cwd: repoRoot }),
+    "git status",
+  );
+  if (gitStatus.length > 0) {
+    return yield* new DirtyWorktreeError({ status: gitStatus });
+  }
+  const targetSha = yield* runCommandOutput(
+    ChildProcess.make("git", ["rev-parse", "HEAD"], { cwd: repoRoot }),
+    "git rev-parse HEAD",
+  );
+
   const entries = yield* fs.readDirectory(outputDir);
+  const versionNeedle = `-${normalizedVersion}-`;
   const uploadAssets = entries
     .filter(
       (entry) =>
-        entry.endsWith(".dmg") ||
-        entry.endsWith(".zip") ||
-        entry.endsWith(".blockmap") ||
         entry === "latest-mac.yml" ||
-        entry.endsWith(".tar.gz") ||
-        entry === "SHA256SUMS",
+        (entry.includes(versionNeedle) &&
+          (entry.endsWith(".dmg") ||
+            entry.endsWith(".zip") ||
+            entry.endsWith(".blockmap") ||
+            entry.endsWith(".tar.gz"))),
     )
     .sort()
     .map((entry) => path.join(outputDir, entry));
@@ -167,6 +199,8 @@ const releaseT4 = Effect.fn("release-t4.run")(function* (input: {
     ...uploadAssets,
     "--repo",
     repository,
+    "--target",
+    targetSha,
     "--title",
     `T4 Code ${tag}`,
     "--generate-notes",

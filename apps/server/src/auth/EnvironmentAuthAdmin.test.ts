@@ -188,5 +188,38 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
         expect(listedAfterRevoke).toHaveLength(0);
       }).pipe(Effect.provide(layerEnvironmentAuth())),
     );
+
+    it.effect(
+      "does not deadlock when bearer pairing redemption runs concurrently with revokeOtherClientSessions",
+      () =>
+        Effect.gen(function* () {
+          const environmentAuth = yield* EnvironmentAuth.EnvironmentAuth;
+          const keeper = yield* environmentAuth.issueSession({ label: "admin" });
+          const links = yield* Effect.all(
+            Array.from({ length: 6 }, (_, index) =>
+              environmentAuth.createPairingLink({
+                scopes: ["orchestration:read"],
+                subject: "one-time-token",
+                label: `client-${index}`,
+              }),
+            ),
+          );
+
+          const results = yield* Effect.all(
+            [
+              ...links.map((link) =>
+                environmentAuth
+                  .exchangeBootstrapCredentialForAccessToken(link.credential, undefined, {})
+                  .pipe(Effect.result),
+              ),
+              environmentAuth.revokeOtherClientSessions(keeper.sessionId).pipe(Effect.result),
+              environmentAuth.revokeOtherClientSessions(keeper.sessionId).pipe(Effect.result),
+            ],
+            { concurrency: "unbounded" },
+          ).pipe(Effect.timeout("5 seconds"));
+
+          expect(results).toHaveLength(8);
+        }).pipe(Effect.provide(layerEnvironmentAuth())),
+    );
   },
 );

@@ -552,7 +552,9 @@ export function UsageLimitsSection({
       ))}
       {pools.map((pool, index) => {
         const hasAntigravityThirdParty =
-          pool.driver === "antigravity" && pool.windows.some(isAntigravityThirdPartyWindow);
+          pool.driver === "antigravity" &&
+          pool.windows.some(isAntigravityThirdPartyWindow) &&
+          pool.windows.some((window) => !isAntigravityThirdPartyWindow(window));
         const windows = displayLimitWindows(pool, {
           antigravityOwnModelsOnly: !includeAntigravityThirdParty,
         });

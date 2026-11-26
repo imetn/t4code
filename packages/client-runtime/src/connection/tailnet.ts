@@ -186,9 +186,12 @@ export function tailnetRefusalVerdict(
         headline: resolve(msg("Tailscale sign-in is off on {host}", { host })),
         steps: [
           resolve(
-            msg("On {host}, run `npx t3 up --tailscale`, or turn on Tailscale sign-in in Settings.", {
-              host,
-            }),
+            msg(
+              "On {host}, run `npx t3 up --tailscale`, or turn on Tailscale sign-in in Settings.",
+              {
+                host,
+              },
+            ),
           ),
           pairInstead,
         ],
@@ -202,9 +205,7 @@ export function tailnetRefusalVerdict(
       };
     case "not_direct_tailnet":
       return {
-        headline: resolve(
-          msg("{host} did not see this device on its Tailscale address", { host }),
-        ),
+        headline: resolve(msg("{host} did not see this device on its Tailscale address", { host })),
         steps: [
           resolve(
             msg(
@@ -222,7 +223,9 @@ export function tailnetRefusalVerdict(
       return {
         headline: resolve(msg("{host} could not ask Tailscale who this device is", { host })),
         steps: [
-          resolve(msg("On {host}, check that Tailscale runs, or run `t3 tailscale status`.", { host })),
+          resolve(
+            msg("On {host}, check that Tailscale runs, or run `t3 tailscale status`.", { host }),
+          ),
         ],
       };
     case "tailscale_outdated":
@@ -245,9 +248,7 @@ export function tailnetRefusalVerdict(
       };
     case "tagged_device":
       return {
-        headline: resolve(
-          msg("This device is tagged, and no grant lets it into {host}", { host }),
-        ),
+        headline: resolve(msg("This device is tagged, and no grant lets it into {host}", { host })),
         steps: [grant, pairInstead],
       };
     case "shared_device":
@@ -271,7 +272,7 @@ export function tailnetRefusalVerdict(
     case "own_node":
       return {
         headline: resolve(msg("This device is {host}", { host })),
-        steps: [resolve(msg("Use this device's own T3 Code instead."))],
+        steps: [resolve(msg("Use this device's own T4 Code instead."))],
       };
     case "routes_for_others":
       return {
@@ -288,14 +289,14 @@ export function tailnetRefusalVerdict(
     case "no_grant":
       return {
         headline: resolve(
-          msg("{host} lets in only devices its tailnet policy grants T3 Code", { host }),
+          msg("{host} lets in only devices its tailnet policy grants T4 Code", { host }),
         ),
         steps: [grant],
       };
     case "grant_unusable":
       return {
         headline: resolve(
-          msg("This device's T3 Code grant on {host} names no scope T3 Code knows", { host }),
+          msg("This device's T4 Code grant on {host} names no scope T4 Code knows", { host }),
         ),
         steps: [
           resolve(
@@ -310,15 +311,18 @@ export function tailnetRefusalVerdict(
       return {
         headline: resolve(
           msg(
-            "{host} cannot tell whether your tailnet policy grants T3 Code, so it lets in only granted devices",
+            "{host} cannot tell whether your tailnet policy grants T4 Code, so it lets in only granted devices",
             { host },
           ),
         ),
         steps: [
           resolve(
-            msg("On {host}, run `t3 tailscale require-grant` to see why. Saved machines retry on their own.", {
-              host,
-            }),
+            msg(
+              "On {host}, run `t3 tailscale require-grant` to see why. Saved machines retry on their own.",
+              {
+                host,
+              },
+            ),
           ),
           grant,
         ],
@@ -352,7 +356,7 @@ export function tailnetRefusalVerdict(
           ),
           resolve(
             msg(
-              "Then unblock this device, and revoke that pairing in Settings > Sharing & access on {host} so this device signs in through Tailscale again. On a headless host, run `t3 auth session list` and {revokeCommand} there, then restart T3 Code on this device.",
+              "Then unblock this device, and revoke that pairing in Settings > Sharing & access on {host} so this device signs in through Tailscale again. On a headless host, run `t3 auth session list` and {revokeCommand} there, then restart T4 Code on this device.",
               { host, revokeCommand: "`t3 auth session revoke <id>`" },
             ),
           ),
