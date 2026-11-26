@@ -115,8 +115,9 @@ function resolveAppVariant(value: string | undefined): AppVariant {
 }
 
 const variant = VARIANT_CONFIG[APP_VARIANT];
+const relyingParty = repoEnv.T3CODE_IOS_RELYING_PARTY?.trim() || variant.relyingParty;
 // Copied thread links open the app. app.t3.codes/.well-known lists every variant's identifiers.
-const HOSTED_APP_HOST = "app.t3.codes";
+const HOSTED_APP_HOST = repoEnv.T3CODE_IOS_HOSTED_APP_HOST?.trim() || "app.t3.codes";
 const iosBundleIdentifier = isIosPersonalTeamBuild
   ? personalTeamBundleIdentifier!
   : variant.iosBundleIdentifier;
@@ -254,10 +255,10 @@ const config: ExpoConfig = {
     requireFullScreen: process.env.T3_SHOWCASE_CAPTURE_BUILD === "1",
     bundleIdentifier: iosBundleIdentifier,
     // Avoid Personal Team fallback: it cannot sign App Groups, Apple sign-in or push entitlements.
-    appleTeamId: "ARK85ZXQ4Z",
+    appleTeamId: repoEnv.T3CODE_IOS_TEAM_ID?.trim() || "ARK85ZXQ4Z",
     associatedDomains: [
-      `applinks:${variant.relyingParty}`,
-      `webcredentials:${variant.relyingParty}`,
+      `applinks:${relyingParty}`,
+      `webcredentials:${relyingParty}`,
       `applinks:${HOSTED_APP_HOST}`,
     ],
     entitlements: {
