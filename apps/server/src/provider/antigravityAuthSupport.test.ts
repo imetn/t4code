@@ -102,7 +102,6 @@ describe("Antigravity process environment", () => {
         PATH: "/usr/bin",
         CUSTOM_SETTING: "keep-this",
         SSH_CONNECTION: "127.0.0.1 0 127.0.0.1 0",
-        AGY_CLI_FORCE_FILE_TOKEN_STORAGE: "1",
         GEMINI_HOME: profile.geminiHome,
         AGY_ACP_FORCE_FILE_STORAGE: "1",
         AGY_CLI_DISABLE_AUTO_UPDATE: "true",
@@ -168,7 +167,17 @@ describe("Antigravity process environment", () => {
       gcpLocation: "",
     });
     expect(personal.SSH_CONNECTION).toBe("127.0.0.1 0 127.0.0.1 0");
-    expect(personal.AGY_CLI_FORCE_FILE_TOKEN_STORAGE).toBe("1");
+    // Without a file sign-in, agy must keep reading the existing keyring sign-in.
+    expect(personal.AGY_CLI_FORCE_FILE_TOKEN_STORAGE).toBeUndefined();
+    const personalWithFileToken =
+      buildAntigravityAcpSpawnInput({
+        installation: { executablePath: "/usr/bin/agy" },
+        profile: { ...profile, fileTokenStorage: true },
+        cwd: "/project",
+        baseEnv,
+        auth: { authMethod: "oauth-personal", apiKey: "", gcpProject: "", gcpLocation: "" },
+      }).env ?? {};
+    expect(personalWithFileToken.AGY_CLI_FORCE_FILE_TOKEN_STORAGE).toBe("1");
   });
 
   it("isolates TEMP and TMP to the profile directory on Windows", () => {

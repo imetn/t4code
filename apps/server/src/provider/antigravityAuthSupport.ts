@@ -90,7 +90,16 @@ export interface AntigravityProfile {
   readonly tempDirectory: string;
   readonly browserCommand: string;
   readonly caBundlePath?: string;
+  /**
+   * The profile already holds a file sign-in (`antigravity-oauth-token`, written by `--login`).
+   * Forcing file storage without one hides the keyring sign-in agy 1.5.x made before, so every
+   * session's `authenticate` fails as signed out until the user signs in again.
+   */
+  readonly fileTokenStorage?: boolean;
 }
+
+/** Where agy 1.5.16 keeps a Google sign-in under AGY_CLI_FORCE_FILE_TOKEN_STORAGE. */
+const ANTIGRAVITY_FILE_TOKEN_NAME = "antigravity-oauth-token";
 
 export interface AntigravityAuthConfig {
   readonly authMethod: AntigravityAuthMethod;
@@ -228,13 +237,12 @@ function antigravityEnvironment(
     baseEnv.SSL_CERT_DIR === undefined
       ? { SSL_CERT_FILE: profile.caBundlePath }
       : {}),
-    // The CLI ignores AGY_ACP_FORCE_FILE_STORAGE and keeps Google sign-ins in one OS keyring entry
-    // for every profile. 1.5.16 honours AGY_CLI_FORCE_FILE_TOKEN_STORAGE; older runtimes switch to
-    // file storage only when they believe they run over SSH. Sign-in then uses `--login`.
+    // Older runtimes use file token storage only over SSH; 1.5.16 honours the force flag. Force it
+    // only once the `--login` token file exists: earlier it hides a keyring sign-in.
     ...(auth.authMethod === "oauth-personal"
       ? {
           SSH_CONNECTION: baseEnv.SSH_CONNECTION || "127.0.0.1 0 127.0.0.1 0",
-          AGY_CLI_FORCE_FILE_TOKEN_STORAGE: "1",
+          ...(profile.fileTokenStorage === true ? { AGY_CLI_FORCE_FILE_TOKEN_STORAGE: "1" } : {}),
         }
       : {}),
     GEMINI_HOME: profile.geminiHome,
@@ -476,6 +484,9 @@ export const prepareAntigravityProfile = Effect.fn("prepareAntigravityProfile")(
     tempDirectory,
     browserCommand,
     ...(caBundlePath === undefined ? {} : { caBundlePath }),
+    fileTokenStorage: yield* fs
+      .exists(path.join(acpDirectory, ANTIGRAVITY_FILE_TOKEN_NAME))
+      .pipe(Effect.orElseSucceed(() => false)),
   };
   const environment = antigravityEnvironment(profile, input.baseEnv ?? process.env, auth);
   yield* Effect.gen(function* () {

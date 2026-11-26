@@ -442,7 +442,9 @@ export const AntigravityDriver: ProviderDriver<
       const failed = (detail: string, cause?: unknown) =>
         new ProviderSetupError({ instanceId, operation: "start", detail, cause });
       // Without a display it prints the link only, instead of opening a browser on this machine.
-      const { DISPLAY: _display, WAYLAND_DISPLAY: _wayland, ...env } = spawn.env ?? {};
+      const { DISPLAY: _display, WAYLAND_DISPLAY: _wayland, ...spawnEnv } = spawn.env ?? {};
+      // Store the new sign-in in this profile's file; later sessions force file storage once it exists.
+      const env = { ...spawnEnv, AGY_CLI_FORCE_FILE_TOKEN_STORAGE: "1" };
       const child = yield* spawner
         .spawn(
           ChildProcess.make(spawn.command, [...spawn.args, "--login"], {

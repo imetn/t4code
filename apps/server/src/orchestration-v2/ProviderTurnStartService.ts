@@ -1054,6 +1054,9 @@ export const layer: Layer.Layer<
           isProviderAdapterOpenSessionError(failure.cause) &&
           failure.cause.requiresSignIn === true;
         if (input.willRetry === true && !requiresSignIn) return yield* failure;
+        // The thread only keeps the generic wrapper message; log the full cause so a failed open
+        // can be diagnosed from the server log afterwards.
+        yield* Effect.logWarning("Provider session failed to open", Cause.fail(failure));
         yield* settleStartFailure({
           signal: "provider-session-open-failure",
           title: "Provider session failed to open",
