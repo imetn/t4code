@@ -263,6 +263,8 @@ export function useThreadListActions(): {
   ) => Promise<boolean>;
   readonly renameThread: (thread: EnvironmentThreadShell) => void;
   readonly regenerateThreadTitle: (thread: EnvironmentThreadShell) => Promise<boolean>;
+  /** Takes each thread out of its group. */
+  readonly ungroupThreads: (threads: readonly EnvironmentThreadShell[]) => Promise<boolean>;
 } {
   const executeAction = useThreadActionExecutor();
   const snoozeMutation = useAtomCommand(threadEnvironment.snooze, { reportFailure: false });
@@ -647,6 +649,31 @@ export function useThreadListActions(): {
     titleRegenerationInFlightThreadKeys.current.delete(key);
     return succeeded;
   };
+  const ungroupThreads = async (threads: readonly EnvironmentThreadShell[]) => {
+    const failureTitle = m(msg("Could not ungroup"));
+    if (!threads.every((thread) => checkThreadOperationPermission(thread, failureTitle))) {
+      return false;
+    }
+    selectionHaptic();
+    const results = await Promise.all(
+      threads.map((thread) =>
+        updateThreadMetadata({
+          environmentId: thread.environmentId,
+          input: { threadId: thread.id, groupedUnderThreadId: null },
+        }),
+      ),
+    );
+    const failure = results.find((result) => result._tag === "Failure");
+    if (failure === undefined) return true;
+    const error = Cause.squash(failure.cause);
+    Dialog.alert(
+      failureTitle,
+      error instanceof Error && errorDisplayMessage(error, m) !== null
+        ? (errorDisplayMessage(error, m) ?? error.message)
+        : m(msg("The threads could not be taken out of their group.")),
+    );
+    return false;
+  };
   const renameThread = (thread: EnvironmentThreadShell) => {
     const commit = (title: string) => {
       const resolution = resolveThreadTitleRename({ title, originalTitle: thread.title });
@@ -847,6 +874,7 @@ export function useThreadListActions(): {
     moveThread,
     renameThread: (thread) => renameThread(liveThread(thread)),
     regenerateThreadTitle: (thread) => regenerateThreadTitle(liveThread(thread)),
+    ungroupThreads: (threads) => ungroupThreads(threads.map(liveThread)),
   };
 }
 

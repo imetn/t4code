@@ -126,6 +126,18 @@ describe("buildThreadActionMenuItems", () => {
     expect(items.map((item) => item.id)).not.toContain("mark-unread");
   });
 
+  it("offers group actions on a launcher, hiding Settle group when nothing can settle", () => {
+    const ids = (state: ThreadActionMenuState) =>
+      buildThreadActionMenuItems(state).map((item) => item.id);
+    expect(ids({ ...baseState, leadsLaunchGroup: { settleCount: 3 } })).toEqual(
+      expect.arrayContaining(["settle-group", "ungroup"]),
+    );
+    const settled = ids({ ...baseState, leadsLaunchGroup: { settleCount: 0 } });
+    expect(settled).toContain("ungroup");
+    expect(settled).not.toContain("settle-group");
+    expect(ids(baseState)).not.toContain("ungroup");
+  });
+
   it("disables only rename where no inline title editor exists", () => {
     const items = buildThreadActionMenuItems({ ...baseState, canRename: false });
     expect(items.filter((item) => item.disabled).map((item) => item.id)).toEqual(["rename"]);

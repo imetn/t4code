@@ -255,6 +255,7 @@ it.effect(
       });
       expect(belowCeiling.launched[0]?.runtimeMode).toBe("approval-required");
       expect(belowCeiling.launched[0]?.initialMessage?.senderThreadId).toBeUndefined();
+      expect(belowCeiling.launched[0]?.groupedUnderThreadId).toBeUndefined();
       expect(belowCeiling.launched[0]?.generateTitle).toBeUndefined();
       expect(belowCeiling.launched[0]?.titleRenamed).toBe(true);
 

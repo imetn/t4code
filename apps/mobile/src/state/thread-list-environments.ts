@@ -12,7 +12,7 @@ export type ThreadListProvider = Pick<
   "instanceId" | "driver" | "enabled" | "displayName" | "accentColor" | "iconUrl"
 >;
 
-const capabilityKeys = ["threadAutoSettleOptOut", "peerLinks"] as const;
+const capabilityKeys = ["threadAutoSettleOptOut", "threadGrouping", "peerLinks"] as const;
 
 function selectEnvironment(config: ServerConfig, isConnected: boolean) {
   return {
@@ -61,6 +61,7 @@ function collectEnvironments(environments: ReadonlyMap<EnvironmentId, ListEnviro
   // Every protocol-2 server supports these thread actions; they only wait for its config.
   const loadedEnvironmentIds = new Set<EnvironmentId>();
   const autoSettleOptOutEnvironmentIds = new Set<EnvironmentId>();
+  const groupingEnvironmentIds = new Set<EnvironmentId>();
   const reorderableEnvironmentIds = new Set<EnvironmentId>();
   const handoffEnvironmentIds = new Set<EnvironmentId>();
   const snoozePresetsByEnvironmentId = new Map<EnvironmentId, ListEnvironment["snoozePresets"]>();
@@ -73,6 +74,7 @@ function collectEnvironments(environments: ReadonlyMap<EnvironmentId, ListEnviro
     machineByEnvironmentId.set(id, machineKind);
     loadedEnvironmentIds.add(id);
     if (capabilities.threadAutoSettleOptOut === true) autoSettleOptOutEnvironmentIds.add(id);
+    if (capabilities.threadGrouping === true) groupingEnvironmentIds.add(id);
     if (capabilities.peerLinks === true) handoffEnvironmentIds.add(id);
     if (isConnected) reorderableEnvironmentIds.add(id);
   }
@@ -83,6 +85,7 @@ function collectEnvironments(environments: ReadonlyMap<EnvironmentId, ListEnviro
     snoozeEnvironmentIds: loadedEnvironmentIds,
     pinningEnvironmentIds: loadedEnvironmentIds,
     autoSettleOptOutEnvironmentIds,
+    groupingEnvironmentIds,
     pinReorderEnvironmentIds: reorderableEnvironmentIds,
     activeReorderEnvironmentIds: reorderableEnvironmentIds,
     titleRegenerationEnvironmentIds: loadedEnvironmentIds,

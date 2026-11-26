@@ -149,6 +149,7 @@ interface HomeScreenProps {
   ) => Promise<boolean>;
   readonly onRenameThread: (thread: EnvironmentThreadShell) => void;
   readonly onRegenerateThreadTitle: (thread: EnvironmentThreadShell) => Promise<boolean>;
+  readonly onUngroupThreads: (threads: readonly EnvironmentThreadShell[]) => Promise<boolean>;
   readonly onSelectPendingTask: (pendingTask: PendingNewTask) => void;
   readonly onDeletePendingTask: (pendingTask: PendingNewTask) => void;
   readonly onNewThreadOnBranch: (thread: EnvironmentThreadShell) => void;
@@ -373,6 +374,9 @@ export function HomeScreen(props: HomeScreenProps) {
   const handleUnpinThread = props.onUnpinThread;
   const handleSetThreadAutoSettle = props.onSetThreadAutoSettle;
   const handleRegenerateThreadTitle = props.onRegenerateThreadTitle;
+  const handleUngroupThreads = (threads: readonly EnvironmentThreadShell[]) => {
+    void props.onUngroupThreads(threads);
+  };
   const handleRenameThread = props.onRenameThread;
   const handleDeleteThread = props.onDeleteThread;
   const handleUnsettleThread = props.onUnsettleThread;
@@ -410,6 +414,7 @@ export function HomeScreen(props: HomeScreenProps) {
     pinReorderEnvironmentIds,
     activeReorderEnvironmentIds,
     titleRegenerationEnvironmentIds,
+    groupingEnvironmentIds,
     handoffEnvironmentIds,
   } = listEnvironments;
   const resolveProviderInstance = useThreadRowProviderInstanceResolver(providersByEnvironmentId);
@@ -540,6 +545,10 @@ export function HomeScreen(props: HomeScreenProps) {
         hasQueuedMessages={item.hasQueuedMessages}
         snoozed={item.item.snoozed}
         pinned={item.item.pinned}
+        group={item.item.group}
+        onUngroupThreads={
+          groupingEnvironmentIds.has(thread.environmentId) ? handleUngroupThreads : undefined
+        }
         wokeAt={item.item.wokeAt}
         snoozePresetMinute={item.snoozePresetMinute ?? ""}
         snoozeWakeLabelText={item.snoozeWakeLabelText}

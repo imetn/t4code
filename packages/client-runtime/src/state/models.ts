@@ -165,6 +165,8 @@ export interface EnvironmentThreadShell {
   readonly worktreePath: string | null;
   readonly lineage: OrchestrationV2ThreadShell["lineage"];
   readonly forkedFrom: OrchestrationV2ThreadShell["forkedFrom"];
+  /** Thread whose agent launched this one through T3 MCP tools. */
+  readonly groupedUnderThreadId?: ThreadId | null;
   readonly linkOrigin: OrchestrationV2ThreadShell["linkOrigin"] | null;
   /** The thread in a linked environment that delegated this one, if one did. */
   readonly delegatedFrom: OrchestrationV2ThreadShell["delegatedFrom"] | null;
@@ -321,6 +323,7 @@ export function presentThreadShell(
     issues: thread.issues ?? [],
     lineage: thread.lineage,
     forkedFrom: thread.forkedFrom,
+    groupedUnderThreadId: thread.groupedUnderThreadId ?? null,
     linkOrigin: thread.linkOrigin ?? null,
     delegatedFrom: thread.delegatedFrom ?? null,
     workflowRun: thread.workflowRun ?? null,

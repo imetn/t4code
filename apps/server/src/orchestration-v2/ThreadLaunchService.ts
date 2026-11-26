@@ -121,6 +121,8 @@ export interface ThreadLaunchInput {
   };
   readonly createdBy: OrchestrationV2Actor;
   readonly creationSource: OrchestrationV2CreationSource;
+  /** The calling thread when an agent launches this one through T3 MCP tools. */
+  readonly groupedUnderThreadId?: ThreadId;
   /** The linked environment this launch is for, if one asked for it. */
   readonly linkOrigin?: OrchestrationV2LinkOrigin;
   /** The parent there, when that environment's agent delegated this as a task. */
@@ -1538,6 +1540,9 @@ const make = Effect.gen(function* () {
                 ...(input.importedNativeThread === undefined
                   ? {}
                   : { importedNativeThread: input.importedNativeThread }),
+                ...(input.groupedUnderThreadId === undefined
+                  ? {}
+                  : { groupedUnderThreadId: input.groupedUnderThreadId }),
                 ...(input.linkOrigin === undefined ? {} : { linkOrigin: input.linkOrigin }),
                 ...(input.delegatedFrom === undefined
                   ? {}

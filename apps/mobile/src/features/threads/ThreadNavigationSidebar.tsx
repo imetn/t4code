@@ -149,6 +149,7 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
     moveThread,
     renameThread,
     regenerateThreadTitle,
+    ungroupThreads,
   } = useThreadListActions();
   const pendingTasks = usePendingNewTasks();
   const launchingThreads = useLaunchingThreads(threads);
@@ -268,6 +269,7 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
     pinReorderEnvironmentIds,
     activeReorderEnvironmentIds,
     titleRegenerationEnvironmentIds,
+    groupingEnvironmentIds,
     handoffEnvironmentIds,
   } = listEnvironments;
   const resolveProviderInstance = useThreadRowProviderInstanceResolver(providersByEnvironmentId);
@@ -425,6 +427,10 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
             hasQueuedMessages={item.hasQueuedMessages}
             snoozed={item.item.snoozed}
             pinned={item.item.pinned}
+            group={item.item.group}
+            onUngroupThreads={
+              groupingEnvironmentIds.has(thread.environmentId) ? ungroupThreads : undefined
+            }
             wokeAt={item.item.wokeAt}
             snoozePresetMinute={item.snoozePresetMinute ?? ""}
             snoozeWakeLabelText={item.snoozeWakeLabelText}
