@@ -1,7 +1,13 @@
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { normalizeSecureRelayUrl } from "@t3tools/shared/relayUrl";
 import { T, useGT } from "gt-react";
-import { ActivityIcon, CheckCircle2Icon, InfoIcon, TriangleAlertIcon } from "lucide-react";
+import {
+  ActivityIcon,
+  CheckCircle2Icon,
+  ChevronDownIcon,
+  InfoIcon,
+  TriangleAlertIcon,
+} from "lucide-react";
 import { useEffect, useEffectEvent, useId, useRef, useState } from "react";
 
 import { usePrimaryCloudLinkState } from "~/cloud/cloudLinkState";
@@ -84,6 +90,8 @@ export function CustomRelayUrlSetting() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [probeState, setProbeState] = useState<ProbeState>({ status: "idle" });
+  // Fields stay collapsed by default; the header still shows the active relay and its latency.
+  const [isExpanded, setIsExpanded] = useState(false);
   const probeSerialRef = useRef(0);
 
   const relayInputId = useId();
@@ -124,6 +132,12 @@ export function CustomRelayUrlSetting() {
     normalizedRelay !== null &&
     normalizedRelay !== effectiveDefaultRelayUrl &&
     normalizedClerkKey === null;
+
+  // A non-default relay must bring its own Clerk key; the official one is never sent elsewhere.
+  const clerkKeyRequired = normalizedRelay !== null && normalizedRelay !== effectiveDefaultRelayUrl;
+
+  // Keep the fields visible while a save error is shown.
+  const showFields = isExpanded || error !== null;
 
   const probeTargetUrl = !isRelayInvalid
     ? (normalizedRelay ?? verification.activeRelayUrl ?? effectiveDefaultRelayUrl)
@@ -279,6 +293,8 @@ export function CustomRelayUrlSetting() {
     <SettingsSection
       id={search.id}
       title={search.title}
+      // Collapsed with nothing to report: drop the empty card so only the header row shows.
+      variant={showFields || verificationBanner !== null ? "grouped" : "plain"}
       titleAction={
         <div className="ms-1.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
           <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", statusDotClassName)} />
@@ -315,188 +331,222 @@ export function CustomRelayUrlSetting() {
         </div>
       }
       headerAction={
-        <Button
-          type="button"
-          size="xs"
-          variant="outline"
-          disabled={isProbing || isSaving || probeTargetUrl === null}
-          onClick={() => {
-            if (probeTargetUrl !== null) void runProbe(probeTargetUrl);
-          }}
-        >
-          {isProbing ? <Spinner size="xs" /> : <ActivityIcon className="size-3" />}
-          {isProbing
-            ? gt("Testing…")
-            : gt("Test", { $context: "button: test relay reachability and latency" })}
-        </Button>
+        <div className="flex items-center gap-1.5">
+          <Button
+            type="button"
+            size="xs"
+            variant="outline"
+            disabled={isProbing || isSaving || probeTargetUrl === null}
+            onClick={() => {
+              if (probeTargetUrl !== null) void runProbe(probeTargetUrl);
+            }}
+          >
+            {isProbing ? <Spinner size="xs" /> : <ActivityIcon className="size-3" />}
+            {isProbing
+              ? gt("Testing…")
+              : gt("Test", { $context: "button: test relay reachability and latency" })}
+          </Button>
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost"
+            aria-expanded={showFields}
+            onClick={() => {
+              if (showFields) setError(null);
+              setIsExpanded(!showFields);
+            }}
+          >
+            {showFields ? gt("Hide") : gt("Set up")}
+            <ChevronDownIcon
+              className={cn("size-3 transition-transform", showFields && "rotate-180")}
+            />
+          </Button>
+        </div>
       }
     >
       {verificationBanner}
-      <div className="space-y-2 px-3 py-3.5 sm:px-4">
-        <div className="space-y-0.5">
-          <label htmlFor={relayInputId} className="block text-sm font-medium text-foreground">
-            <T>Relay URL</T>
-          </label>
-          <p className="text-xs text-muted-foreground">
-            {gt("HTTPS origin for your T3 Connect relay. Leave empty to use {url}.", {
-              url: effectiveDefaultRelayUrl,
-            })}
-          </p>
-        </div>
-        <Input
-          id={relayInputId}
-          font="mono"
-          value={relayDraft}
-          onChange={(event) => {
-            setRelayDraft(event.currentTarget.value);
-            setError(null);
-          }}
-          placeholder="https://relay.example.com"
-          aria-label={gt("Relay URL")}
-          aria-invalid={isRelayInvalid || undefined}
-          disabled={isSaving}
-          spellCheck={false}
-          autoComplete="off"
-        />
-        {isRelayInvalid ? (
-          <p className="text-xs text-destructive">
-            <T>Enter a valid HTTPS origin (for example, https://relay.example.com).</T>
-          </p>
-        ) : null}
-      </div>
-
-      <div className="space-y-2 px-3 py-3.5 sm:px-4">
-        <div className="space-y-0.5">
-          <div className="flex items-baseline justify-between gap-2">
-            <label htmlFor={clerkKeyInputId} className="text-sm font-medium text-foreground">
-              <T>Clerk publishable key</T>
-            </label>
-            <span className="text-xs text-muted-foreground">
-              <T>Optional</T>
-            </span>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            <T>Match the Clerk instance configured on your self-hosted relay.</T>
-          </p>
-        </div>
-        <Input
-          id={clerkKeyInputId}
-          font="mono"
-          value={clerkKeyDraft}
-          onChange={(event) => {
-            setClerkKeyDraft(event.currentTarget.value);
-            setError(null);
-          }}
-          placeholder={gt("pk_live_… or pk_test_…")}
-          aria-label={gt("Clerk publishable key")}
-          aria-invalid={isClerkKeyInvalid || undefined}
-          disabled={isSaving}
-          spellCheck={false}
-          autoComplete="off"
-        />
-        {isClerkKeyInvalid ? (
-          <p className="text-xs text-destructive">
-            <T>Enter a valid Clerk publishable key starting with pk_live_ or pk_test_.</T>
-          </p>
-        ) : null}
-      </div>
-
-      {isDesktop ? (
-        <div className="space-y-2 px-3 py-3.5 sm:px-4">
-          <div className="space-y-0.5">
-            <div className="flex items-baseline justify-between gap-2">
-              <label htmlFor={cliClientIdInputId} className="text-sm font-medium text-foreground">
-                <T>CLI OAuth client ID</T>
+      {showFields ? (
+        <>
+          <div className="space-y-2 px-3 py-3.5 sm:px-4">
+            <div className="space-y-0.5">
+              <label htmlFor={relayInputId} className="block text-sm font-medium text-foreground">
+                <T>Relay URL</T>
               </label>
-              <span className="text-xs text-muted-foreground">
-                <T>Optional</T>
-              </span>
+              <p className="text-xs text-muted-foreground">
+                {gt("HTTPS origin for your T3 Connect relay. Leave empty to use {url}.", {
+                  url: effectiveDefaultRelayUrl,
+                })}
+              </p>
             </div>
-            <p className="text-xs text-muted-foreground">
-              <T>Public Clerk OAuth client ID used when linking environments from the t3 CLI.</T>
-            </p>
-          </div>
-          <Input
-            id={cliClientIdInputId}
-            font="mono"
-            value={cliClientIdDraft}
-            onChange={(event) => {
-              setCliClientIdDraft(event.currentTarget.value);
-              setError(null);
-            }}
-            placeholder={gt("Clerk OAuth client ID")}
-            aria-label={gt("CLI OAuth client ID")}
-            disabled={isSaving}
-            spellCheck={false}
-            autoComplete="off"
-          />
-          {verification.missingCliClientIdHint && normalizedCliClientId === null ? (
-            <p className="text-xs text-muted-foreground">
-              <T>Leave blank unless you also sign in from the t3 CLI.</T>
-            </p>
-          ) : null}
-        </div>
-      ) : null}
-
-      <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2.5 sm:px-4">
-        <div className="min-w-0 flex-1">
-          {error ? (
-            <p className="text-xs text-destructive">{error}</p>
-          ) : hasChanges ? (
-            <p className="text-xs text-muted-foreground">
-              {isDesktop
-                ? gt("T3 Code restarts to apply changes.")
-                : gt("This page reloads to apply changes.")}
-            </p>
-          ) : verification.clerkHostname ? (
-            <p className="truncate font-mono text-xs text-muted-foreground">
-              {gt("Clerk · {host}", { host: verification.clerkHostname })}
-            </p>
-          ) : null}
-        </div>
-        <div className="ms-auto flex items-center gap-2">
-          {hasSavedOverride ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
+            <Input
+              id={relayInputId}
+              font="mono"
+              value={relayDraft}
+              onChange={(event) => {
+                setRelayDraft(event.currentTarget.value);
+                setError(null);
+              }}
+              placeholder="https://relay.example.com"
+              aria-label={gt("Relay URL")}
+              aria-invalid={isRelayInvalid || undefined}
               disabled={isSaving}
-              onClick={() =>
-                void applyConfig({
-                  relayUrl: null,
-                  clerkPublishableKey: null,
-                  clerkCliOAuthClientId: null,
-                })
-              }
-            >
-              <T>Reset to official</T>
-            </Button>
+              spellCheck={false}
+              autoComplete="off"
+            />
+            {isRelayInvalid ? (
+              <p className="text-xs text-destructive">
+                <T>Enter a valid HTTPS origin (for example, https://relay.example.com).</T>
+              </p>
+            ) : null}
+          </div>
+
+          <div className="space-y-2 px-3 py-3.5 sm:px-4">
+            <div className="space-y-0.5">
+              <div className="flex items-baseline justify-between gap-2">
+                <label htmlFor={clerkKeyInputId} className="text-sm font-medium text-foreground">
+                  <T>Clerk publishable key</T>
+                </label>
+                <span className="text-xs text-muted-foreground">
+                  {clerkKeyRequired ? gt("Required") : gt("Optional")}
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                <T>Match the Clerk instance configured on your self-hosted relay.</T>
+              </p>
+            </div>
+            <Input
+              id={clerkKeyInputId}
+              font="mono"
+              value={clerkKeyDraft}
+              onChange={(event) => {
+                setClerkKeyDraft(event.currentTarget.value);
+                setError(null);
+              }}
+              placeholder={gt("pk_live_… or pk_test_…")}
+              aria-label={gt("Clerk publishable key")}
+              aria-invalid={isClerkKeyInvalid || undefined}
+              disabled={isSaving}
+              spellCheck={false}
+              autoComplete="off"
+            />
+            {isClerkKeyInvalid ? (
+              <p className="text-xs text-destructive">
+                <T>Enter a valid Clerk publishable key starting with pk_live_ or pk_test_.</T>
+              </p>
+            ) : null}
+          </div>
+
+          {isDesktop ? (
+            <div className="space-y-2 px-3 py-3.5 sm:px-4">
+              <div className="space-y-0.5">
+                <div className="flex items-baseline justify-between gap-2">
+                  <label
+                    htmlFor={cliClientIdInputId}
+                    className="text-sm font-medium text-foreground"
+                  >
+                    <T>CLI OAuth client ID</T>
+                  </label>
+                  <span className="text-xs text-muted-foreground">
+                    <T>Optional</T>
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  <T>
+                    Public Clerk OAuth client ID used when linking environments from the t3 CLI.
+                  </T>
+                </p>
+              </div>
+              <Input
+                id={cliClientIdInputId}
+                font="mono"
+                value={cliClientIdDraft}
+                onChange={(event) => {
+                  setCliClientIdDraft(event.currentTarget.value);
+                  setError(null);
+                }}
+                placeholder={gt("Clerk OAuth client ID")}
+                aria-label={gt("CLI OAuth client ID")}
+                disabled={isSaving}
+                spellCheck={false}
+                autoComplete="off"
+              />
+              {verification.missingCliClientIdHint && normalizedCliClientId === null ? (
+                <p className="text-xs text-muted-foreground">
+                  <T>Leave blank unless you also sign in from the t3 CLI.</T>
+                </p>
+              ) : null}
+            </div>
           ) : null}
-          <Button
-            type="button"
-            size="sm"
-            disabled={isSaving || isRelayInvalid || isClerkKeyInvalid || !hasChanges}
-            onClick={() =>
-              void applyConfig({
-                relayUrl: normalizedRelay,
-                clerkPublishableKey: normalizedClerkKey,
-                clerkCliOAuthClientId: normalizedCliClientId,
-              })
-            }
-          >
-            {isSaving ? (
-              <>
-                <Spinner size="sm" />
-                <T>Restarting…</T>
-              </>
-            ) : isDesktop ? (
-              <T>Save &amp; restart</T>
-            ) : (
-              <T>Save &amp; reload</T>
-            )}
-          </Button>
-        </div>
-      </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2.5 sm:px-4">
+            <div className="min-w-0 flex-1">
+              {error ? (
+                <p className="text-xs text-destructive">{error}</p>
+              ) : hasChanges ? (
+                <p className="text-xs text-muted-foreground">
+                  {isDesktop
+                    ? gt("T3 Code restarts to apply changes.")
+                    : gt("This page reloads to apply changes.")}
+                </p>
+              ) : verification.clerkHostname ? (
+                <p className="truncate font-mono text-xs text-muted-foreground">
+                  {gt("Clerk · {host}", { host: verification.clerkHostname })}
+                </p>
+              ) : null}
+            </div>
+            <div className="ms-auto flex items-center gap-2">
+              {hasSavedOverride ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  disabled={isSaving}
+                  onClick={() =>
+                    void applyConfig({
+                      relayUrl: null,
+                      clerkPublishableKey: null,
+                      clerkCliOAuthClientId: null,
+                    })
+                  }
+                >
+                  <T>Reset to official</T>
+                </Button>
+              ) : null}
+              <Button
+                type="button"
+                size="sm"
+                // A non-official relay without its own Clerk key would receive official T3 sign-in
+                // tokens, which the official relay also accepts; require the key instead.
+                disabled={
+                  isSaving ||
+                  isRelayInvalid ||
+                  isClerkKeyInvalid ||
+                  draftNeedsClerkKey ||
+                  !hasChanges
+                }
+                onClick={() =>
+                  void applyConfig({
+                    relayUrl: normalizedRelay,
+                    clerkPublishableKey: normalizedClerkKey,
+                    clerkCliOAuthClientId: normalizedCliClientId,
+                  })
+                }
+              >
+                {isSaving ? (
+                  <>
+                    <Spinner size="sm" />
+                    <T>Restarting…</T>
+                  </>
+                ) : isDesktop ? (
+                  <T>Save &amp; restart</T>
+                ) : (
+                  <T>Save &amp; reload</T>
+                )}
+              </Button>
+            </div>
+          </div>
+        </>
+      ) : null}
     </SettingsSection>
   );
 }
