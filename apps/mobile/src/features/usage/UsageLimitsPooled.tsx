@@ -8,11 +8,14 @@ import {
   collectLimitAccounts,
   collectLimitPools,
   displayLimitWindows,
+  moveLimitPool,
+  orderLimitPools,
   paceRemainingPercent,
   remainingPercent,
   type LimitAccount,
   type LimitPoolWindow,
 } from "@t3tools/shared/usageLimits";
+import { AsyncResult } from "effect/reactivity";
 import {
   collectExternalUsageLinks,
   collectLimitNotices,
@@ -33,6 +36,8 @@ import { ProviderIcon } from "../../components/ProviderIcon";
 import type { MessageResolver } from "../../i18n/messages";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { environmentPresentations } from "../../state/presentation";
+import { mobilePreferencesAtom, saveMobilePreferences } from "../../state/preferences";
+import { useAtomCommand } from "../../state/use-atom-command";
 import { refillLabel, ResetCredits, resetLabels } from "./UsageLimitsSection";
 import { usageProviderKind, useProviderColors } from "./usageProviders";
 
@@ -478,11 +483,25 @@ export function UsageLimitsSection({
   readonly wide?: boolean;
 }) {
   const presentations = useAtomValue(environmentPresentations.presentationsWithProvidersAtom);
+  const preferencesResult = useAtomValue(mobilePreferencesAtom);
+  const savePreferences = useAtomCommand(saveMobilePreferences, "usage limits provider order");
+  const providerOrder = AsyncResult.isSuccess(preferencesResult)
+    ? preferencesResult.value.usageLimitsProviderOrder
+    : undefined;
   const selected =
     selectedEnvironmentIds === null
       ? presentations
       : new Map([...presentations].filter(([id]) => selectedEnvironmentIds.has(id)));
-  const pools = collectLimitPools(collectLimitAccounts(selected), now);
+  const pools = orderLimitPools(
+    collectLimitPools(collectLimitAccounts(selected), now),
+    providerOrder,
+  );
+  const movePool = (index: number, delta: -1 | 1) => {
+    const nextDrivers = moveLimitPool(pools, providerOrder, index, delta);
+    if (nextDrivers) {
+      void savePreferences({ usageLimitsProviderOrder: nextDrivers });
+    }
+  };
   const quotaSources = collectHttpQuotaSources(selected);
   const m = useMessages();
   const notices = collectLimitNotices(selected, m);
@@ -524,16 +543,60 @@ export function UsageLimitsSection({
           ))}
         </View>
       ))}
-      {pools.map((pool) => {
+      {pools.map((pool, index) => {
         const windows = displayLimitWindows(pool);
+        const label = providerClients.get(pool.driver)?.label ?? String(pool.driver);
         return (
           <Fragment key={pool.driver}>
             <View className="gap-3">
-              <View className="flex-row items-center gap-2 px-1">
-                <ProviderIcon provider={pool.driver} size={18} />
-                <Text className="text-base font-t3-medium text-foreground">
-                  {providerClients.get(pool.driver)?.label ?? pool.driver}
-                </Text>
+              <View className="flex-row items-center justify-between gap-2 px-1">
+                <View className="min-w-0 flex-1 flex-row items-center gap-2">
+                  <ProviderIcon provider={pool.driver} size={18} />
+                  <Text
+                    className="shrink text-base font-t3-medium text-foreground"
+                    numberOfLines={1}
+                  >
+                    {label}
+                  </Text>
+                </View>
+                {pools.length > 1 ? (
+                  <View className="flex-row items-center gap-1">
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={gt("Move {label} up", { label })}
+                      accessibilityState={{ disabled: index === 0 }}
+                      disabled={index === 0}
+                      hitSlop={6}
+                      onPress={() => movePool(index, -1)}
+                      className="size-8 items-center justify-center rounded-full bg-grouped-card active:opacity-60 disabled:opacity-35"
+                    >
+                      <SymbolView
+                        name="arrow.up"
+                        size={13}
+                        tintColorClassName="accent-foreground-muted"
+                        type="monochrome"
+                        weight="semibold"
+                      />
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={gt("Move {label} down", { label })}
+                      accessibilityState={{ disabled: index === pools.length - 1 }}
+                      disabled={index === pools.length - 1}
+                      hitSlop={6}
+                      onPress={() => movePool(index, 1)}
+                      className="size-8 items-center justify-center rounded-full bg-grouped-card active:opacity-60 disabled:opacity-35"
+                    >
+                      <SymbolView
+                        name="arrow.down"
+                        size={13}
+                        tintColorClassName="accent-foreground-muted"
+                        type="monochrome"
+                        weight="semibold"
+                      />
+                    </Pressable>
+                  </View>
+                ) : null}
               </View>
               {windows.map((window) => {
                 const details =

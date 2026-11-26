@@ -21,6 +21,8 @@ import {
   collectLimitPools,
   elapsedShare,
   exhaustedUsageWindow,
+  moveLimitPool,
+  orderLimitPools,
   paceOf,
   paceRemainingPercent,
   usesChatGptSharing,
@@ -2178,5 +2180,33 @@ describe("ChatGPT sharing presentation", () => {
         auth: { status: "unauthenticated", subscriptionSharing: true },
       }),
     ).toBe(false);
+  });
+});
+
+describe("orderLimitPools & moveLimitPool", () => {
+  const pools = [{ driver: "codex" }, { driver: "claudeAgent" }, { driver: "antigravity" }];
+
+  it("orders pools by preferredOrder and appends unseen providers in original order", () => {
+    expect(orderLimitPools(pools, ["antigravity", "codex"]).map((p) => p.driver)).toEqual([
+      "antigravity",
+      "codex",
+      "claudeAgent",
+    ]);
+    expect(orderLimitPools(pools, undefined).map((p) => p.driver)).toEqual([
+      "codex",
+      "claudeAgent",
+      "antigravity",
+    ]);
+  });
+
+  it("moves a pool up or down while preserving offline providers in preferredOrder", () => {
+    expect(moveLimitPool(pools, ["cursor", "codex"], 2, -1)).toEqual([
+      "codex",
+      "antigravity",
+      "claudeAgent",
+      "cursor",
+    ]);
+    expect(moveLimitPool(pools, undefined, 0, -1)).toBeNull();
+    expect(moveLimitPool(pools, undefined, 2, 1)).toBeNull();
   });
 });

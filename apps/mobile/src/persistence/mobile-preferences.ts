@@ -189,6 +189,7 @@ export interface Preferences {
   readonly workspaceSelections?: WorkspaceSelections;
   readonly pullRequestSavedViews?: ReadonlyArray<PullRequestSavedView>;
   readonly issueSavedViews?: ReadonlyArray<IssueSavedView>;
+  readonly usageLimitsProviderOrder?: readonly string[];
 }
 
 export class MobilePreferencesLoadError extends Schema.TaggedError<MobilePreferencesLoadError>()(
@@ -279,7 +280,14 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     workspaceSelections?: WorkspaceSelections;
     pullRequestSavedViews?: ReadonlyArray<PullRequestSavedView>;
     issueSavedViews?: ReadonlyArray<IssueSavedView>;
+    usageLimitsProviderOrder?: readonly string[];
   } = {};
+
+  if (Array.isArray(parsed.usageLimitsProviderOrder)) {
+    preferences.usageLimitsProviderOrder = parsed.usageLimitsProviderOrder.filter(
+      (driver): driver is string => typeof driver === "string",
+    );
+  }
 
   if (Array.isArray(parsed.hiddenNavigationTabs)) {
     preferences.hiddenNavigationTabs = parsed.hiddenNavigationTabs.filter(

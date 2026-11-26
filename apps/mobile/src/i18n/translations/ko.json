@@ -5108,6 +5108,8 @@
   "f78edbddd70ee41d": "구간 {index}, {account}, {remaining}% 남음, {credits, plural, other {적립된 초기화 크레딧 {credits}개}}",
   "d2d071e45a2d6b89": "한도를 보려면 환경을 선택하세요.",
   "f411a8cef140a5ea": "선택한 환경에 구독 한도를 보고하는 제공자가 없습니다.",
+  "90505e3bfadccee0": "Move {label} up",
+  "33234f46946de376": "Move {label} down",
   "b29a752dd8ee9aa7": "계정",
   "55a38e69338c54ee": "계정 이메일 숨기기",
   "0d3e9f1f27c0e780": "계정 이메일 표시",

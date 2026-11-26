@@ -8,6 +8,8 @@ import {
   type LimitPool,
   type LimitPoolMember,
   type LimitPoolWindow,
+  moveLimitPool,
+  orderLimitPools,
   paceRemainingPercent,
   remainingPercent,
   type ResetCreditChoice,
@@ -726,21 +728,6 @@ function PoolSection({
   );
 }
 
-function orderLimitPools(
-  pools: readonly LimitPool[],
-  preferredOrder: readonly string[] | undefined,
-): readonly LimitPool[] {
-  if (!preferredOrder || preferredOrder.length === 0) return pools;
-  const rank = new Map(preferredOrder.map((driver, index) => [driver, index]));
-  return pools
-    .map((pool, index) => ({
-      pool,
-      rank: rank.get(String(pool.driver)) ?? preferredOrder.length + index,
-    }))
-    .toSorted((left, right) => left.rank - right.rank)
-    .map((entry) => entry.pool);
-}
-
 export function UsageLimitsPooled({
   presentations,
   providerOrder,
@@ -762,18 +749,8 @@ export function UsageLimitsPooled({
   );
   const movePool = (index: number, delta: -1 | 1) => {
     if (!onProviderOrderChange) return;
-    const targetIndex = index + delta;
-    if (targetIndex < 0 || targetIndex >= pools.length) return;
-    const nextDrivers = pools.map((pool) => String(pool.driver));
-    const current = nextDrivers[index]!;
-    nextDrivers[index] = nextDrivers[targetIndex]!;
-    nextDrivers[targetIndex] = current;
-    // Preserve any hidden/offline providers previously saved in providerOrder.
-    const seen = new Set(nextDrivers);
-    for (const driver of providerOrder ?? []) {
-      if (!seen.has(driver)) nextDrivers.push(driver);
-    }
-    onProviderOrderChange(nextDrivers);
+    const nextDrivers = moveLimitPool(pools, providerOrder, index, delta);
+    if (nextDrivers) onProviderOrderChange(nextDrivers);
   };
   const quotaSources = collectHttpQuotaSources(presentations);
   const notices = collectLimitNotices(presentations, m);

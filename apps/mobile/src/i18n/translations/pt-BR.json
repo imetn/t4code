@@ -5124,6 +5124,8 @@
   "f78edbddd70ee41d": "Segmento {index}, {account}, {remaining}% restante, {credits, plural, one {{credits} crédito de redefinição guardado} other {{credits} créditos de redefinição guardados}}",
   "d2d071e45a2d6b89": "Selecione um ambiente para ver os limites.",
   "f411a8cef140a5ea": "Nenhum provedor nos ambientes selecionados informa limites de assinatura.",
+  "90505e3bfadccee0": "Move {label} up",
+  "33234f46946de376": "Move {label} down",
   "b29a752dd8ee9aa7": "Conta",
   "55a38e69338c54ee": "Ocultar e-mail da conta",
   "0d3e9f1f27c0e780": "Mostrar e-mail da conta",

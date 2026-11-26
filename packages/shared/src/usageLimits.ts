@@ -1223,3 +1223,41 @@ export function collectProviderUsageLimits(
   }
   return { createdAt: DateTime.formatIso(DateTime.makeUnsafe(now)), accounts, notices };
 }
+
+export function orderLimitPools<T extends { readonly driver: string }>(
+  pools: readonly T[],
+  preferredOrder: readonly string[] | undefined,
+): readonly T[] {
+  if (!preferredOrder || preferredOrder.length === 0) return pools;
+  const rank = new Map(preferredOrder.map((driver, index) => [driver, index]));
+  // Hermes lacks Array.prototype.toSorted; copy via map before sorting.
+  return pools
+    .map((pool, index) => ({
+      pool,
+      rank: rank.get(String(pool.driver)) ?? preferredOrder.length + index,
+    }))
+    .sort((left, right) => left.rank - right.rank)
+    .map((entry) => entry.pool);
+}
+
+export function moveLimitPool<T extends { readonly driver: string }>(
+  pools: readonly T[],
+  preferredOrder: readonly string[] | undefined,
+  index: number,
+  delta: -1 | 1,
+): readonly string[] | null {
+  const targetIndex = index + delta;
+  if (index < 0 || index >= pools.length || targetIndex < 0 || targetIndex >= pools.length) {
+    return null;
+  }
+  const nextDrivers = pools.map((pool) => String(pool.driver));
+  const current = nextDrivers[index]!;
+  nextDrivers[index] = nextDrivers[targetIndex]!;
+  nextDrivers[targetIndex] = current;
+  // Preserve any hidden/offline providers previously saved in preferredOrder.
+  const seen = new Set(nextDrivers);
+  for (const driver of preferredOrder ?? []) {
+    if (!seen.has(driver)) nextDrivers.push(driver);
+  }
+  return nextDrivers;
+}
