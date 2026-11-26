@@ -1,11 +1,13 @@
-import { T, useGT, useMessages } from "gt-react-native";
+import { msg, T, useGT, useMessages } from "gt-react-native";
 import { Button } from "../../components/ui/Button";
 import * as Dialog from "../../components/ui/Dialog";
 import { useAtomValue } from "@effect/atom-react";
 import {
+  AVAILABLE_CONNECTION_STATE,
   canRemoveRoute,
   type ConnectionRoute,
   type ConnectionRouteKind,
+  type ConnectionRouteOutcome,
   connectionRouteAddress,
   connectionRouteId,
   connectionRouteKind,
@@ -13,6 +15,9 @@ import {
   connectionRoutes,
   isLearned,
   pendingRouteOrder,
+  offTailnetHint,
+  routeOutcomeText,
+  unusedWithTailnetSignIn,
 } from "@t3tools/client-runtime/connection";
 import { type EnvironmentId, sessionGrantsScope } from "@t3tools/contracts";
 import {
@@ -39,6 +44,7 @@ import { SettingsDragHandle } from "./components/SettingsDragHandle";
 import { SettingsSection } from "./components/SettingsSection";
 
 const ICON_SIZE = Platform.OS === "android" ? 24 : 22;
+const UNUSED_WITH_TAILNET_SIGN_IN = msg("Not used with Tailscale sign-in");
 const REMOVE_SIZE = 20;
 
 const ROUTE_ICONS: Record<ConnectionRouteKind, AppSymbolName> = {
@@ -68,6 +74,10 @@ export function EnvironmentRoutesSection({
     useAtomValue(environmentPresentations.presentationAtom(environmentId))?.refusedRouteIds ?? [];
   const sessionResult = useAtomValue(environmentSession.sessionStateAtom(environmentId));
   const session = AsyncResult.getOrElse(sessionResult, () => null);
+  const connectionState = AsyncResult.getOrElse(
+    useAtomValue(environmentCatalog.stateAtom(environmentId)),
+    () => AVAILABLE_CONNECTION_STATE,
+  );
   const [permissionsOpen, setPermissionsOpen] = useState(false);
   const reorder = useAtomCommand(environmentCatalog.reorderRoutes, "route reorder");
   const removeRoute = useAtomCommand(environmentCatalog.removeRoute, "route removal");
@@ -91,6 +101,8 @@ export function EnvironmentRoutesSection({
   const routes = order.flatMap((id) => byId.get(id) ?? []);
   const activeRouteId =
     connected && Option.isSome(prepared) ? connectionRouteId(prepared.value.target) : null;
+  const outcomes = new Map(connectionState.routes.map((outcome) => [outcome.routeId, outcome]));
+  const hint = offTailnetHint(connectionState, messages);
 
   const commit = (next: ReadonlyArray<string>) => {
     setPending(next);
@@ -210,6 +222,8 @@ export function EnvironmentRoutesSection({
             count={routes.length}
             inUse={id === activeRouteId}
             refused={refusedRouteIds.includes(id)}
+            outcome={outcomes.get(id)}
+            unused={unusedWithTailnetSignIn(entry, route)}
             editing={editing}
             offset={index === dragFrom ? (drag?.translation ?? 0) : shift}
             lifted={index === dragFrom}
@@ -230,6 +244,9 @@ export function EnvironmentRoutesSection({
           />
         );
       })}
+      {hint !== null ? (
+        <Text className="px-4 py-2 text-sm text-foreground-muted">{hint}</Text>
+      ) : null}
       <SettingsActionRow icon="plus" label={gt("Add route")} onPress={onAddRoute} />
     </SettingsSection>
   );
@@ -241,6 +258,8 @@ function RouteRow(props: {
   readonly count: number;
   readonly inUse: boolean;
   readonly refused: boolean;
+  readonly outcome: ConnectionRouteOutcome | undefined;
+  readonly unused: boolean;
   readonly editing: boolean;
   readonly offset: number;
   readonly lifted: boolean;
@@ -260,6 +279,15 @@ function RouteRow(props: {
     props.refused && address !== null
       ? gt("The host refused this device's sign-in. Pair this address again with Add route.")
       : null;
+  const status = props.inUse
+    ? gt("In use")
+    : props.refused
+      ? gt("Sign-in refused")
+      : props.unused
+        ? messages(UNUSED_WITH_TAILNET_SIGN_IN)
+        : props.outcome
+          ? routeOutcomeText(props.outcome, messages)
+          : null;
   const style = useAnimatedStyle(() => ({
     transform: [
       {
@@ -300,8 +328,7 @@ function RouteRow(props: {
           label,
           address,
           isLearned(route) ? gt("Found automatically") : null,
-          props.inUse ? gt("In use") : null,
-          props.refused ? gt("Sign-in refused") : null,
+          status,
           gt("Route {position} of {count}", { position: props.position, count: props.count }),
           refusedHint,
         ]
@@ -327,13 +354,27 @@ function RouteRow(props: {
             </Text>
             {props.inUse ? (
               <StatusPill {...connectionTone("connected")} label={gt("In use")} size="compact" />
-            ) : null}
-            {props.refused ? (
+            ) : props.refused ? (
               <StatusPill
                 {...connectionTone("error")}
                 label={gt("Sign-in refused")}
                 size="compact"
               />
+            ) : props.unused ? (
+              <Text className="text-sm text-foreground-muted">
+                {messages(UNUSED_WITH_TAILNET_SIGN_IN)}
+              </Text>
+            ) : props.outcome ? (
+              <Text
+                className={cn(
+                  "text-sm",
+                  props.outcome.result === "answered"
+                    ? "text-foreground-muted"
+                    : "text-danger-foreground",
+                )}
+              >
+                {routeOutcomeText(props.outcome, messages)}
+              </Text>
             ) : null}
           </View>
           {address !== null ? (

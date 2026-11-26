@@ -13,6 +13,7 @@ import { LocalEnvironmentList } from "./LocalEnvironmentList";
 import { PullRequestRoutingSettings } from "./PullRequestRoutingSettings";
 import { LinkedEnvironmentsSection } from "./LinkedEnvironmentsSection";
 import { LinkSeveralEnvironmentsAction } from "./LinkSeveralEnvironments";
+import { TailnetDevicesSection } from "./TailnetDevicesSection";
 
 export function ConnectionsRouteScreen() {
   const gt = useGT();
@@ -73,6 +74,10 @@ export function ConnectionsRouteScreen() {
                 environmentLabel={environment.environmentLabel}
               />
               <LinkSeveralEnvironmentsAction
+                environmentId={environment.environmentId}
+                environmentLabel={environment.environmentLabel}
+              />
+              <TailnetDevicesSection
                 environmentId={environment.environmentId}
                 environmentLabel={environment.environmentLabel}
               />

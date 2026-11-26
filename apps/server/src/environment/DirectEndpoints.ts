@@ -28,6 +28,7 @@ import * as ServerEnvironment from "./ServerEnvironment.ts";
 import {
   isLoopbackHost,
   isPrivateNetworkAddress,
+  isTailscaleInterface,
   isVirtualInterface,
   WINDOWS_HOST_ADAPTER_MAC,
 } from "../startupAccess.ts";
@@ -50,14 +51,6 @@ export class DirectEndpoints extends Context.Service<
 const isAdvertisableAddress = (address: string): boolean =>
   NodeNet.isIPv4(address) && !address.startsWith("127.") && isPrivateNetworkAddress(address);
 
-// macOS utun names need Tailscale's IPv6 range to identify them; WARP shares its IPv4 range.
-const isTailscaleInterface = (
-  name: string,
-  entries: ReadonlyArray<NodeOS.NetworkInterfaceInfo>,
-): boolean =>
-  /^tailscale/i.test(name) ||
-  entries.some((entry) => entry.family === "IPv6" && isTailnetHost(entry.address));
-
 export function resolveBoundEndpoints(input: {
   readonly platform: NodeJS.Platform;
   readonly host: string | undefined;
@@ -66,6 +59,8 @@ export function resolveBoundEndpoints(input: {
   /** A cloud VM's private network is its provider's, which no client shares. */
   readonly onCloudVm?: boolean;
   readonly isolatedBridges?: ReadonlySet<string>;
+  /** The listener refuses LAN peers, so a LAN route would never answer. */
+  readonly tailscaleOnly?: boolean;
 }): ReadonlyArray<ServerDirectEndpoint> {
   if (isLoopbackHost(input.host)) return [];
   const tailscaleAddresses = new Set(
@@ -93,7 +88,9 @@ export function resolveBoundEndpoints(input: {
           isAdvertisableAddress(address) || (NodeNet.isIPv6(address) && isTailnetHost(address)),
       );
   return [...new Set(addresses)]
-    .filter((address) => !input.onCloudVm || tailscaleAddresses.has(address))
+    .filter(
+      (address) => !(input.onCloudVm || input.tailscaleOnly) || tailscaleAddresses.has(address),
+    )
     .map((address) => ({
       kind: tailscaleAddresses.has(address) ? "tailnet" : "lan",
       httpBaseUrl: `http://${formatHostForUrl(address)}:${input.port}/`,
@@ -175,7 +172,7 @@ export const make = Effect.gen(function* () {
   const httpClient = yield* HttpClient.HttpClient;
   const platform = yield* HostProcess.Platform;
   const fileSystem = yield* FileSystem.FileSystem;
-  const environmentId = yield* (yield* ServerEnvironment.ServerEnvironment).getEnvironmentId;
+  const serverEnvironment = yield* ServerEnvironment.ServerEnvironmentIdentity;
   // Only the service default listens on every interface without being asked,
   // so only it checks once whether it runs in a cloud. The check starts now so
   // the first client does not wait for its timeout.
@@ -205,6 +202,7 @@ export const make = Effect.gen(function* () {
         interfaces,
         onCloudVm: yield* onCloudVm,
         ...(isolatedBridges === undefined ? {} : { isolatedBridges }),
+        tailscaleOnly: config.tailscaleOnly === true,
       }),
     ];
     const servedUrl = yield* Ref.get(servedEndpoint);
@@ -215,7 +213,7 @@ export const make = Effect.gen(function* () {
   const resolve = Effect.gen(function* () {
     // Serve setup can fail without stopping startup; advertise only after it answers as this server.
     if (config.tailscaleServeEnabled) {
-      const servedUrl = yield* readTailscaleStatus.pipe(
+      const servedUrl = yield* readTailscaleStatus("active").pipe(
         Effect.map((status) => status.magicDnsName),
         Effect.flatMap((magicDnsName) => {
           if (magicDnsName === null) return Effect.succeed(null);
@@ -223,7 +221,10 @@ export const make = Effect.gen(function* () {
             magicDnsName,
             servePort: config.tailscaleServePort,
           });
-          return probeTailscaleHttpsEndpoint({ baseUrl: httpBaseUrl, environmentId }).pipe(
+          return serverEnvironment.getEnvironmentId.pipe(
+            Effect.flatMap((environmentId) =>
+              probeTailscaleHttpsEndpoint({ baseUrl: httpBaseUrl, environmentId }),
+            ),
             Effect.map((reachable) => (reachable ? httpBaseUrl : null)),
           );
         }),

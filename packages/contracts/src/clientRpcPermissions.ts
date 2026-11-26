@@ -108,6 +108,10 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.agentFeedbackAnswerRequest]: AuthOrchestrationOperateScope,
   [WS_METHODS.threadHandoffStart]: AuthOrchestrationOperateScope,
   [WS_METHODS.threadHandoffCancel]: AuthOrchestrationOperateScope,
+  // Blocking a device is access management, like revoking its session.
+  [WS_METHODS.tailnetDevicesList]: AuthAccessWriteScope,
+  [WS_METHODS.tailnetDevicesBlock]: AuthAccessWriteScope,
+  [WS_METHODS.tailnetDevicesUnblock]: AuthAccessWriteScope,
 } as const;
 export type ClientGuardedRpcTag = keyof typeof CLIENT_GUARDED_RPC_SCOPES;
 

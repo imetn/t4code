@@ -1,9 +1,12 @@
 import {
+  authScopeRequiredResponse,
   clientRpcRequiredScopes,
+  EnvironmentAuthorizationError,
   sessionGrantsScope,
   type EnvironmentId,
   type AuthSessionState,
   type AuthEnvironmentScope,
+  tailnetScopeDenial,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -57,7 +60,15 @@ function makeCommandPermissions<R, E>(
           const missing = scopes.find(
             (scope) => Option.isNone(session) || !sessionGrantsScope(session.value, scope),
           );
-          if (missing !== undefined) return yield* scopeRequiredError(missing);
+          if (missing !== undefined) {
+            if (Option.isSome(session) && session.value.signedInWithTailscale === true) {
+              return yield* new EnvironmentAuthorizationError({
+                ...authScopeRequiredResponse(missing),
+                message: tailnetScopeDenial(missing),
+              });
+            }
+            return yield* scopeRequiredError(missing);
+          }
         }),
       );
     });

@@ -1459,6 +1459,15 @@ export const SETTINGS_SEARCH_ITEMS = [
     localBackendManagementOnly: true,
   },
   {
+    id: "tailscale-sign-in",
+    title: msg("Tailscale sign-in"),
+    to: "/settings/access",
+    targetId: "connections-environment",
+    searchTerms: ["tailnet no pairing code own devices phone port 3773 block"],
+    desktopOnly: true,
+    localBackendManagementOnly: true,
+  },
+  {
     id: "wsl-backend",
     title: msg("WSL backend"),
     to: "/settings/access",

@@ -379,6 +379,17 @@ export class ProofKeySessionsError extends Schema.TaggedError<ProofKeySessionsEr
   }
 }
 
+export class SubjectSessionsRevocationError extends Schema.TaggedError<SubjectSessionsRevocationError>()(
+  "SubjectSessionsRevocationError",
+  {
+    ...sessionCredentialInternalErrorContext,
+  },
+) {
+  override get message(): string {
+    return "Failed to revoke the subject's sessions.";
+  }
+}
+
 export const SessionCredentialInternalError = Schema.Union([
   SessionClaimsEncodingError,
   SessionCredentialIssueError,
@@ -389,6 +400,7 @@ export const SessionCredentialInternalError = Schema.Union([
   SessionRevocationError,
   OtherSessionsRevocationError,
   ProofKeySessionsError,
+  SubjectSessionsRevocationError,
 ]);
 export type SessionCredentialInternalError = typeof SessionCredentialInternalError.Type;
 
@@ -482,6 +494,10 @@ export class SessionStore extends Context.Service<
     /** Revokes every session bound to this DPoP key, so a device it belongs to is cut off now. */
     readonly revokeByProofKey: (
       proofKeyThumbprint: string,
+    ) => Effect.Effect<number, SessionCredentialInternalError>;
+    /** Ends every session for `subject` and closes its sockets. Returns how many it ended. */
+    readonly revokeBySubject: (
+      subject: string,
     ) => Effect.Effect<number, SessionCredentialInternalError>;
     readonly markConnected: (sessionId: AuthSessionId) => Effect.Effect<void, never>;
     readonly markDisconnected: (sessionId: AuthSessionId) => Effect.Effect<void, never>;
@@ -1200,43 +1216,14 @@ const make = Effect.gen(function* () {
       }
       return revoked;
     },
+    // Stopped between the write and the notice, the session's open sockets would keep it.
+    Effect.uninterruptible,
   );
 
-  const proofKeyThumbprintOf: SessionStore["Service"]["proofKeyThumbprintOf"] = (sessionId) =>
-    authSessions
-      .getProofKeyThumbprint({ sessionId })
-      .pipe(Effect.mapError((cause) => new ProofKeySessionsError({ operation: "lookup", cause })));
-
-  const revokeByProofKey: SessionStore["Service"]["revokeByProofKey"] = Effect.fn(
-    "SessionStore.revokeByProofKey",
-  )(function* (proofKeyThumbprint) {
-    const revokedAt = yield* DateTime.now;
-    const revokedSessionIds = yield* authSessions
-      .revokeByProofKey({ proofKeyThumbprint, revokedAt })
-      .pipe(Effect.mapError((cause) => new ProofKeySessionsError({ operation: "revoke", cause })));
-    yield* Ref.update(connectedSessionsRef, (current) => {
-      const next = new Map(current);
-      for (const revokedSessionId of revokedSessionIds) next.delete(revokedSessionId);
-      return next;
-    });
-    yield* Effect.forEach(revokedSessionIds, emitRemoved, { discard: true });
-    return revokedSessionIds.length;
-  });
-
-  const revokeAllExcept: SessionStore["Service"]["revokeAllExcept"] = Effect.fn(
-    "SessionStore.revokeAllExcept",
-  )(function* (sessionId) {
-    const revokedAt = yield* DateTime.now;
-    const revokedSessionIds = yield* authSessions
-      .revokeAllExcept({
-        currentSessionId: sessionId,
-        revokedAt,
-      })
-      .pipe(
-        Effect.mapError(
-          (cause) => new OtherSessionsRevocationError({ currentSessionId: sessionId, cause }),
-        ),
-      );
+  // Untraced: it runs inside revokeByProofKey, revokeAllExcept and revokeBySubject spans.
+  const forgetRevokedSessions = Effect.fnUntraced(function* (
+    revokedSessionIds: ReadonlyArray<AuthSessionId>,
+  ) {
     if (revokedSessionIds.length > 0) {
       yield* Ref.update(connectedSessionsRef, (current) => {
         const next = new Map(current);
@@ -1256,6 +1243,60 @@ const make = Effect.gen(function* () {
     }
     return revokedSessionIds.length;
   });
+
+  const proofKeyThumbprintOf: SessionStore["Service"]["proofKeyThumbprintOf"] = (sessionId) =>
+    authSessions
+      .getProofKeyThumbprint({ sessionId })
+      .pipe(Effect.mapError((cause) => new ProofKeySessionsError({ operation: "lookup", cause })));
+
+  const revokeByProofKey: SessionStore["Service"]["revokeByProofKey"] = Effect.fn(
+    "SessionStore.revokeByProofKey",
+  )(
+    function* (proofKeyThumbprint) {
+      const revokedAt = yield* DateTime.now;
+      const revokedSessionIds = yield* authSessions
+        .revokeByProofKey({ proofKeyThumbprint, revokedAt })
+        .pipe(Effect.mapError((cause) => new ProofKeySessionsError({ operation: "revoke", cause })));
+      return yield* forgetRevokedSessions(revokedSessionIds);
+    },
+    Effect.uninterruptible,
+  );
+
+  const revokeAllExcept: SessionStore["Service"]["revokeAllExcept"] = Effect.fn(
+    "SessionStore.revokeAllExcept",
+  )(
+    function* (sessionId) {
+      const revokedAt = yield* DateTime.now;
+      const revokedSessionIds = yield* authSessions
+        .revokeAllExcept({
+          currentSessionId: sessionId,
+          revokedAt,
+        })
+        .pipe(
+          Effect.mapError(
+            (cause) => new OtherSessionsRevocationError({ currentSessionId: sessionId, cause }),
+          ),
+        );
+      return yield* forgetRevokedSessions(revokedSessionIds);
+    },
+    // As in revokeBySubject: the write and its notices go together.
+    Effect.uninterruptible,
+  );
+
+  const revokeBySubject: SessionStore["Service"]["revokeBySubject"] = Effect.fn(
+    "SessionStore.revokeBySubject",
+  )(
+    function* (subject) {
+      const revokedAt = yield* DateTime.now;
+      const revokedSessionIds = yield* authSessions
+        .revokeBySubject({ subject, revokedAt })
+        .pipe(Effect.mapError((cause) => new SubjectSessionsRevocationError({ cause })));
+      return yield* forgetRevokedSessions(revokedSessionIds);
+    },
+    // Stopped between the write and the notice, a retry finds nothing left to revoke, and
+    // open sockets would wait out their credentials.
+    Effect.uninterruptible,
+  );
 
   const awaitInvalidation = Effect.fn(function* (
     sessionId: AuthSessionId,
@@ -1356,6 +1397,7 @@ const make = Effect.gen(function* () {
     revokeAllExcept,
     proofKeyThumbprintOf,
     revokeByProofKey,
+    revokeBySubject,
     markConnected,
     markDisconnected,
   });

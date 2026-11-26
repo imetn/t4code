@@ -243,17 +243,20 @@ describe("resolveBoundEndpoints", () => {
     ).toEqual([]);
   });
 
-  it("reports only the tailnet address on a cloud VM, whose private network no client shares", () => {
-    expect(
-      resolveBoundEndpoints({
-        platform: "linux",
-        host: "0.0.0.0",
-        port: 3773,
-        interfaces: INTERFACES,
-        onCloudVm: true,
-      }),
-    ).toEqual([{ kind: "tailnet", httpBaseUrl: "http://100.101.102.103:3773/" }]);
-  });
+  it.each([{ onCloudVm: true }, { tailscaleOnly: true }])(
+    "reports only the tailnet address with %o, where no LAN client can connect",
+    (mode) => {
+      expect(
+        resolveBoundEndpoints({
+          platform: "linux",
+          host: "0.0.0.0",
+          port: 3773,
+          interfaces: INTERFACES,
+          ...mode,
+        }),
+      ).toEqual([{ kind: "tailnet", httpBaseUrl: "http://100.101.102.103:3773/" }]);
+    },
+  );
 
   it("reports an explicit bind to Tailscale's IPv6 address as the tailnet route", () => {
     expect(
@@ -331,25 +334,29 @@ const layerTailscaleUp = Layer.succeed(
   ),
 );
 
-const T3_DESCRIPTOR_BODY = JSON.stringify({
-  environmentId: "serve-test",
-  label: "Serve test",
-  platform: { os: "darwin", arch: "arm64" },
-  serverVersion: "0.0.0-test",
-  capabilities: { repositoryIdentity: true },
-});
-
-const serveProbeResponse = (request: HttpClientRequest.HttpClientRequest, status: number) =>
+const serveProbeResponse = (
+  request: HttpClientRequest.HttpClientRequest,
+  status: number,
+  servedEnvironmentId = "this-server",
+) =>
   HttpClientResponse.fromWeb(
     request,
-    new Response(status === 200 ? T3_DESCRIPTOR_BODY : null, { status }),
+    new Response(status === 200 ? JSON.stringify({ environmentId: servedEnvironmentId }) : null, {
+      status,
+    }),
   );
 
-const layerServeProbe = (status: number) =>
+const layerServeProbe = (status: number, servedEnvironmentId = "this-server") =>
   Layer.succeed(
     HttpClient.HttpClient,
-    HttpClient.make((request) => Effect.succeed(serveProbeResponse(request, status))),
+    HttpClient.make((request) =>
+      Effect.succeed(serveProbeResponse(request, status, servedEnvironmentId)),
+    ),
   );
+
+const layerThisServer = Layer.succeed(ServerEnvironment.ServerEnvironmentIdentity, {
+  getEnvironmentId: Effect.succeed(EnvironmentId.make("this-server")),
+});
 
 const layerServeConfig = (host = "127.0.0.1", advertisedUrls: ReadonlyArray<string> = []) =>
   Layer.effect(
@@ -365,15 +372,10 @@ const layerServeConfig = (host = "127.0.0.1", advertisedUrls: ReadonlyArray<stri
   ).pipe(
     Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-direct-" })),
     Layer.provide(NodeServices.layer),
-    Layer.merge(
-      Layer.succeed(ServerEnvironment.ServerEnvironment, {
-        getEnvironmentId: Effect.succeed(EnvironmentId.make("serve-test")),
-        getDescriptor: Effect.die("unused"),
-      }),
-    ),
+    Layer.merge(layerThisServer),
   );
 
-const resolveWithServe = (probeStatus: number) =>
+const resolveWithServe = (probeStatus: number, servedEnvironmentId = "this-server") =>
   Effect.flatMap(DirectEndpoints.DirectEndpoints, (service) => service.resolve()).pipe(
     Effect.provide(
       DirectEndpoints.layer.pipe(
@@ -381,7 +383,7 @@ const resolveWithServe = (probeStatus: number) =>
           Layer.mergeAll(
             layerServeConfig(),
             layerTailscaleUp,
-            layerServeProbe(probeStatus),
+            layerServeProbe(probeStatus, servedEnvironmentId),
             NodeFileSystem.layer,
           ),
         ),
@@ -454,9 +456,10 @@ describe("DirectEndpoints Tailscale Serve", () => {
       }),
   );
 
-  effectIt.effect("leaves the tailnet name out when Serve is not forwarding", () =>
+  effectIt.effect("leaves the tailnet name out when Serve does not reach this server", () =>
     Effect.gen(function* () {
       expect(yield* resolveWithServe(502)).toEqual([]);
+      expect(yield* resolveWithServe(200, "other-server")).toEqual([]);
     }),
   );
 });

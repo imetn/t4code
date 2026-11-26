@@ -7,6 +7,7 @@ import {
   type RelayClientInstallProgressStage,
 } from "@t3tools/contracts";
 import { RelayOkResponse } from "@t3tools/contracts/relay";
+import * as NetService from "@t3tools/shared/Net";
 import * as RelayClient from "@t3tools/shared/relayClient";
 import { withRelayClientTracing } from "@t3tools/shared/relayTracing";
 import * as Cause from "effect/Cause";
@@ -25,6 +26,7 @@ import * as References from "effect/References";
 import * as Schema from "effect/Schema";
 import { Command, Flag, GlobalFlag, Prompt } from "effect/cli";
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as ManagedLimits from "../policy/managedLimits.ts";
@@ -526,6 +528,8 @@ export const runCloudCommand = Effect.fn("cloud.cli.run_cloud_command")(function
     | SecureRandom.SecureRandom
     | FileSystem.FileSystem
     | Path.Path
+    | ChildProcessSpawner.ChildProcessSpawner
+    | NetService.NetService
     | HttpClient.HttpClient
     | Prompt.Environment
     | ServerConfig.ServerConfig

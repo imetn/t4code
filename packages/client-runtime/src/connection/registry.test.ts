@@ -35,6 +35,8 @@ import {
   RelayConnectionRegistration,
   SshConnectionProfile,
   SshConnectionRegistration,
+  TailnetConnectionCredential,
+  TailnetConnectionRegistration,
   type ConnectionCredential,
   type ConnectionProfile,
 } from "./catalog.ts";
@@ -208,6 +210,7 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
   const targetStore = Persistence.ConnectionTargetStore.of({
     list: Ref.get(storedTargets),
     listDisabled: Ref.get(storedDisabled).pipe(Effect.map((ids) => [...ids])),
+    listDismissed: Effect.succeed([]),
   });
   const registrationStore = Persistence.ConnectionRegistrationStore.of({
     register: (registration, routes) =>
@@ -437,11 +440,14 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
       return { prepared, session };
     });
   const driver = ConnectionDriver.ConnectionDriver.of({
-    connect: (entry, reportProgress) =>
+    connect: (entry, reportProgress, reportRoute) =>
       reportProgress({ stage: "preparing" }).pipe(
         Effect.andThen(
-          ConnectionDriver.connectOverRoutes(entry, checkRoute, (route) =>
-            connectRoute(entry, route),
+          ConnectionDriver.connectOverRoutes(
+            entry,
+            checkRoute,
+            (route) => connectRoute(entry, route),
+            reportRoute,
           ),
         ),
       ),
@@ -2119,6 +2125,156 @@ describe("EnvironmentRegistry routes", () => {
         expect(routesOf(yield* Ref.get(harness.storedTargets), LAN_TARGET.environmentId)).toEqual([
           pastedTarget,
           savedTarget,
+          RELAY_TARGET,
+        ]);
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
+  it.effect("re-pairing a route drops routes learned over its Tailscale sign-in", () =>
+    Effect.gen(function* () {
+      const learnedId = `learned:${LAN_TARGET.environmentId}:http://100.88.1.2:3773@${LAN_TARGET.connectionId}`;
+      const learned = new BearerConnectionTarget({ ...LAN_TARGET, connectionId: learnedId });
+      const harness = yield* makeHarness(
+        [LAN_TARGET, learned, RELAY_TARGET],
+        [
+          LAN_PROFILE,
+          new BearerConnectionProfile({
+            connectionId: learnedId,
+            environmentId: LAN_TARGET.environmentId,
+            label: LAN_TARGET.label,
+            httpBaseUrl: "http://100.88.1.2:3773/",
+            wsBaseUrl: "ws://100.88.1.2:3773/",
+            learned: true,
+            authorization: "tailnet",
+            network: "tailscale",
+          }),
+        ],
+        [[LAN_TARGET.connectionId, BEARER_CREDENTIAL]],
+      );
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        yield* registry.register(lanRegistration());
+
+        expect(routesOf(yield* Ref.get(harness.storedTargets), LAN_TARGET.environmentId)).toEqual([
+          LAN_TARGET,
+          RELAY_TARGET,
+        ]);
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
+  it.effect(
+    "registering a route again with the same kind of credential keeps its learned routes",
+    () =>
+      Effect.gen(function* () {
+        const learnedId = `learned:${LAN_TARGET.environmentId}:http://100.88.1.2:3773@${LAN_TARGET.connectionId}`;
+        const learned = new BearerConnectionTarget({ ...LAN_TARGET, connectionId: learnedId });
+        const harness = yield* makeHarness(
+          [LAN_TARGET, learned, RELAY_TARGET],
+          [
+            LAN_PROFILE,
+            new BearerConnectionProfile({
+              connectionId: learnedId,
+              environmentId: LAN_TARGET.environmentId,
+              label: LAN_TARGET.label,
+              httpBaseUrl: "http://100.88.1.2:3773/",
+              wsBaseUrl: "ws://100.88.1.2:3773/",
+              learned: true,
+              network: "tailscale",
+            }),
+          ],
+          [[LAN_TARGET.connectionId, BEARER_CREDENTIAL]],
+        );
+        yield* Effect.gen(function* () {
+          const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+          yield* registry.register(lanRegistration());
+
+          expect(routesOf(yield* Ref.get(harness.storedTargets), LAN_TARGET.environmentId)).toEqual(
+            [LAN_TARGET, learned, RELAY_TARGET],
+          );
+        }).pipe(Effect.provide(harness.layer), Effect.scoped);
+      }),
+  );
+
+  it.effect(
+    "renaming a route upgraded to Tailscale sign-in keeps its learned Tailscale route",
+    () =>
+      Effect.gen(function* () {
+        const learnedId = `learned:${LAN_TARGET.environmentId}:http://100.88.1.2:3773@${LAN_TARGET.connectionId}`;
+        const learned = new BearerConnectionTarget({ ...LAN_TARGET, connectionId: learnedId });
+        const session = new TailnetConnectionCredential({
+          signInBaseUrl: "http://100.88.1.2:3773/",
+          accessToken: "tailnet-token",
+          expiresAtEpochMs: 4_102_444_800_000,
+          dpopThumbprint: "thumbprint",
+        });
+        const harness = yield* makeHarness(
+          [LAN_TARGET, learned, RELAY_TARGET],
+          [
+            LAN_PROFILE,
+            new BearerConnectionProfile({
+              connectionId: learnedId,
+              environmentId: LAN_TARGET.environmentId,
+              label: LAN_TARGET.label,
+              httpBaseUrl: "http://100.88.1.2:3773/",
+              wsBaseUrl: "ws://100.88.1.2:3773/",
+              learned: true,
+              authorization: "tailnet",
+              network: "tailscale",
+            }),
+          ],
+          [[LAN_TARGET.connectionId, session]],
+        );
+        const renamed = new BearerConnectionTarget({ ...LAN_TARGET, label: "Renamed" });
+        yield* Effect.gen(function* () {
+          const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+          yield* registry.register(
+            new TailnetConnectionRegistration({
+              target: renamed,
+              profile: new BearerConnectionProfile({ ...LAN_PROFILE, label: "Renamed" }),
+              credential: session,
+            }),
+          );
+
+          expect(routesOf(yield* Ref.get(harness.storedTargets), LAN_TARGET.environmentId)).toEqual(
+            [renamed, learned, RELAY_TARGET],
+          );
+        }).pipe(Effect.provide(harness.layer), Effect.scoped);
+      }),
+  );
+
+  it.effect("pairing at a saved address under a new id drops routes learned over the old one", () =>
+    Effect.gen(function* () {
+      const learnedId = `learned:${LAN_TARGET.environmentId}:http://100.88.1.2:3773@${LAN_TARGET.connectionId}`;
+      const learned = new BearerConnectionTarget({ ...LAN_TARGET, connectionId: learnedId });
+      const harness = yield* makeHarness(
+        [LAN_TARGET, learned, RELAY_TARGET],
+        [
+          LAN_PROFILE,
+          new BearerConnectionProfile({
+            connectionId: learnedId,
+            environmentId: LAN_TARGET.environmentId,
+            label: LAN_TARGET.label,
+            httpBaseUrl: "http://100.88.1.2:3773/",
+            wsBaseUrl: "ws://100.88.1.2:3773/",
+            learned: true,
+          }),
+        ],
+        [[LAN_TARGET.connectionId, BEARER_CREDENTIAL]],
+      );
+      const renamed = new BearerConnectionTarget({ ...LAN_TARGET, connectionId: "bearer:renamed" });
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        yield* registry.register(
+          lanRegistration(
+            renamed,
+            new BearerConnectionProfile({ ...LAN_PROFILE, connectionId: renamed.connectionId }),
+          ),
+        );
+
+        expect(routesOf(yield* Ref.get(harness.storedTargets), LAN_TARGET.environmentId)).toEqual([
+          renamed,
           RELAY_TARGET,
         ]);
       }).pipe(Effect.provide(harness.layer), Effect.scoped);

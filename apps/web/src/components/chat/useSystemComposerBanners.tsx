@@ -3,7 +3,10 @@ import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { m } from "~/i18n/messages";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import { type EnvironmentId } from "@t3tools/contracts";
-import { type EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
+import {
+  type EnvironmentConnectionPhase,
+  type EnvironmentConnectionPresentation,
+} from "@t3tools/client-runtime/connection";
 import { useAtomValue } from "@effect/atom-react";
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
@@ -42,6 +45,26 @@ export type EnvironmentUnavailableState = {
   readonly label: string;
   readonly connection: EnvironmentConnectionPresentation;
 };
+
+function unavailableTitle(
+  label: string,
+  phase: EnvironmentConnectionPhase,
+  resolve: ReturnType<typeof useMessages>,
+): string {
+  switch (phase) {
+    case "connecting":
+    case "reconnecting":
+      return resolve(msg("{environment} is reconnecting", { environment: label }));
+    case "error":
+    case "unsupported":
+      return resolve(msg("Can't connect to {environment}", { environment: label }));
+    case "available":
+      return resolve(msg("{environment} is switched off", { environment: label }));
+    case "offline":
+    case "connected":
+      return resolve(msg("{environment} is offline", { environment: label }));
+  }
+}
 
 interface SystemComposerBannersInput {
   readonly activeEnvironment: EnvironmentPresentation | null;
@@ -205,13 +228,11 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
           ? gt("{environment} is waiting to approve this device", {
               environment: activeEnvironmentUnavailableState.label,
             })
-          : environmentReconnecting
-            ? gt("{environment} is reconnecting", {
-                environment: activeEnvironmentUnavailableState.label,
-              })
-            : gt("{environment} is offline", {
-                environment: activeEnvironmentUnavailableState.label,
-              }),
+          : unavailableTitle(
+              activeEnvironmentUnavailableState.label,
+              unavailableConnection.phase,
+              messages,
+            ),
         description: awaitingApproval ? (
           (unavailableConnection.error ?? undefined)
         ) : activeEnvironment ? (

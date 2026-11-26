@@ -113,6 +113,8 @@ import * as PeerThreadRelay from "./peer/PeerThreadRelay.ts";
 import * as PeerClientPairing from "./peer/PeerClientPairing.ts";
 import * as PeerLinks from "./peer/PeerLinks.ts";
 import * as ThreadHandoff from "./peer/handoff/ThreadHandoff.ts";
+import * as TailnetSignIn from "./auth/TailnetSignIn.ts";
+import * as TailnetPeers from "./environment/TailnetPeers.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
@@ -134,6 +136,7 @@ import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import * as PullRequestSyncReactor from "./orchestration-v2/PullRequestSyncReactor.ts";
 import * as RelayClient from "@t3tools/shared/relayClient";
 import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
+import * as TailscaleHealth from "./environment/TailscaleHealth.ts";
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as ReviewService from "./review/ReviewService.ts";
@@ -203,6 +206,14 @@ import {
   WS_RPC_SERVER_OPTIONS,
   withLateConfigDiscovery,
 } from "./ws.ts";
+
+const TAILSCALE_RUNNING = {
+  state: "running",
+  checkedAt: "2026-10-28T00:00:00.000Z",
+  magicDnsName: null,
+  keyExpiry: null,
+  issues: [],
+} as const;
 
 const snapshotConfig = (fields: Partial<ServerConfig>) =>
   ({ availableEditors: [], settings: {}, ...fields }) as unknown as ServerConfig;
@@ -306,6 +317,35 @@ it.effect("runs editor, remote open target and direct endpoint discovery side by
       remoteOpenTargets: [],
       directEndpoints: [],
     });
+  }),
+);
+
+it.effect("resends the host's Tailscale health when its facts change or go stale", () =>
+  Effect.gen(function* () {
+    const stopped = { ...TAILSCALE_RUNNING, state: "stopped" as const };
+    const stoppedLater = { ...stopped, checkedAt: "2026-10-28T00:10:00.000Z" };
+    const events = yield* withLateConfigDiscovery(
+      snapshotConfig({ tailscale: TAILSCALE_RUNNING }),
+      Stream.empty,
+      {
+        resolveAvailableEditors: () => Effect.succeed([]),
+        resolveFileManagerRevealKind: () => Effect.undefined,
+      },
+      { resolveTargets: () => Effect.succeed([]) },
+      { resolve: () => Effect.succeed([]) },
+      Stream.make(
+        { ...TAILSCALE_RUNNING, checkedAt: "2026-10-28T00:01:00.000Z" },
+        stopped,
+        stopped,
+        stoppedLater,
+      ),
+    ).pipe(Stream.runCollect);
+
+    // A stale `checkedAt` would read as old news, so it is resent every 10 minutes.
+    assert.deepEqual(
+      Array.from(events, (event) => (event.type === "snapshot" ? event.config.tailscale : event)),
+      [stopped, stoppedLater],
+    );
   }),
 );
 
@@ -870,6 +910,8 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(PeerThreadRelay.PeerThreadRelay)({}),
   Layer.mock(PeerClientPairing.PeerClientPairing)({}),
   Layer.mock(ThreadHandoff.ThreadHandoff)({}),
+  Layer.mock(TailnetSignIn.TailnetSignIn)({}),
+  Layer.mock(TailnetPeers.TailnetPeers)({}),
   Layer.mock(PortScanner.PortDiscovery)({ trackAgent: () => () => undefined }),
   Layer.mock(PreviewManager.PreviewManager)({}),
   Layer.mock(ProcessDiagnostics.ProcessDiagnostics)({}),
@@ -984,6 +1026,12 @@ it.live.each([
         Layer.mock(ExternalLauncher.ExternalLauncher)({}),
         Layer.mock(RemoteOpenTargets.RemoteOpenTargets)({}),
         Layer.mock(DirectEndpoints.DirectEndpoints)({}),
+        Layer.mock(TailscaleHealth.TailscaleHealth)({
+          check: Effect.succeed(undefined),
+          reads: Stream.empty,
+        }),
+        Layer.mock(TailnetSignIn.TailnetSignIn)({}),
+        Layer.mock(TailnetPeers.TailnetPeers)({}),
         Layer.mock(ServerEnvironment.ServerEnvironment)({}),
         Layer.mock(VcsProcess.VcsProcess)({
           run: (input) =>
@@ -1116,6 +1164,10 @@ it.effect.each([
                   Effect.onExit(() => Deferred.succeed(directStopped, undefined)),
                 )
               : Effect.succeed(bound),
+        }),
+        Layer.mock(TailscaleHealth.TailscaleHealth)({
+          check: Effect.succeed(TAILSCALE_RUNNING),
+          reads: Stream.empty,
         }),
         Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
           scratchRoot: Effect.succeedNone,
@@ -1342,6 +1394,12 @@ it.effect("access changes made while the snapshot loads reach the client after i
               Layer.mock(UsageLimitSources.UsageLimitSources)({}),
               Layer.mock(RemoteOpenTargets.RemoteOpenTargets)({}),
               Layer.mock(DirectEndpoints.DirectEndpoints)({}),
+        Layer.mock(TailscaleHealth.TailscaleHealth)({
+          check: Effect.succeed(undefined),
+          reads: Stream.empty,
+        }),
+        Layer.mock(TailnetSignIn.TailnetSignIn)({}),
+        Layer.mock(TailnetPeers.TailnetPeers)({}),
               Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
                 namedProjectsRoot: "/unused",
               }),
@@ -1497,6 +1555,10 @@ it.effect("on-demand clients get provider config without workspace snapshots", (
       Layer.mock(DirectEndpoints.DirectEndpoints)({
         resolve: () => Effect.succeed([]),
         resolveAvailable: () => Effect.succeed([]),
+      }),
+      Layer.mock(TailscaleHealth.TailscaleHealth)({
+        check: Effect.succeed(TAILSCALE_RUNNING),
+        reads: Stream.empty,
       }),
       Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
         scratchRoot: Effect.succeedNone,
@@ -1877,6 +1939,12 @@ it.effect("a missing thread worktree gets its project's skills in the cwd snapsh
       Layer.mock(ExternalLauncher.ExternalLauncher)({}),
       Layer.mock(RemoteOpenTargets.RemoteOpenTargets)({}),
       Layer.mock(DirectEndpoints.DirectEndpoints)({}),
+        Layer.mock(TailscaleHealth.TailscaleHealth)({
+          check: Effect.succeed(undefined),
+          reads: Stream.empty,
+        }),
+        Layer.mock(TailnetSignIn.TailnetSignIn)({}),
+        Layer.mock(TailnetPeers.TailnetPeers)({}),
       Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
         scratchRoot: Effect.succeedNone,
         namedProjectsRoot: process.cwd(),
@@ -1968,6 +2036,12 @@ it.effect(
           Layer.mock(UsageLimitSources.UsageLimitSources)({}),
           Layer.mock(RemoteOpenTargets.RemoteOpenTargets)({}),
           Layer.mock(DirectEndpoints.DirectEndpoints)({}),
+        Layer.mock(TailscaleHealth.TailscaleHealth)({
+          check: Effect.succeed(undefined),
+          reads: Stream.empty,
+        }),
+        Layer.mock(TailnetSignIn.TailnetSignIn)({}),
+        Layer.mock(TailnetPeers.TailnetPeers)({}),
           Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/unused" }),
           Layer.mock(ScratchThreadPromotion.ScratchThreadPromotion)({}),
           Layer.mock(ServerEnvironment.ServerEnvironment)({}),
@@ -2059,6 +2133,12 @@ it.effect(
           Layer.mock(UsageLimitSources.UsageLimitSources)({}),
           Layer.mock(RemoteOpenTargets.RemoteOpenTargets)({}),
           Layer.mock(DirectEndpoints.DirectEndpoints)({}),
+        Layer.mock(TailscaleHealth.TailscaleHealth)({
+          check: Effect.succeed(undefined),
+          reads: Stream.empty,
+        }),
+        Layer.mock(TailnetSignIn.TailnetSignIn)({}),
+        Layer.mock(TailnetPeers.TailnetPeers)({}),
           Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/unused" }),
           Layer.mock(ScratchThreadPromotion.ScratchThreadPromotion)({}),
           Layer.mock(ServerEnvironment.ServerEnvironment)({}),
@@ -2144,6 +2224,12 @@ it.effect("a git action that fails partway still refreshes the repository status
       Layer.mock(UsageLimitSources.UsageLimitSources)({}),
       Layer.mock(RemoteOpenTargets.RemoteOpenTargets)({}),
       Layer.mock(DirectEndpoints.DirectEndpoints)({}),
+        Layer.mock(TailscaleHealth.TailscaleHealth)({
+          check: Effect.succeed(undefined),
+          reads: Stream.empty,
+        }),
+        Layer.mock(TailnetSignIn.TailnetSignIn)({}),
+        Layer.mock(TailnetPeers.TailnetPeers)({}),
       Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/unused" }),
       Layer.mock(ScratchThreadPromotion.ScratchThreadPromotion)({}),
       Layer.mock(ServerEnvironment.ServerEnvironment)({}),
@@ -2224,6 +2310,12 @@ it.effect("a publish whose push fails still refreshes the new remote", () =>
       Layer.mock(UsageLimitSources.UsageLimitSources)({}),
       Layer.mock(RemoteOpenTargets.RemoteOpenTargets)({}),
       Layer.mock(DirectEndpoints.DirectEndpoints)({}),
+        Layer.mock(TailscaleHealth.TailscaleHealth)({
+          check: Effect.succeed(undefined),
+          reads: Stream.empty,
+        }),
+        Layer.mock(TailnetSignIn.TailnetSignIn)({}),
+        Layer.mock(TailnetPeers.TailnetPeers)({}),
       Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/unused" }),
       Layer.mock(ScratchThreadPromotion.ScratchThreadPromotion)({}),
       Layer.mock(ServerEnvironment.ServerEnvironment)({}),
@@ -2782,6 +2874,12 @@ it.effect("ACP session RPCs list a thread missing its history and repair it on i
       Layer.mock(UsageLimitSources.UsageLimitSources)({}),
       Layer.mock(RemoteOpenTargets.RemoteOpenTargets)({}),
       Layer.mock(DirectEndpoints.DirectEndpoints)({}),
+        Layer.mock(TailscaleHealth.TailscaleHealth)({
+          check: Effect.succeed(undefined),
+          reads: Stream.empty,
+        }),
+        Layer.mock(TailnetSignIn.TailnetSignIn)({}),
+        Layer.mock(TailnetPeers.TailnetPeers)({}),
       Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/unused" }),
       Layer.mock(ScratchThreadPromotion.ScratchThreadPromotion)({}),
       Layer.mock(ServerEnvironment.ServerEnvironment)({}),
@@ -2956,6 +3054,12 @@ const makeWorkflowClient = Effect.fn("test.makeWorkflowClient")(function* (
     Layer.mock(UsageLimitSources.UsageLimitSources)({}),
     Layer.mock(RemoteOpenTargets.RemoteOpenTargets)({}),
     Layer.mock(DirectEndpoints.DirectEndpoints)({}),
+        Layer.mock(TailscaleHealth.TailscaleHealth)({
+          check: Effect.succeed(undefined),
+          reads: Stream.empty,
+        }),
+        Layer.mock(TailnetSignIn.TailnetSignIn)({}),
+        Layer.mock(TailnetPeers.TailnetPeers)({}),
     Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/unused" }),
     Layer.mock(ScratchThreadPromotion.ScratchThreadPromotion)({}),
     Layer.mock(ServerEnvironment.ServerEnvironment)({}),
@@ -3021,6 +3125,12 @@ const makeAcpRegistryClient = Effect.fn("test.makeAcpRegistryClient")(function* 
     Layer.mock(UsageLimitSources.UsageLimitSources)({}),
     Layer.mock(RemoteOpenTargets.RemoteOpenTargets)({}),
     Layer.mock(DirectEndpoints.DirectEndpoints)({}),
+        Layer.mock(TailscaleHealth.TailscaleHealth)({
+          check: Effect.succeed(undefined),
+          reads: Stream.empty,
+        }),
+        Layer.mock(TailnetSignIn.TailnetSignIn)({}),
+        Layer.mock(TailnetPeers.TailnetPeers)({}),
     Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/unused" }),
     Layer.mock(ScratchThreadPromotion.ScratchThreadPromotion)({}),
     Layer.mock(ServerEnvironment.ServerEnvironment)({}),

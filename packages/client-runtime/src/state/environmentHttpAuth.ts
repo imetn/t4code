@@ -109,7 +109,10 @@ export const executeAuthenticatedEnvironmentHttpRequest = <
 >(
   input: Parameters<typeof executeEnvironmentRequest<Group, A, E, R>>[0],
 ) =>
-  input.prepared.httpAuthorization?._tag === "Dpop"
+  // Direct pairing and Tailscale sessions never touch T3 Connect, so they keep their caller's trace.
+  input.prepared.httpAuthorization?._tag === "Dpop" &&
+  input.prepared.httpAuthorization.directConnection === undefined &&
+  input.prepared.httpAuthorization.tailnetCredentialId === undefined
     ? executeEnvironmentRequest(input).pipe(
         Effect.withSpan(ENVIRONMENT_REQUEST_SPAN, { root: true }),
         withRelayClientTracing,
@@ -204,9 +207,17 @@ const executeEnvironmentRequest = Effect.fnUntraced(function* <
             cause,
           });
         const direct = authorization.directConnection;
+        const tailnetCredentialId = authorization.tailnetCredentialId;
         if (direct !== undefined) {
           authorization = yield* remote.value
             .authorizeDirectDpopHttp(direct, rejectedAccessToken)
+            .pipe(Effect.mapError(authFetchError));
+        } else if (tailnetCredentialId !== undefined) {
+          authorization = yield* remote.value
+            .authorizeTailnetHttp({
+              credentialId: tailnetCredentialId,
+              ...(rejectedAccessToken === undefined ? {} : { rejectedAccessToken }),
+            })
             .pipe(Effect.mapError(authFetchError));
         } else {
           const current = yield* remote.value

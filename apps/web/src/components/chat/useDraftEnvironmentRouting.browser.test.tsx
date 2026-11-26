@@ -88,6 +88,7 @@ function setup() {
       label: environmentId,
       isPrimary: environmentId === a,
       machine: "desktop",
+      connection: "connected",
     })),
     environmentById: new Map(
       [a, b].map((id): [EnvironmentId, EnvironmentPresentation] => [

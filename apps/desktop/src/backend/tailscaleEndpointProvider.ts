@@ -1,21 +1,17 @@
 import { createAdvertisedEndpoint } from "@t3tools/shared/advertisedEndpoint";
-import {
-  ExecutionEnvironmentDescriptor,
-  type AdvertisedEndpoint,
-  type AdvertisedEndpointProvider,
-} from "@t3tools/contracts";
+import type { AdvertisedEndpoint, AdvertisedEndpointProvider } from "@t3tools/contracts";
 import {
   buildTailscaleHttpsBaseUrl,
   isTailscaleIpv4Address,
   parseTailscaleStatus,
   probeTailscaleHttpsEndpoint,
+  readT3EnvironmentId,
   readTailscaleStatus,
   type TailscaleStatus,
 } from "@t3tools/tailscale";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import * as HttpClient from "effect/http/HttpClient";
-import * as HttpClientResponse from "effect/http/HttpClientResponse";
+import type * as HttpClient from "effect/http/HttpClient";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import type { NetworkInterfaces } from "./DesktopNetworkInterfaces.ts";
@@ -76,22 +72,14 @@ function resolveTailscaleIpAdvertisedEndpoints(input: {
   return endpoints;
 }
 
-// The backend may run elsewhere (WSL), so ask it for its id instead of reading the state dir.
-const probeServesThisBackend = (localHttpUrl: string) => (baseUrl: string) =>
-  HttpClient.get(new URL("/.well-known/t3/environment", localHttpUrl)).pipe(
-    Effect.flatMap(HttpClientResponse.filterStatusOk),
-    Effect.flatMap(HttpClientResponse.schemaBodyJson(ExecutionEnvironmentDescriptor)),
-    Effect.flatMap(({ environmentId }) => probeTailscaleHttpsEndpoint({ baseUrl, environmentId })),
-    Effect.orElseSucceed(() => false),
-  );
-
 const resolveTailscaleMagicDnsAdvertisedEndpoint = Effect.fn(
   "resolveTailscaleMagicDnsAdvertisedEndpoint",
 )(function* (input: {
   readonly dnsName: string | null;
-  readonly localHttpUrl: string;
   readonly serveEnabled: boolean;
   readonly servePort?: number;
+  readonly localHttpUrl: string;
+  readonly localEnvironmentId?: Effect.Effect<Option.Option<string>, never, HttpClient.HttpClient>;
   readonly probe?: (baseUrl: string) => Effect.Effect<boolean, never, HttpClient.HttpClient>;
 }): Effect.fn.Return<Option.Option<AdvertisedEndpoint>, never, HttpClient.HttpClient> {
   if (!input.dnsName) {
@@ -102,7 +90,18 @@ const resolveTailscaleMagicDnsAdvertisedEndpoint = Effect.fn(
     magicDnsName: input.dnsName,
     ...(input.servePort === undefined ? {} : { servePort: input.servePort }),
   });
-  const probe = (input.probe ?? probeServesThisBackend(input.localHttpUrl))(httpBaseUrl);
+  // Serve may front another server on this port, so the URL must answer as this backend.
+  const probe =
+    input.probe?.(httpBaseUrl) ??
+    (input.localEnvironmentId ?? readT3EnvironmentId({ baseUrl: input.localHttpUrl })).pipe(
+      Effect.flatMap(
+        Option.match({
+          onNone: () => Effect.succeed(false),
+          onSome: (environmentId) =>
+            probeTailscaleHttpsEndpoint({ baseUrl: httpBaseUrl, environmentId }),
+        }),
+      ),
+    );
   const isReachable = input.serveEnabled ? yield* probe : false;
 
   return Option.some(
@@ -127,6 +126,14 @@ export const resolveTailscaleAdvertisedEndpoints = Effect.fn("resolveTailscaleAd
     readonly port: number;
     readonly serveEnabled?: boolean;
     readonly servePort?: number;
+    /** This desktop's backend, which reports the environment ID the Serve URL must match. */
+    readonly localHttpUrl?: string;
+    /** That backend's environment ID, when the caller keeps it between calls. */
+    readonly localEnvironmentId?: Effect.Effect<
+      Option.Option<string>,
+      never,
+      HttpClient.HttpClient
+    >;
     readonly networkInterfaces: NetworkInterfaces;
     readonly statusJson?: string | null;
     readonly readStatus?: Effect.Effect<
@@ -141,7 +148,7 @@ export const resolveTailscaleAdvertisedEndpoints = Effect.fn("resolveTailscaleAd
     ChildProcessSpawner.ChildProcessSpawner | HttpClient.HttpClient
   > {
     const readStatus =
-      input.readStatus ?? readTailscaleStatus.pipe(Effect.orElseSucceed(() => null));
+      input.readStatus ?? readTailscaleStatus("passive").pipe(Effect.orElseSucceed(() => null));
     const status =
       input.statusJson === undefined
         ? yield* readStatus
@@ -151,8 +158,11 @@ export const resolveTailscaleAdvertisedEndpoints = Effect.fn("resolveTailscaleAd
     const ipEndpoints = resolveTailscaleIpAdvertisedEndpoints({ ...input, status });
     const magicDnsEndpoint = yield* resolveTailscaleMagicDnsAdvertisedEndpoint({
       dnsName: status?.magicDnsName ?? null,
-      localHttpUrl: `http://127.0.0.1:${input.port}`,
       serveEnabled: input.serveEnabled === true,
+      localHttpUrl: input.localHttpUrl ?? `http://127.0.0.1:${input.port}`,
+      ...(input.localEnvironmentId === undefined
+        ? {}
+        : { localEnvironmentId: input.localEnvironmentId }),
       ...(input.servePort === undefined ? {} : { servePort: input.servePort }),
       ...(input.probe === undefined ? {} : { probe: input.probe }),
     });

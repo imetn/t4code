@@ -121,6 +121,7 @@ function catalogError(operation: keyof typeof CATALOG_FAILURE, cause: unknown) {
 const PERSISTENCE_FAILURE = {
   "list-targets": msg("Could not list targets: {cause}"),
   "list-disabled-targets": msg("Could not list disabled targets: {cause}"),
+  "list-dismissed-environments": msg("Could not list dismissed environments: {cause}"),
   "register-connection": msg("Could not register connection: {cause}"),
   "set-connection-routes": msg("Could not set connection routes: {cause}"),
   "remove-connection": msg("Could not remove connection: {cause}"),
@@ -770,6 +771,10 @@ export const layer = Layer.effectContext(
         Effect.map((document) => document.disabledEnvironmentIds),
         Effect.mapError((cause) => persistenceError("list-disabled-targets", cause)),
       ),
+      listDismissed: catalog.read.pipe(
+        Effect.map((document) => document.dismissedEnvironmentIds),
+        Effect.mapError((cause) => persistenceError("list-dismissed-environments", cause)),
+      ),
     });
     const registrationStore = Persistence.ConnectionRegistrationStore.of({
       register: Effect.fn("Persistence.ConnectionRegistrationStore.register")(
@@ -786,11 +791,13 @@ export const layer = Layer.effectContext(
             .pipe(Effect.mapError((cause) => persistenceError("set-connection-routes", cause)));
         },
       ),
-      remove: Effect.fn("Persistence.ConnectionRegistrationStore.remove")(function (environmentId) {
-        return catalog
-          .update((document) => removeConnectionFromCatalog(document, environmentId))
-          .pipe(Effect.mapError((cause) => persistenceError("remove-connection", cause)));
-      }),
+      remove: Effect.fn("Persistence.ConnectionRegistrationStore.remove")(
+        function (environmentId, options) {
+          return catalog
+            .update((document) => removeConnectionFromCatalog(document, environmentId, options))
+            .pipe(Effect.mapError((cause) => persistenceError("remove-connection", cause)));
+        },
+      ),
       setEnabled: Effect.fn("Persistence.ConnectionRegistrationStore.setEnabled")(
         function (environmentId, enabled) {
           return catalog

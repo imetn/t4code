@@ -172,6 +172,7 @@ const machines = (["This Mac", "Server"] as const).map((label, index) => ({
   label,
   isPrimary: index === 0,
   machine: "server" as const,
+  connection: "connected" as const,
 }));
 
 function Panel({

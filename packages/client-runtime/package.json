@@ -323,6 +323,10 @@
       "types": "./src/state/connectMcpApproval.ts",
       "default": "./src/state/connectMcpApproval.ts"
     },
+    "./state/tailnet": {
+      "types": "./src/state/tailnet.ts",
+      "default": "./src/state/tailnet.ts"
+    },
     "./state/peerPairingCode": {
       "types": "./src/state/peerPairingCode.ts",
       "default": "./src/state/peerPairingCode.ts"

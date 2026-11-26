@@ -23,7 +23,11 @@ export class BearerConnectionProfile extends Schema.TaggedClass<BearerConnection
     httpBaseUrl: Schema.String,
     wsBaseUrl: Schema.String,
     learned: Schema.optionalKey(Schema.Literal(true)),
-    authorization: Schema.optionalKey(Schema.Literal("t3-connect")),
+    /**
+     * "t3-connect" uses a T3 Connect session. "tailnet" signs in through
+     * Tailscale at the direct tailnet address its credential pins.
+     */
+    authorization: Schema.optionalKey(Schema.Literals(["t3-connect", "tailnet"])),
     /**
      * "tailscale" on a learned route the server found on its Tailscale
      * interface. A bare 100.64.0.0/10 address could belong to any VPN.
@@ -73,9 +77,24 @@ export class DpopConnectionCredential extends Schema.TaggedClass<DpopConnectionC
   },
 ) {}
 
+/**
+ * A Tailscale sign-in session. Renewal signs in again at `signInBaseUrl`, the
+ * direct tailnet address: Serve and LAN routes hide who the device is.
+ */
+export class TailnetConnectionCredential extends Schema.TaggedClass<TailnetConnectionCredential>()(
+  "TailnetConnectionCredential",
+  {
+    signInBaseUrl: Schema.String,
+    accessToken: Schema.String,
+    expiresAtEpochMs: Schema.Number,
+    dpopThumbprint: Schema.String,
+  },
+) {}
+
 export const ConnectionCredential = Schema.Union([
   BearerConnectionCredential,
   DpopConnectionCredential,
+  TailnetConnectionCredential,
 ]);
 export type ConnectionCredential = typeof ConnectionCredential.Type;
 
@@ -102,6 +121,15 @@ export class BearerConnectionRegistration extends Schema.TaggedClass<BearerConne
   },
 ) {}
 
+export class TailnetConnectionRegistration extends Schema.TaggedClass<TailnetConnectionRegistration>()(
+  "TailnetConnectionRegistration",
+  {
+    target: BearerConnectionTarget,
+    profile: BearerConnectionProfile,
+    credential: TailnetConnectionCredential,
+  },
+) {}
+
 export class SshConnectionRegistration extends Schema.TaggedClass<SshConnectionRegistration>()(
   "SshConnectionRegistration",
   {
@@ -115,6 +143,7 @@ export class SshConnectionRegistration extends Schema.TaggedClass<SshConnectionR
 export const ConnectionRegistration = Schema.Union([
   RelayConnectionRegistration,
   BearerConnectionRegistration,
+  TailnetConnectionRegistration,
   SshConnectionRegistration,
 ]);
 export type ConnectionRegistration = typeof ConnectionRegistration.Type;
@@ -143,6 +172,7 @@ export function connectionRegistrationCatalogEntry(
         enabled: true,
       };
     case "BearerConnectionRegistration":
+    case "TailnetConnectionRegistration":
     case "SshConnectionRegistration":
       return {
         target: registration.target,

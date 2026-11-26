@@ -5,8 +5,14 @@ import type { MFunctionType } from "gt-i18n/types";
 
 import { type MarkedText, resolveMarkedText } from "../errors/translatable.ts";
 import type { ConnectionCatalogEntry } from "./catalog.ts";
+import { hostTailscaleNotice } from "./diagnosis.ts";
 import type { ConnectionTarget, SupervisorConnectionState } from "./model.ts";
-import { connectionRouteId, connectionRoutes, routeHttpBaseUrl } from "./routes.ts";
+import {
+  connectionRouteId,
+  connectionRouteKind,
+  connectionRoutes,
+  routeHttpBaseUrl,
+} from "./routes.ts";
 
 export type EnvironmentConnectionPhase =
   | "available"
@@ -145,6 +151,33 @@ export function connectionStatusTitle(
     return resolve(msg("Failed to connect. Reconnecting..."));
   }
   return connectionStatusText({ ...connection, error: null }, resolve);
+}
+
+/**
+ * The host's Tailscale problem for its row, from the facts it last reported.
+ * Only for environments with a Tailscale route, where it can explain a failure.
+ */
+export function environmentTailscaleNotice(
+  input: {
+    readonly hostLabel: string;
+    readonly entry: ConnectionCatalogEntry;
+    readonly serverConfig: Pick<ServerConfig, "tailscale"> | null;
+    readonly now: number;
+  },
+  resolve: MFunctionType = mFallback,
+) {
+  const tailnet = connectionRoutes(input.entry).some(
+    (route) => connectionRouteKind(route) === "tailnet",
+  );
+  return tailnet
+    ? hostTailscaleNotice(
+        input.hostLabel,
+        input.serverConfig?.tailscale,
+        input.now,
+        undefined,
+        resolve,
+      )
+    : null;
 }
 
 /**

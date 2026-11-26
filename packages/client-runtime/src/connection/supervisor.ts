@@ -13,6 +13,7 @@ import * as Queue from "effect/Queue";
 import * as Random from "effect/Random";
 import * as Ref from "effect/Ref";
 import * as Scope from "effect/Scope";
+import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as Tracer from "effect/Tracer";
@@ -22,6 +23,7 @@ import * as Connectivity from "./connectivity.ts";
 import * as ConnectionDriver from "./driver.ts";
 import {
   type ConnectionAttemptError,
+  type ConnectionRouteOutcome,
   type ConnectionTarget,
   ConnectionTransientError,
   type NetworkStatus,
@@ -184,7 +186,10 @@ function annotateTarget(target: ConnectionTarget) {
   });
 }
 
-function availableState(intent: SupervisorIntent, generation: number): SupervisorConnectionState {
+/** The supervisor adds route outcomes as it publishes a state. */
+type PhaseState = Omit<SupervisorConnectionState, "routes">;
+
+function availableState(intent: SupervisorIntent, generation: number): PhaseState {
   return {
     desired: false,
     network: intent.network,
@@ -203,7 +208,7 @@ function offlineState(
   generation: number,
   attempt: number,
   lastFailure: ConnectionAttemptError | null,
-): SupervisorConnectionState {
+): PhaseState {
   return {
     desired: true,
     network: intent.network,
@@ -223,7 +228,7 @@ function connectingState(
   attempt: number,
   lastFailure: ConnectionAttemptError | null,
   stage: SupervisorConnectionState["stage"] = "preparing",
-): SupervisorConnectionState {
+): PhaseState {
   return {
     desired: true,
     network: intent.network,
@@ -313,17 +318,22 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
   const signals = yield* Queue.unbounded<SupervisorSignal>();
   const resetRetryState = yield* Ref.make(false);
   const probeUnanswered = yield* Ref.make(false);
-  const state = yield* SubscriptionRef.make<SupervisorConnectionState>(
-    !initialIntent.desired
+  const state = yield* SubscriptionRef.make<SupervisorConnectionState>({
+    ...(!initialIntent.desired
       ? availableState(initialIntent, 0)
       : initialIntent.network === "offline"
         ? offlineState(initialIntent, 0, 0, null)
-        : connectingState(initialIntent, 0, 1, null),
-  );
+        : connectingState(initialIntent, 0, 1, null)),
+    routes: [],
+  });
+  const routeOutcomes = yield* Ref.make<ReadonlyMap<string, ConnectionRouteOutcome>>(new Map());
+  // Held while outcomes are checked against the routes or intent and written,
+  // so a prune or a clear cannot land between the check and the write.
+  const routeOutcomesLock = yield* Semaphore.make(1);
   const session = yield* SubscriptionRef.make<Option.Option<RpcSession.RpcSession>>(Option.none());
   const prepared = yield* SubscriptionRef.make<Option.Option<PreparedConnection>>(Option.none());
   // Learned routes arrive while a session is live, so the route list is read
-  // fresh by each attempt and check instead of being fixed at creation.
+  // fresh by each attempt instead of being fixed at creation.
   const currentEntry = yield* Ref.make(entry);
   const currentRoutes = Ref.get(currentEntry).pipe(Effect.map(connectionRoutes));
   const preferredRouteId = yield* Ref.make(Option.none<string>());
@@ -340,6 +350,21 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     generation: generation + 1,
     routes: new Map(),
   }));
+
+  const currentRouteIds = currentRoutes.pipe(
+    Effect.map((routes) => new Set(routes.map((route) => connectionRouteId(route.target)))),
+  );
+  const updateRouteOutcomes = Effect.fnUntraced(function* (
+    update: (
+      current: ReadonlyMap<string, ConnectionRouteOutcome>,
+    ) => ReadonlyMap<string, ConnectionRouteOutcome>,
+  ) {
+    const outcomes = yield* Ref.updateAndGet(routeOutcomes, update);
+    yield* SubscriptionRef.update(state, (current) => ({
+      ...current,
+      routes: [...outcomes.values()],
+    }));
+  });
 
   const attemptEntry = Effect.gen(function* () {
     const latest = yield* Ref.get(currentEntry);
@@ -369,7 +394,16 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
         Effect.gen(function* () {
           const updated = yield* learn({ activeRoute, reported });
           if (Option.isSome(updated)) {
-            yield* Ref.set(currentEntry, updated.value);
+            yield* routeOutcomesLock.withPermits(1)(
+              Effect.gen(function* () {
+                yield* Ref.set(currentEntry, updated.value);
+                // An outcome on a route that is gone would still sway the diagnosis.
+                const ids = yield* currentRouteIds;
+                yield* updateRouteOutcomes(
+                  (current) => new Map([...current].filter(([routeId]) => ids.has(routeId))),
+                );
+              }),
+            );
             yield* requestBetterRouteCheck(lease);
           }
         }),
@@ -451,17 +485,26 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
         index > 0 ? Queue.offer(betterRouteChecks, lease).pipe(Effect.asVoid) : Effect.void,
       ),
     );
-
   const clearLease = Effect.all(
     [SubscriptionRef.set(session, Option.none()), SubscriptionRef.set(prepared, Option.none())],
     { discard: true },
   );
 
-  const setState = Effect.fn("EnvironmentSupervisor.setState")(function* (
-    next: SupervisorConnectionState,
+  const setState = Effect.fn("EnvironmentSupervisor.setState")(function* (next: PhaseState) {
+    const routes = next.desired ? [...(yield* Ref.get(routeOutcomes)).values()] : [];
+    if (!next.desired) yield* Ref.set(routeOutcomes, new Map());
+    yield* SubscriptionRef.set(state, { ...next, routes });
+  }, routeOutcomesLock.withPermits(1));
+
+  // A route check can end after a disconnect cleared the outcomes, or after
+  // learned routes replaced the route it checked.
+  const recordRoute = Effect.fn("EnvironmentSupervisor.recordRoute")(function* (
+    outcome: ConnectionRouteOutcome,
   ) {
-    yield* SubscriptionRef.set(state, next);
-  });
+    if (!(yield* Ref.get(intent)).desired) return;
+    if (!(yield* currentRouteIds).has(outcome.routeId)) return;
+    yield* updateRouteOutcomes((current) => new Map(current).set(outcome.routeId, outcome));
+  }, routeOutcomesLock.withPermits(1));
 
   const signal = Effect.fn("EnvironmentSupervisor.signal")(function* (next: SupervisorSignal) {
     yield* Queue.offer(signals, next);
@@ -514,11 +557,14 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     lastFailure: ConnectionAttemptError | null,
     synchronizedRoutes: Ref.Ref<number>,
   ) {
-    return yield* driver.connect(yield* attemptEntry, (progress) =>
-      (progress.stage === "synchronizing"
-        ? Ref.update(synchronizedRoutes, (count) => count + 1)
-        : Effect.void
-      ).pipe(Effect.andThen(reportProgress(attempt, nextGeneration, lastFailure, progress))),
+    return yield* driver.connect(
+      yield* attemptEntry,
+      (progress) =>
+        (progress.stage === "synchronizing"
+          ? Ref.update(synchronizedRoutes, (count) => count + 1)
+          : Effect.void
+        ).pipe(Effect.andThen(reportProgress(attempt, nextGeneration, lastFailure, progress))),
+      recordRoute,
     );
   });
 
@@ -1041,15 +1087,34 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     }
 
     const active = establishment.exit.value;
-    if (Option.isSome(switchingTo)) {
-      const landed = connectionRouteId(active.lease.prepared.target);
-      if (landed !== switchingTo.value) {
-        const until =
-          (yield* Clock.monotonicTimeNanos) + BigInt(BETTER_ROUTE_COOLDOWN_MS) * 1_000_000n;
-        yield* Ref.update(routeCooldowns, (current) =>
-          new Map(current).set(switchingTo.value, until),
-        );
-      }
+    const landed = connectionRouteId(active.lease.prepared.target);
+    const routes = yield* currentRoutes;
+    const landedIndex = routes.findIndex((route) => connectionRouteId(route.target) === landed);
+    const outcomes = yield* Ref.get(routeOutcomes);
+    const failedHigherRouteIds =
+      landedIndex > 0
+        ? routes
+            .slice(0, landedIndex)
+            .map((route) => connectionRouteId(route.target))
+            .filter((id) => {
+              const outcome = outcomes.get(id);
+              return (
+                outcome?.result === "failed" && !active.lease.refusedRouteIds.includes(id)
+              );
+            })
+        : [];
+    const routesToCoolDown = [
+      ...(Option.isSome(switchingTo) && landed !== switchingTo.value ? [switchingTo.value] : []),
+      ...failedHigherRouteIds,
+    ];
+    if (routesToCoolDown.length > 0) {
+      const until =
+        (yield* Clock.monotonicTimeNanos) + BigInt(BETTER_ROUTE_COOLDOWN_MS) * 1_000_000n;
+      yield* Ref.update(routeCooldowns, (current) => {
+        const next = new Map(current);
+        for (const id of routesToCoolDown) next.set(id, until);
+        return next;
+      });
     }
     const currentIntent = yield* Ref.get(intent);
     if (!currentIntent.desired || (currentIntent.network === "offline" && !ignoreOffline)) {
@@ -1061,8 +1126,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       } satisfies AttemptOutcome;
     }
 
-    const routes = yield* currentRoutes;
-    const activeRouteId = connectionRouteId(active.lease.prepared.target);
+    const activeRouteId = landed;
     const connectedLease: ConnectedLease = {
       ...active.lease,
       activeRoute: routes.find((route) => connectionRouteId(route.target) === activeRouteId),

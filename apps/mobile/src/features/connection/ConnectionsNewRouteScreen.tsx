@@ -12,6 +12,7 @@ import {
   useNavigation,
   type StaticScreenProps,
 } from "@react-navigation/native";
+import { tailnetSignInBaseUrl } from "@t3tools/client-runtime/connection";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { useState } from "react";
@@ -25,7 +26,10 @@ import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { AppText as Text, AppTextInput, type AppTextInputProps } from "../../components/ui/AppText";
 import { FrostedCutout } from "../../components/ui/FrostedCutout";
 import { buildPairingUrl, extractPairingUrlFromQrPayload, parsePairingUrl } from "./pairing";
-import { useRemoteConnections } from "../../state/use-remote-environment-registry";
+import {
+  signInOverTailnet,
+  useRemoteConnections,
+} from "../../state/use-remote-environment-registry";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { hasCloudPublicConfig } from "../cloud/publicConfig";
 import { CloudEnvironmentRows } from "./CloudEnvironmentRows";
@@ -175,7 +179,11 @@ function PairingForm({
     setSubmitError(null);
     setIsSubmitting(true);
     onChangeConnectionPairingUrl(pairingUrl);
-    const outcome = await onConnectPress(pairingUrl, routeFor);
+    // A machine name, 100.x address, or `t3 up` QR needs no code on your tailnet.
+    const outcome =
+      codeInput.trim() === "" && tailnetSignInBaseUrl(hostInput) !== null
+        ? await signInOverTailnet(hostInput, routeFor)
+        : await onConnectPress(pairingUrl, routeFor);
     setIsSubmitting(false);
     setSubmitError(outcome.error);
     void Haptics.notificationAsync(
@@ -251,7 +259,7 @@ function PairingForm({
               <PairingInputRow
                 label={gt("Address")}
                 keyboardType="url"
-                placeholder="192.168.1.100:3773"
+                placeholder={gt("studio or 192.168.1.100:3773")}
                 value={hostInput}
                 onChangeText={handleHostChange}
               />
@@ -281,7 +289,7 @@ function PairingForm({
                       { environment: linked.label },
                     )
                   : gt(
-                      "For machines on your local network or tailnet. The machine keeps its own provider credentials.",
+                      "For machines on your local network or tailnet. On your tailnet, a machine name needs no code.",
                     ))}
             </Text>
           </View>
@@ -379,8 +387,9 @@ function PairingScanCard(props: {
           )}
         </View>
         <Text className={cn("text-center text-sm", light ? "text-black/70" : "text-white/80")}>
-          {gt("Scan the code from {command} or desktop Connections settings", {
-            command: "t3 pair",
+          {gt("Scan the code from {up}, {pair}, or desktop Connections settings", {
+            up: "t3 up",
+            pair: "t3 pair",
           })}
         </Text>
       </View>

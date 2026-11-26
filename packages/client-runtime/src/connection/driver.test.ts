@@ -59,7 +59,11 @@ describe("ConnectionDriver", () => {
       );
 
       yield* driver
-        .connect(ENTRY, (progress) => Ref.update(stages, (all) => [...all, progress.stage]))
+        .connect(
+          ENTRY,
+          (progress) => Ref.update(stages, (all) => [...all, progress.stage]),
+          () => Effect.void,
+        )
         .pipe(Effect.scoped, Effect.flip);
 
       expect(yield* Ref.get(stages)).toEqual([

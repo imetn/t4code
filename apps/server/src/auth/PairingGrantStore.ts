@@ -12,6 +12,7 @@ import {
   parseMcpApprovalCode,
   type ServerAuthBootstrapMethod,
   connectDeviceVerificationCode,
+  TAILNET_SUBJECT_PREFIX,
 } from "@t3tools/contracts";
 import {
   DESKTOP_BOOTSTRAP_TOKEN_WINDOW_MS,
@@ -351,6 +352,11 @@ const PAIRING_TOKEN_PATTERN = new RegExp(
   "i",
 );
 
+// Tailscale sign-in mints a grant per sign-in and renewal; they are not links anyone shares.
+const isListedSubject = (subject: string) =>
+  !subject.startsWith(TAILNET_SUBJECT_PREFIX) &&
+  !subject.startsWith(AuthPairingLinks.MCP_APPROVAL_SUBJECT_PREFIX);
+
 const make = Effect.gen(function* () {
   const random = yield* SecureRandom.SecureRandom;
   const config = yield* ServerConfig.ServerConfig;
@@ -433,7 +439,11 @@ const make = Effect.gen(function* () {
       const rows = yield* pairingLinks.listActive({ now });
       // An approved request only waits for its device to come back and spend it.
       return rows
-        .filter((row) => !(row.requiresConnectApproval === 1 && row.connectApproved === 1))
+        .filter(
+          (row) =>
+            isListedSubject(row.subject) &&
+            !(row.requiresConnectApproval === 1 && row.connectApproved === 1),
+        )
         .map(toPairingLink);
     },
     Effect.mapError((cause) => new ActivePairingLinksLoadError({ cause })),
@@ -509,8 +519,8 @@ const make = Effect.gen(function* () {
             }),
         ),
       );
-    // Purpose-bound codes stay out of the pairing links and QR codes that clients show.
-    if (!subject.startsWith(AuthPairingLinks.MCP_APPROVAL_SUBJECT_PREFIX)) {
+    // Purpose-bound and Tailscale codes stay out of the pairing links and QR codes that clients show.
+    if (isListedSubject(subject)) {
       yield* emitUpsert({
         id,
         scopes: input?.scopes ?? AuthStandardClientScopes,
@@ -659,7 +669,7 @@ const make = Effect.gen(function* () {
         .pipe(Effect.mapError((cause) => new BootstrapCredentialConsumeAvailableError({ cause })));
 
       if (Option.isSome(consumed)) {
-        if (!consumed.value.subject.startsWith(AuthPairingLinks.MCP_APPROVAL_SUBJECT_PREFIX)) {
+        if (isListedSubject(consumed.value.subject)) {
           yield* emitRemoved(consumed.value.id);
         }
         return {

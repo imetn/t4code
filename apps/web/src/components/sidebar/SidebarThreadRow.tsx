@@ -102,6 +102,7 @@ import type { ThreadGroupBlock, ThreadGroupRow } from "@t3tools/client-runtime/s
 import { cn } from "~/lib/utils";
 import { textDirection } from "~/textDirection";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
+import { SidebarMachineIcon } from "./SidebarMachineIcon";
 import {
   animateSidebarLayoutChanges,
   hasUnseenCompletion,
@@ -1475,11 +1476,12 @@ const SidebarThreadRow = memo(
       <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-secondary-label text-xs">
         {props.environmentLabel !== null ? (
           <>
-            <EnvironmentMachineIcon
-              aria-hidden
-              kind={props.environmentMachine}
-              className="size-3.5 shrink-0 text-icon-muted"
-            />
+            <span className="inline-flex shrink-0 items-center text-icon-muted">
+              <SidebarMachineIcon
+                environmentId={thread.environmentId}
+                kind={props.environmentMachine}
+              />
+            </span>
             <span className="min-w-0 flex-1 truncate">{props.environmentLabel}</span>
           </>
         ) : (

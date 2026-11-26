@@ -23,7 +23,10 @@ import {
   mapRemoteDpopEnvironmentError,
   mapRemoteEnvironmentError,
 } from "../connection/errors.ts";
-import { DpopConnectionCredential } from "../connection/catalog.ts";
+import {
+  DpopConnectionCredential,
+  type TailnetConnectionCredential,
+} from "../connection/catalog.ts";
 import * as ConnectionCredentialStore from "../connection/credentialStore.ts";
 import {
   ConnectionBlockedError,
@@ -36,6 +39,7 @@ import { fetchRemoteEnvironmentDescriptor } from "../environment/descriptor.ts";
 import { environmentEndpointUrl } from "../environment/endpoint.ts";
 import * as ClientCapabilities from "../platform/capabilities.ts";
 import * as ManagedRelay from "../relay/managedRelay.ts";
+import { makeTailnetSessions, signInOverTailnet } from "./tailnet.ts";
 import * as TokenStore from "./tokenStore.ts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -62,11 +66,13 @@ export interface AuthorizedRemoteEnvironment {
   readonly descriptor?: ExecutionEnvironmentDescriptor;
 }
 
+type DpopHttpAuthorization = Extract<PreparedHttpAuthorization, { readonly _tag: "Dpop" }>;
+
 export interface AuthorizedRemoteHttpEnvironment {
   readonly environmentId: EnvironmentId;
   readonly label: string;
   readonly httpBaseUrl: string;
-  readonly httpAuthorization: Extract<PreparedHttpAuthorization, { readonly _tag: "Dpop" }>;
+  readonly httpAuthorization: DpopHttpAuthorization;
 }
 
 export class RemoteEnvironmentAuthorization extends Context.Service<
@@ -123,7 +129,26 @@ export class RemoteEnvironmentAuthorization extends Context.Service<
       readonly expectedEnvironmentId: EnvironmentId;
       readonly expiresAtEpochMs: number;
       readonly directConnection?: DirectDpopConnection;
-    }) => Effect.Effect<void, ConnectionAttemptError>;
+      /** A Tailscale session renews by signing in again at its pinned address, not via T3 Connect. */
+      readonly tailnetCredentialId?: string;
+    }) => Effect.Effect<void, ConnectionBlockedError>;
+    /** Signs in through Tailscale at a direct tailnet address. */
+    readonly signInTailnet: (input: {
+      readonly httpBaseUrl: string;
+    }) => Effect.Effect<TailnetConnectionCredential, ConnectionAttemptError>;
+    /**
+     * Opens `endpoint` with the Tailscale session stored as `credentialId`,
+     * which renews only at the address the session pins.
+     */
+    readonly authorizeTailnet: (input: {
+      readonly expectedEnvironmentId: EnvironmentId;
+      readonly credentialId: string;
+      readonly endpoint: { readonly httpBaseUrl: string; readonly wsBaseUrl: string };
+    }) => Effect.Effect<AuthorizedRemoteEnvironment, ConnectionAttemptError>;
+    readonly authorizeTailnetHttp: (input: {
+      readonly credentialId: string;
+      readonly rejectedAccessToken?: string;
+    }) => Effect.Effect<DpopHttpAuthorization, ConnectionAttemptError>;
   }
 >()("@t3tools/client-runtime/authorization/service/RemoteEnvironmentAuthorization") {}
 
@@ -184,6 +209,10 @@ export const make = Effect.gen(function* () {
   const tokenStore = yield* TokenStore.RemoteDpopAccessTokenStore;
   const credentials = yield* ConnectionCredentialStore.ConnectionCredentialStore;
   const httpClient = yield* HttpClient.HttpClient;
+  const tailnet = yield* makeTailnetSessions({
+    clientMetadata: presentation.metadata,
+    scope: serviceScope,
+  });
   const tokenLock = yield* Semaphore.make(1);
   const directTokenLocks = yield* KeyedLock.make<string>();
   const tokenOwners = new Map<
@@ -281,14 +310,15 @@ export const make = Effect.gen(function* () {
 
   const createDpopSocketUrl = Effect.fn("clientRuntime.connection.remote.createDpopSocketUrl")(
     function* (
-      token: TokenStore.RemoteDpopAccessToken,
+      accessToken: string,
+      endpoint: { readonly httpBaseUrl: string; readonly wsBaseUrl: string },
       timeoutMs?: number,
-      endpoint: { readonly httpBaseUrl: string; readonly wsBaseUrl: string } = token.endpoint,
+      connectionMethod: ClientConnectionMethod = "relay",
     ) {
       return yield* resolveRemoteDpopWebSocketConnectionUrl({
         wsBaseUrl: endpoint.wsBaseUrl,
         httpBaseUrl: endpoint.httpBaseUrl,
-        accessToken: token.accessToken,
+        accessToken,
         createProof: (proof) =>
           signer.createProof(proof).pipe(
             Effect.mapError(
@@ -300,7 +330,7 @@ export const make = Effect.gen(function* () {
             ),
           ),
         clientMetadata: presentation.metadata,
-        connectionMethod: "relay",
+        connectionMethod,
         ...(timeoutMs === undefined ? {} : { timeoutMs }),
       });
     },
@@ -700,7 +730,11 @@ export const make = Effect.gen(function* () {
     // A cached token comes without a descriptor. That read needs no ticket, so
     // it runs beside the ticket request, and a failed ticket abandons it.
     const openSocket = Effect.fnUntraced(function* (issued: IssuedDpopToken, timeoutMs?: number) {
-      const socket = createDpopSocketUrl(issued.token, timeoutMs, endpoint).pipe(Effect.result);
+      const socket = createDpopSocketUrl(
+        issued.token.accessToken,
+        endpoint ?? issued.token.endpoint,
+        timeoutMs,
+      ).pipe(Effect.result);
       const known = directDescriptor ?? issued.descriptor;
       if (known !== undefined) {
         return Result.map(yield* socket, (socketUrl) => authorized(issued.token, socketUrl, known));
@@ -750,6 +784,51 @@ export const make = Effect.gen(function* () {
     return socket.success;
   });
 
+  const tailnetAuthorization = (
+    session: TailnetConnectionCredential,
+    credentialId: string,
+  ): DpopHttpAuthorization => ({
+    _tag: "Dpop",
+    accessToken: session.accessToken,
+    expiresAtEpochMs: session.expiresAtEpochMs,
+    tailnetCredentialId: credentialId,
+  });
+
+  const authorizeTailnet = Effect.fn("clientRuntime.connection.remote.authorizeTailnet")(function* (
+    input: Parameters<RemoteEnvironmentAuthorization["Service"]["authorizeTailnet"]>[0],
+  ) {
+    const descriptor = yield* verifyDirectEndpoint({
+      expectedEnvironmentId: input.expectedEnvironmentId,
+      httpBaseUrl: input.endpoint.httpBaseUrl,
+      connectionMethod: "direct",
+    });
+    const openSocket = (session: TailnetConnectionCredential) =>
+      createDpopSocketUrl(session.accessToken, input.endpoint, undefined, "direct").pipe(
+        Effect.result,
+      );
+    let session = yield* tailnet.session(input.credentialId);
+    let socket = yield* openSocket(session);
+    // The host ended the session early, such as after Block: sign in again once.
+    if (Result.isFailure(socket) && socket.failure._tag === "EnvironmentAuthInvalidError") {
+      session = yield* tailnet.session(input.credentialId, session.accessToken);
+      socket = yield* openSocket(session);
+    }
+    if (Result.isFailure(socket)) {
+      const failure = socket.failure;
+      return yield* failure._tag === "ConnectionBlockedError"
+        ? failure
+        : mapRemoteEnvironmentError(failure);
+    }
+    return {
+      environmentId: descriptor.environmentId,
+      label: descriptor.label,
+      httpBaseUrl: input.endpoint.httpBaseUrl,
+      socketUrl: socket.success,
+      descriptor,
+      httpAuthorization: tailnetAuthorization(session, input.credentialId),
+    };
+  });
+
   return RemoteEnvironmentAuthorization.of({
     authorizeBearer,
     // Untraced: it runs on every route and host check.
@@ -763,6 +842,22 @@ export const make = Effect.gen(function* () {
         at: yield* Clock.monotonicTimeNanos,
       });
     }),
+    signInTailnet: Effect.fn("clientRuntime.connection.remote.signInTailnet")(function* (input) {
+      return yield* signInOverTailnet({
+        httpBaseUrl: input.httpBaseUrl,
+        clientMetadata: presentation.metadata,
+      }).pipe(
+        Effect.provideService(ManagedRelay.ManagedRelayDpopSigner, signer),
+        Effect.provideService(HttpClient.HttpClient, httpClient),
+      );
+    }),
+    authorizeTailnet,
+    authorizeTailnetHttp: Effect.fn("clientRuntime.connection.remote.authorizeTailnetHttp")(
+      function* (input) {
+        const session = yield* tailnet.session(input.credentialId, input.rejectedAccessToken);
+        return tailnetAuthorization(session, input.credentialId);
+      },
+    ),
     authorizeDpop: Effect.fn("environment.authorization")(function (input) {
       return authorizeDpop(input);
     }),
@@ -796,15 +891,19 @@ export const make = Effect.gen(function* () {
           Math.max(floor, expiresAtEpochMs - DPOP_ACCESS_TOKEN_REFRESH_SKEW_MS - now),
         );
         const renewed = yield* (
-          direct === undefined
-            ? getDpopToken({ expectedEnvironmentId: input.expectedEnvironmentId }).pipe(
-                Effect.map(({ token }) => token.expiresAtEpochMs),
-              )
-            : directDpopToken(direct).pipe(Effect.map((credential) => credential.expiresAtEpochMs))
+          direct !== undefined
+            ? directDpopToken(direct).pipe(Effect.map((credential) => credential.expiresAtEpochMs))
+            : input.tailnetCredentialId !== undefined
+              ? tailnet
+                  .session(input.tailnetCredentialId)
+                  .pipe(Effect.map((session) => session.expiresAtEpochMs))
+              : getDpopToken({ expectedEnvironmentId: input.expectedEnvironmentId }).pipe(
+                  Effect.map(({ token }) => token.expiresAtEpochMs),
+                  withRelayClientTracing,
+                )
         ).pipe(
           Effect.withSpan("environment.authorization.renewSocket"),
-          withRelayClientTracing,
-          // A relay blip retries until expiry; a blocked credential ends the loop.
+          // A network blip retries until expiry; a blocked credential ends the loop.
           Effect.catchTags({ ConnectionTransientError: () => Effect.succeed(expiresAtEpochMs) }),
         );
         expiresAtEpochMs = Math.max(expiresAtEpochMs, renewed);

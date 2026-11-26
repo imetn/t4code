@@ -65,6 +65,7 @@ import * as DesktopManagedPolicy from "./DesktopManagedPolicy.ts";
 import * as DesktopPrimaryPaste from "./DesktopPrimaryPaste.ts";
 import * as DesktopSshEnvironment from "../ssh/DesktopSshEnvironment.ts";
 import * as DesktopSshPasswordPrompts from "../ssh/DesktopSshPasswordPrompts.ts";
+import * as DesktopTailscaleStatus from "../backend/DesktopTailscaleStatus.ts";
 import * as DesktopTelemetryPublisher from "../telemetry/DesktopTelemetryPublisher.ts";
 import * as DesktopWebLinks from "./DesktopWebLinks.ts";
 import * as DesktopWslEnvironment from "../wsl/DesktopWslEnvironment.ts";
@@ -227,6 +228,7 @@ const runStubbedDesktop = (stub: StubbedDesktop) =>
           Layer.succeed(DesktopPrimaryPaste.DesktopPrimaryPaste, { enabled: true }),
           Layer.mock(DesktopSshEnvironment.DesktopSshEnvironment, {}),
           Layer.mock(DesktopSshPasswordPrompts.DesktopSshPasswordPrompts, {}),
+          Layer.mock(DesktopTailscaleStatus.DesktopTailscaleStatus, {}),
           Layer.mock(DesktopTelemetryPublisher.DesktopTelemetryPublisher, {}),
           Layer.mock(DesktopTray.DesktopTray, {
             initialize: stub.record("tray"),

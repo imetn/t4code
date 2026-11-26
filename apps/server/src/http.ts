@@ -392,7 +392,7 @@ const authenticateRawRouteWithScope =
       ),
     );
     if (!session.scopes.includes(scope)) {
-      return yield* failEnvironmentScopeRequired(scope);
+      return yield* failEnvironmentScopeRequired(scope, session.subject);
     }
   });
 
