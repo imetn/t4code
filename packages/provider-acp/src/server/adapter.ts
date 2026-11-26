@@ -10356,9 +10356,13 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                 Effect.gen(function* () {
                   if (context.finalized || context.interrupted) return false;
                   // `agy acp` rejects a prompt while the running one waits on a question or
-                  // approval, so the message waits as a follow-up until the user answers. Checked
-                  // under the callback permit, which also guards registering those requests.
-                  if ((yield* Ref.get(pendingRuntimeRequests)).size > 0) {
+                  // approval, so the message waits as a follow-up until the user answers. Only
+                  // flavors that declare that refusal opt in; other ACP agents keep steering.
+                  // Checked under the callback permit, which also guards registering those requests.
+                  if (
+                    flavor.promptRefusedWhileAgentWaits !== undefined &&
+                    (yield* Ref.get(pendingRuntimeRequests)).size > 0
+                  ) {
                     return yield* new ProviderAdapter.ProviderAdapterSteerDeclinedError({
                       driver,
                       providerThreadId: turnInput.providerThread.id,
