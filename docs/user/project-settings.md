@@ -283,11 +283,16 @@ working. Current logs, message attachments, and browser profiles are kept.
 
 ## Project icons
 
-Select the project and open Project to choose an icon, emoji, monogram, or image. The choice applies to
+Select the project and open Project to choose an icon, emoji, monogram, app logo, or image. The choice applies to
 every checkout in the project group and appears on connected clients. Choose **Automatic** to let
 T3 Code detect an icon again.
 
 Choose **Monogram** in the icon picker to set one or two letters or numbers and a color.
+
+Choose **Logos** to use an app or service logo from [dashboardicons.com](https://dashboardicons.com).
+The picker suggests logos that match the project name, and you can search the full catalog. Logos
+load from the dashboardicons.com CDN, so clients without internet access show the project's
+monogram instead. Logos with light and dark versions follow the theme.
 
 When no image is found, web and desktop show a two-character monogram with a color
 from the icon palette, derived from the saved project name. For example, `Nebula` becomes `NA`,
