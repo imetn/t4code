@@ -2,7 +2,11 @@ import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { msg, T, useGT, useMessages } from "gt-react";
 import { m } from "../i18n/messages";
 import { attachSidebarTree } from "../lib/sidebarTree";
-import { type EnvironmentId, type ScopedProjectRef } from "@t3tools/contracts";
+import {
+  type EnvironmentId,
+  type EnvironmentMachineKind,
+  type ScopedProjectRef,
+} from "@t3tools/contracts";
 import type { EnvironmentServerConfig } from "@t3tools/client-runtime/connection";
 import {
   dropThreadContext,
@@ -16,7 +20,9 @@ import * as Option from "effect/Option";
 import { Atom } from "effect/reactivity";
 import * as Schema from "effect/Schema";
 import {
+  closestCenter,
   DndContext,
+  PointerSensor,
   useSensor,
   useSensors,
   type AutoScrollOptions,
@@ -25,8 +31,18 @@ import {
   type DragStartEvent,
   type Modifier,
 } from "@dnd-kit/core";
-import { SortableContext } from "@dnd-kit/sortable";
-import { restrictToFirstScrollableAncestor, restrictToVerticalAxis } from "@dnd-kit/modifiers";
+import {
+  arrayMove,
+  horizontalListSortingStrategy,
+  SortableContext,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import {
+  restrictToFirstScrollableAncestor,
+  restrictToHorizontalAxis,
+  restrictToVerticalAxis,
+} from "@dnd-kit/modifiers";
 import {
   canSnooze,
   effectiveSnoozed,
@@ -242,6 +258,7 @@ import {
 import { ProjectFavicon } from "./ProjectFavicon";
 import { deriveProviderEntriesByEnvironment } from "../providerInstances";
 import { useStableCallback } from "../hooks/useStableCallback";
+import { observeResize } from "../lib/observeResize";
 import {
   resolveSidebarRouteReveal,
   type SidebarRouteReveal,
@@ -909,6 +926,233 @@ function ProjectScopeRowIcon(props: { isSelected: boolean; children: ReactNode }
   );
 }
 
+const ENVIRONMENT_FILTER_SCROLL_EDGE_TOLERANCE = 2;
+const ENVIRONMENT_FILTER_POINTER_SENSOR_OPTIONS = {
+  activationConstraint: { distance: 5 },
+};
+const ENVIRONMENT_FILTER_DRAG_MODIFIERS = [
+  restrictToHorizontalAxis,
+  restrictToFirstScrollableAncestor,
+];
+
+function SortableEnvironmentChip(props: {
+  environment: { readonly id: EnvironmentId; readonly label: string };
+  machineKind: EnvironmentMachineKind;
+  isSelected: boolean;
+  workingCount: number;
+  onToggle: (environmentId: EnvironmentId, multiSelect: boolean) => void;
+}) {
+  const { environment, machineKind, isSelected, workingCount, onToggle } = props;
+  const { listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: environment.id,
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Translate.toString(transform),
+        transition,
+      }}
+      className={cn(
+        "shrink-0 touch-none",
+        isDragging
+          ? "relative z-10 opacity-75 [&>button]:cursor-grabbing"
+          : "[&>button]:cursor-grab [&>button]:active:cursor-grabbing",
+      )}
+      {...listeners}
+    >
+      <Button
+        type="button"
+        size="compact"
+        variant={isSelected ? "outline" : "ghost-muted"}
+        aria-pressed={isSelected}
+        className="shrink-0"
+        onClick={(event) => onToggle(environment.id, event.shiftKey)}
+      >
+        <EnvironmentMachineIcon kind={machineKind} className="size-3.5 shrink-0" />
+        <span className="max-w-28 truncate">{environment.label}</span>
+        {workingCount > 0 ? (
+          <span className="inline-flex size-4 items-center justify-center rounded-full bg-info/15 text-3xs font-semibold text-info tabular-nums">
+            {workingCount}
+          </span>
+        ) : null}
+      </Button>
+    </div>
+  );
+}
+
+function SidebarEnvironmentFilter(props: {
+  environments: readonly { readonly id: EnvironmentId; readonly label: string }[];
+  environmentScopeIds: readonly EnvironmentId[];
+  environmentMachineById: ReadonlyMap<EnvironmentId, EnvironmentMachineKind>;
+  workingCountByEnvironmentId: ReadonlyMap<EnvironmentId, number>;
+  onSelectAll: () => void;
+  onToggleEnvironment: (environmentId: EnvironmentId, multiSelect: boolean) => void;
+  onReorderEnvironments: (orderedIds: readonly EnvironmentId[]) => void;
+}) {
+  const gt = useGT();
+  const {
+    environments,
+    environmentScopeIds,
+    environmentMachineById,
+    workingCountByEnvironmentId,
+    onSelectAll,
+    onToggleEnvironment,
+    onReorderEnvironments,
+  } = props;
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const suppressNextClickRef = useRef(false);
+  const resetSuppressTimerRef = useRef<number | null>(null);
+  const [scrollEdges, setScrollEdges] = useState({
+    canScrollLeft: false,
+    canScrollRight: false,
+  });
+
+  const sensors = useSensors(useSensor(PointerSensor, ENVIRONMENT_FILTER_POINTER_SENSOR_OPTIONS));
+  const environmentIds = environments.map((environment) => environment.id);
+
+  const updateScrollEdges = () => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const hasOverflow =
+      scroller.scrollWidth - scroller.clientWidth > ENVIRONMENT_FILTER_SCROLL_EDGE_TOLERANCE;
+    const canScrollLeft =
+      hasOverflow && scroller.scrollLeft > ENVIRONMENT_FILTER_SCROLL_EDGE_TOLERANCE;
+    const canScrollRight =
+      hasOverflow &&
+      scroller.scrollLeft + scroller.clientWidth <
+        scroller.scrollWidth - ENVIRONMENT_FILTER_SCROLL_EDGE_TOLERANCE;
+    setScrollEdges((current) =>
+      current.canScrollLeft === canScrollLeft && current.canScrollRight === canScrollRight
+        ? current
+        : { canScrollLeft, canScrollRight },
+    );
+  };
+
+  const handleResize = useStableCallback(() => {
+    updateScrollEdges();
+  });
+
+  const handleWheel = useStableCallback((event: WheelEvent) => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    if (scroller.scrollWidth <= scroller.clientWidth) return;
+    if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+    if (event.deltaY === 0) return;
+    scroller.scrollLeft += event.deltaY;
+    event.preventDefault();
+    updateScrollEdges();
+  });
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- tracks horizontal overflow via ResizeObserver and binds a non-passive wheel listener to scroll horizontally
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    const content = contentRef.current;
+    if (!scroller) return;
+    const stopObserving = observeResize(content ? [scroller, content] : scroller, handleResize);
+    scroller.addEventListener("wheel", handleWheel, { passive: false });
+    return () => {
+      stopObserving();
+      scroller.removeEventListener("wheel", handleWheel);
+      if (resetSuppressTimerRef.current !== null) {
+        window.clearTimeout(resetSuppressTimerRef.current);
+        resetSuppressTimerRef.current = null;
+      }
+    };
+  }, [handleResize, handleWheel]);
+
+  const scheduleResetSuppressClick = () => {
+    if (resetSuppressTimerRef.current !== null) {
+      window.clearTimeout(resetSuppressTimerRef.current);
+    }
+    resetSuppressTimerRef.current = window.setTimeout(() => {
+      suppressNextClickRef.current = false;
+      resetSuppressTimerRef.current = null;
+    }, 0);
+  };
+
+  const handleDragEnd = ({ active, over }: DragEndEvent) => {
+    scheduleResetSuppressClick();
+    if (!over || active.id === over.id) return;
+    const oldIndex = environmentIds.indexOf(active.id as EnvironmentId);
+    const newIndex = environmentIds.indexOf(over.id as EnvironmentId);
+    if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return;
+    onReorderEnvironments(arrayMove(environmentIds, oldIndex, newIndex));
+  };
+
+  return (
+    <div className="relative mt-2">
+      <div
+        ref={scrollerRef}
+        role="group"
+        aria-label={gt("Filter by environment")}
+        onScroll={updateScrollEdges}
+        onClickCapture={(event) => {
+          if (!suppressNextClickRef.current) return;
+          suppressNextClickRef.current = false;
+          event.preventDefault();
+          event.stopPropagation();
+        }}
+        className="flex flex-nowrap items-center overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        <div ref={contentRef} className="flex w-max flex-nowrap items-center gap-1.5">
+          <Button
+            type="button"
+            size="compact"
+            variant={environmentScopeIds.length === 0 ? "outline" : "ghost-muted"}
+            aria-pressed={environmentScopeIds.length === 0}
+            className="shrink-0"
+            onClick={onSelectAll}
+          >
+            <T>All</T>
+          </Button>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            modifiers={ENVIRONMENT_FILTER_DRAG_MODIFIERS}
+            onDragStart={() => {
+              if (resetSuppressTimerRef.current !== null) {
+                window.clearTimeout(resetSuppressTimerRef.current);
+                resetSuppressTimerRef.current = null;
+              }
+              suppressNextClickRef.current = true;
+            }}
+            onDragEnd={handleDragEnd}
+            onDragCancel={scheduleResetSuppressClick}
+          >
+            <SortableContext items={environmentIds} strategy={horizontalListSortingStrategy}>
+              {environments.map((environment) => (
+                <SortableEnvironmentChip
+                  key={environment.id}
+                  environment={environment}
+                  machineKind={environmentMachineById.get(environment.id) ?? "desktop"}
+                  isSelected={environmentScopeIds.includes(environment.id)}
+                  workingCount={workingCountByEnvironmentId.get(environment.id) ?? 0}
+                  onToggle={onToggleEnvironment}
+                />
+              ))}
+            </SortableContext>
+          </DndContext>
+        </div>
+      </div>
+      {scrollEdges.canScrollLeft ? (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-y-0 left-0 z-20 w-6 bg-linear-to-r from-sidebar to-transparent"
+        />
+      ) : null}
+      {scrollEdges.canScrollRight ? (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-y-0 right-0 z-20 w-6 bg-linear-to-l from-sidebar to-transparent"
+        />
+      ) : null}
+    </div>
+  );
+}
+
 function canOperateThreads(
   threads: ReadonlyArray<Pick<SidebarThreadSummary, "environmentId">>,
   triage = false,
@@ -1062,6 +1306,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const setPersistedEnvironmentScopeIds = useUiStateStore(
     (store) => store.setSidebarEnvironmentScopeIds,
   );
+  const persistedEnvironmentOrder = useUiStateStore((store) => store.sidebarEnvironmentOrder);
+  const setPersistedEnvironmentOrder = useUiStateStore((store) => store.setSidebarEnvironmentOrder);
   const [projectScopeMenuState, dispatchProjectScopeMenu] = useReducer(
     reduceSidebarProjectScopeMenuState,
     { open: false, query: "" },
@@ -1138,10 +1384,19 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     setPersistedEnvironmentScopeIds(environmentIds);
     scrollSidebarToTop(sidebarContentRef.current);
   };
-  const availableEnvironments = [...environmentLabelById.entries()].map(([id, label]) => ({
-    id,
-    label,
-  }));
+  const availableEnvironments = orderItemsByPreferredIds({
+    items: [...environmentLabelById.entries()].map(([id, label]) => ({
+      id,
+      label,
+    })),
+    preferredIds: persistedEnvironmentOrder,
+    getId: (environment) => environment.id,
+  });
+  const handleReorderEnvironments = (orderedVisibleIds: readonly EnvironmentId[]) => {
+    const visibleIdSet = new Set<string>(orderedVisibleIds);
+    const hiddenPersistedIds = persistedEnvironmentOrder.filter((id) => !visibleIdSet.has(id));
+    setPersistedEnvironmentOrder([...orderedVisibleIds, ...hiddenPersistedIds]);
+  };
   const chosenEnvironmentScopeIds = persistedEnvironmentScopeIds.filter((id): id is EnvironmentId =>
     environmentLabelById.has(id as EnvironmentId),
   );
@@ -3447,56 +3702,22 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               onClearSearch={clearThreadSearch}
             />
             {availableEnvironments.length > 1 ? (
-              <div
-                role="group"
-                aria-label={gt("Filter by environment")}
-                className="mt-2 flex items-center gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-              >
-                <Button
-                  type="button"
-                  size="compact"
-                  variant={environmentScopeIds.length === 0 ? "outline" : "ghost-muted"}
-                  aria-pressed={environmentScopeIds.length === 0}
-                  className="shrink-0"
-                  onClick={() => setEnvironmentScopeIds([])}
-                >
-                  <T>All</T>
-                </Button>
-                {availableEnvironments.map((environment) => {
-                  const isSelected = environmentScopeIds.includes(environment.id);
-                  const workingCount = listedThreads.reduce(
-                    (count, thread) =>
-                      thread.environmentId === environment.id &&
-                      thread.archivedAt === null &&
-                      isThreadWorking(thread)
-                        ? count + 1
-                        : count,
-                    0,
-                  );
-                  return (
-                    <Button
-                      key={environment.id}
-                      type="button"
-                      size="compact"
-                      variant={isSelected ? "outline" : "ghost-muted"}
-                      aria-pressed={isSelected}
-                      className="shrink-0"
-                      onClick={(event) => toggleEnvironmentScopeId(environment.id, event.shiftKey)}
-                    >
-                      <EnvironmentMachineIcon
-                        kind={environmentMachineById.get(environment.id) ?? "desktop"}
-                        className="size-3.5 shrink-0"
-                      />
-                      <span className="max-w-28 truncate">{environment.label}</span>
-                      {workingCount > 0 ? (
-                        <span className="inline-flex size-4 items-center justify-center rounded-full bg-info/15 text-3xs font-semibold text-info tabular-nums">
-                          {workingCount}
-                        </span>
-                      ) : null}
-                    </Button>
-                  );
-                })}
-              </div>
+              <SidebarEnvironmentFilter
+                environments={availableEnvironments}
+                environmentScopeIds={environmentScopeIds}
+                environmentMachineById={environmentMachineById}
+                workingCountByEnvironmentId={(() => {
+                  const counts = new Map<EnvironmentId, number>();
+                  for (const thread of listedThreads) {
+                    if (thread.archivedAt !== null || !isThreadWorking(thread)) continue;
+                    counts.set(thread.environmentId, (counts.get(thread.environmentId) ?? 0) + 1);
+                  }
+                  return counts;
+                })()}
+                onSelectAll={() => setEnvironmentScopeIds([])}
+                onToggleEnvironment={toggleEnvironmentScopeId}
+                onReorderEnvironments={handleReorderEnvironments}
+              />
             ) : null}
           </SidebarGroup>
         }

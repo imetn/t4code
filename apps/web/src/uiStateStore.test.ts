@@ -12,6 +12,7 @@ import {
   reorderProjects,
   resolveProjectExpanded,
   setProjectExpanded,
+  setSidebarEnvironmentOrder,
   type UiState,
 } from "./uiStateStore";
 
@@ -21,6 +22,7 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
     projectOrder: [],
     sidebarProjectScopeKeys: [],
     sidebarEnvironmentScopeIds: [],
+    sidebarEnvironmentOrder: [],
     threadLastVisitedAtById: {},
     defaultAdvertisedEndpointKey: null,
     pullRequestMergeMethod: "merge",
@@ -92,6 +94,14 @@ describe("uiStateStore pure functions", () => {
 
     expect(next.projectOrder).toEqual([keyB, keyC, keyALocal, keyARemote]);
   });
+
+  it("sanitizes and deduplicates sidebar environment order updates", () => {
+    const initialState = makeUiState();
+    const next = setSidebarEnvironmentOrder(initialState, ["env-b", "", "env-a", "env-b"]);
+
+    expect(next.sidebarEnvironmentOrder).toEqual(["env-b", "env-a"]);
+    expect(setSidebarEnvironmentOrder(next, ["env-b", "env-a", ""])).toBe(next);
+  });
 });
 
 describe("parsePersistedState", () => {
@@ -120,8 +130,17 @@ describe("parsePersistedState", () => {
       defaultAdvertisedEndpointKey: "desktop-core:lan:http",
       sidebarProjectScopeKeys: [],
       sidebarEnvironmentScopeIds: [],
+      sidebarEnvironmentOrder: [],
       pullRequestMergeMethod: "merge",
     });
+  });
+
+  it("sanitizes persisted sidebarEnvironmentOrder", () => {
+    const parsed = parsePersistedState({
+      sidebarEnvironmentOrder: ["env-b", "", "env-a", "env-b", 123 as unknown as string],
+    });
+
+    expect(parsed.sidebarEnvironmentOrder).toEqual(["env-b", "env-a"]);
   });
 
   it("keeps a persisted fast-forward merge method", () => {
@@ -208,11 +227,24 @@ describe("uiStateStore persistence", () => {
       sidebarProjectScopeKeys: [],
       sidebarProjectScopeKey: null,
       sidebarEnvironmentScopeIds: [],
+      sidebarEnvironmentOrder: [],
       pullRequestMergeMethod: "merge",
     });
     expect(parsePersistedState(persisted)).toEqual({
       ...state,
     });
+  });
+
+  it("restores the sidebar environment order across reloads", () => {
+    const order = ["env-remote", "env-local", "env-staging"];
+    persistState(makeUiState({ sidebarEnvironmentOrder: order }));
+
+    const persisted = JSON.parse(
+      localStorageStub.getItem(PERSISTED_STATE_KEY) ?? "{}",
+    ) as PersistedUiState;
+
+    expect(persisted.sidebarEnvironmentOrder).toEqual(order);
+    expect(parsePersistedState(persisted).sidebarEnvironmentOrder).toEqual(order);
   });
 
   it("restores the sidebar project scope across reloads", () => {
