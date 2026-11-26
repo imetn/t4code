@@ -1132,6 +1132,15 @@ export interface MacPasskeySigningConfiguration {
   readonly provisioningProfilePath: string;
 }
 
+export type MacSigningConfiguration =
+  | {
+      readonly mode: "passkey";
+      readonly passkey: MacPasskeySigningConfiguration;
+    }
+  | {
+      readonly mode: "hardened-runtime";
+    };
+
 export const InvalidMacPasskeyRpDomainReason = Schema.Literals([
   "empty",
   "scheme-not-allowed",
@@ -1303,6 +1312,20 @@ export function resolveMacPasskeySigningConfiguration(
   };
 }
 
+export function resolveMacSigningConfiguration(
+  env: Readonly<Record<string, string | undefined>>,
+): MacSigningConfiguration {
+  const provisioningProfilePath = env.T3CODE_MACOS_PROVISIONING_PROFILE?.trim() ?? "";
+  if (provisioningProfilePath.length === 0) {
+    return { mode: "hardened-runtime" };
+  }
+
+  return {
+    mode: "passkey",
+    passkey: resolveMacPasskeySigningConfiguration(env),
+  };
+}
+
 function escapeXml(value: string): string {
   return value
     .replaceAll("&", "&amp;")
@@ -1404,6 +1427,30 @@ ${associatedDomains}
     <key>com.apple.security.device.camera</key>
     <true/>
     <key>com.apple.security.device.audio-input</key>
+    <true/>
+  </dict>
+</plist>
+`;
+}
+
+export function renderMacHardenedRuntimeEntitlements(): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+    <key>com.apple.security.device.camera</key>
+    <true/>
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+    <key>com.apple.security.personal-information.calendars</key>
     <true/>
   </dict>
 </plist>
@@ -2812,10 +2859,10 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   signed: boolean,
   mockUpdates: boolean,
   mockUpdateServerPort: number | undefined,
-  macPasskeySigning:
+  macSigning:
     | {
         readonly entitlementsPath: string;
-        readonly provisioningProfilePath: string;
+        readonly provisioningProfilePath?: string;
       }
     | undefined,
   wslRuntimeBundled = false,
@@ -2921,10 +2968,12 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
         },
       ],
       ...(signed ? { sign: path.join(repoRoot, "scripts/sign-macos.ts") } : {}),
-      ...(macPasskeySigning
+      ...(macSigning
         ? {
-            entitlements: macPasskeySigning.entitlementsPath,
-            provisioningProfile: macPasskeySigning.provisioningProfilePath,
+            entitlements: macSigning.entitlementsPath,
+            ...(macSigning.provisioningProfilePath
+              ? { provisioningProfile: macSigning.provisioningProfilePath }
+              : { entitlementsInherit: macSigning.entitlementsPath }),
           }
         : {}),
     };
@@ -3904,23 +3953,24 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
   const stageProdResourcesDir = path.join(stageAppDir, "apps/desktop/prod-resources");
   yield* fs.copy(stageResourcesDir, stageProdResourcesDir);
 
-  const configuredMacPasskeySigning =
+  const macSigningConfiguration =
     options.platform === "mac" && options.signed
       ? yield* Effect.try({
-          try: () => resolveMacPasskeySigningConfiguration(loadRepoEnv({ repoRoot })),
+          try: () => resolveMacSigningConfiguration(loadRepoEnv({ repoRoot })),
           catch: MacPasskeySigningConfigurationResolutionError.fromCause,
         })
       : undefined;
-  const macPasskeySigning = configuredMacPasskeySigning
-    ? {
-        ...configuredMacPasskeySigning,
-        provisioningProfilePath: path.resolve(
-          repoRoot,
-          configuredMacPasskeySigning.provisioningProfilePath,
-        ),
-      }
-    : undefined;
-  const macEntitlementsPath = macPasskeySigning
+  const macPasskeySigning =
+    macSigningConfiguration?.mode === "passkey"
+      ? {
+          ...macSigningConfiguration.passkey,
+          provisioningProfilePath: path.resolve(
+            repoRoot,
+            macSigningConfiguration.passkey.provisioningProfilePath,
+          ),
+        }
+      : undefined;
+  const macEntitlementsPath = macSigningConfiguration
     ? path.join(stageAppDir, "entitlements.mac.plist")
     : undefined;
   let macWebAuthn: MacWebAuthnEntitlements | undefined;
@@ -3941,6 +3991,11 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
       macEntitlementsPath,
       renderMacPasskeyEntitlements(macPasskeySigning, macWebAuthn),
     );
+  } else if (macSigningConfiguration?.mode === "hardened-runtime" && macEntitlementsPath) {
+    yield* Effect.log(
+      "[desktop-artifact] T3CODE_MACOS_PROVISIONING_PROFILE is unset; signing with standard Developer ID hardened-runtime entitlements (passkeys disabled).",
+    );
+    yield* fs.writeFileString(macEntitlementsPath, renderMacHardenedRuntimeEntitlements());
   }
 
   const stageDependencies =
@@ -3983,10 +4038,12 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
       options.signed,
       options.mockUpdates,
       options.mockUpdateServerPort,
-      macPasskeySigning && macEntitlementsPath
+      macEntitlementsPath
         ? {
             entitlementsPath: macEntitlementsPath,
-            provisioningProfilePath: macPasskeySigning.provisioningProfilePath,
+            ...(macPasskeySigning
+              ? { provisioningProfilePath: macPasskeySigning.provisioningProfilePath }
+              : {}),
           }
         : undefined,
       bundlesWslRuntime({ platform: options.platform, runtimeArchivePath: options.wslRuntime }),

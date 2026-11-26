@@ -38,8 +38,10 @@ import {
   MissingMacPasskeyProvisioningProfileError,
   packWindowsServerAsar,
   preflightWindowsDesktopBuild,
+  renderMacHardenedRuntimeEntitlements,
   renderMacPasskeyEntitlements,
   resolveMacFileExclusions,
+  resolveMacSigningConfiguration,
   resolveMacWebAuthnEntitlements,
   resolveMacPasskeySigningConfiguration,
   resolveMergedStageDependencies,
@@ -1770,6 +1772,111 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     assert.equal(error.message, "Failed to resolve macOS passkey signing configuration.");
     assert.notInclude(error.message, secret);
   });
+
+  it("falls back to standard hardened-runtime macOS signing when T3CODE_MACOS_PROVISIONING_PROFILE is unset", () => {
+    assert.deepStrictEqual(resolveMacSigningConfiguration({}), {
+      mode: "hardened-runtime",
+    });
+    assert.deepStrictEqual(
+      resolveMacSigningConfiguration({ T3CODE_MACOS_PROVISIONING_PROFILE: "   " }),
+      { mode: "hardened-runtime" },
+    );
+
+    const passkeyConfig = resolveMacSigningConfiguration({
+      T3CODE_APPLE_TEAM_ID: "ABC1234567",
+      T3CODE_MACOS_PROVISIONING_PROFILE: "/tmp/t3code.provisionprofile",
+      T3CODE_CLERK_PASSKEY_RP_DOMAINS: "clerk.example.com",
+    });
+    assert.deepStrictEqual(passkeyConfig, {
+      mode: "passkey",
+      passkey: {
+        appId: "com.frameflowtech.t4code",
+        teamId: "ABC1234567",
+        rpDomains: ["clerk.example.com"],
+        provisioningProfilePath: "/tmp/t3code.provisionprofile",
+      },
+    });
+
+    const entitlements = renderMacHardenedRuntimeEntitlements();
+    for (const key of [
+      "com.apple.security.cs.allow-jit",
+      "com.apple.security.cs.allow-unsigned-executable-memory",
+      "com.apple.security.cs.disable-library-validation",
+      "com.apple.security.device.audio-input",
+      "com.apple.security.device.camera",
+      "com.apple.security.automation.apple-events",
+      "com.apple.security.personal-information.calendars",
+    ]) {
+      assert.match(
+        entitlements,
+        new RegExp(`<key>${key.replaceAll(".", "\\.")}</key>\\s*<true/>`, "u"),
+        key,
+      );
+    }
+    for (const restrictedKey of [
+      "com.apple.application-identifier",
+      "com.apple.developer.team-identifier",
+      "com.apple.developer.associated-domains",
+      "keychain-access-groups",
+      "com.apple.developer.web-browser.public-key-credential",
+    ]) {
+      assert.notInclude(entitlements, restrictedKey);
+    }
+  });
+
+  it.effect(
+    "configures signed macOS DMG builds both with and without a passkey provisioning profile",
+    () =>
+      Effect.gen(function* () {
+        const hardenedRuntimeConfig = yield* createBuildConfig(
+          "mac",
+          "dmg",
+          "0.1.14-t4.1",
+          true,
+          false,
+          undefined,
+          { entitlementsPath: "/tmp/stage/entitlements.mac.plist" },
+          false,
+          "arm64",
+        );
+        const hardenedMac = hardenedRuntimeConfig.mac as Record<string, unknown>;
+        const hardenedDmg = hardenedRuntimeConfig.dmg as Record<string, unknown>;
+        assert.deepStrictEqual(hardenedMac.target, ["dmg", "zip"]);
+        assert.match(hardenedMac.sign as string, /scripts[\\/]sign-macos\.ts$/);
+        assert.equal(hardenedMac.entitlements, "/tmp/stage/entitlements.mac.plist");
+        assert.equal(hardenedMac.entitlementsInherit, "/tmp/stage/entitlements.mac.plist");
+        assert.notProperty(hardenedMac, "provisioningProfile");
+        assert.equal(hardenedDmg.background, "dmg/dmg-background-latest.png");
+        assert.deepStrictEqual(hardenedRuntimeConfig.publish, [
+          {
+            provider: "github",
+            owner: "imetn",
+            repo: "t4code",
+            releaseType: "release",
+          },
+        ]);
+
+        const passkeyConfig = yield* createBuildConfig(
+          "mac",
+          "dmg",
+          "0.1.14-t4.1",
+          true,
+          false,
+          undefined,
+          {
+            entitlementsPath: "/tmp/stage/entitlements.mac.plist",
+            provisioningProfilePath: "/tmp/t3code.provisionprofile",
+          },
+          false,
+          "arm64",
+        );
+        const passkeyMac = passkeyConfig.mac as Record<string, unknown>;
+        assert.match(passkeyMac.sign as string, /scripts[\\/]sign-macos\.ts$/);
+        assert.equal(passkeyMac.entitlements, "/tmp/stage/entitlements.mac.plist");
+        assert.equal(passkeyMac.provisioningProfile, "/tmp/t3code.provisionprofile");
+        assert.notProperty(passkeyMac, "entitlementsInherit");
+      }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
+  );
 
   it.effect("signs Windows builds with signtool on Windows and the jsign hook elsewhere", () =>
     Effect.gen(function* () {
