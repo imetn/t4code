@@ -1804,6 +1804,29 @@ const requireDpopPrincipalScope = Effect.fn("relay.api.require_dpop_principal_sc
   return principal.proofKeyThumbprint;
 });
 
+const resolveDpopRequestUrl = Effect.fn("relay.api.resolve_dpop_request_url")(function* (
+  request: HttpServerRequest.HttpServerRequest,
+) {
+  const url = HttpServerRequest.toURL(request);
+  if (url._tag === "None") {
+    return yield* new HttpApiError.Unauthorized({});
+  }
+  const config = yield* RelayConfiguration.RelayConfiguration;
+  const issuerUrl = URL.parse(config.relayIssuer);
+  // Behind a TLS-terminating proxy, Node HTTP sees http:// for the configured https:// relayIssuer host.
+  if (
+    issuerUrl !== null &&
+    issuerUrl.protocol === "https:" &&
+    url.value.protocol === "http:" &&
+    url.value.host === issuerUrl.host
+  ) {
+    const normalized = new URL(url.value.href);
+    normalized.protocol = "https:";
+    return normalized.href;
+  }
+  return url.value.href;
+});
+
 const requireDpopThumbprint = Effect.fn("relay.api.require_dpop_thumbprint")(function* (
   expectedThumbprint: string,
   options?: {
@@ -1812,15 +1835,12 @@ const requireDpopThumbprint = Effect.fn("relay.api.require_dpop_thumbprint")(fun
 ) {
   const request = yield* HttpServerRequest.HttpServerRequest;
   const now = yield* DateTime.now;
-  const url = HttpServerRequest.toURL(request);
-  if (url._tag === "None") {
-    return yield* new HttpApiError.Unauthorized({});
-  }
+  const url = yield* resolveDpopRequestUrl(request);
   const dpopProofs = yield* DpopProofs.DpopProofReplay;
   return yield* dpopProofs.verifyAndConsume({
     proof: request.headers.dpop,
     method: request.method,
-    url: url.value.href,
+    url,
     now,
     expectedThumbprint,
     ...(options?.expectedAccessToken ? { expectedAccessToken: options.expectedAccessToken } : {}),
@@ -1832,15 +1852,12 @@ const requireDpopProof = Effect.fn("relay.api.require_dpop_proof")(function* (op
 }) {
   const request = yield* HttpServerRequest.HttpServerRequest;
   const now = yield* DateTime.now;
-  const url = HttpServerRequest.toURL(request);
-  if (url._tag === "None") {
-    return yield* new HttpApiError.Unauthorized({});
-  }
+  const url = yield* resolveDpopRequestUrl(request);
   const dpopProofs = yield* DpopProofs.DpopProofReplay;
   return yield* dpopProofs.verifyAndConsume({
     proof: request.headers.dpop,
     method: request.method,
-    url: url.value.href,
+    url,
     now,
     ...(options?.expectedAccessToken ? { expectedAccessToken: options.expectedAccessToken } : {}),
   });
