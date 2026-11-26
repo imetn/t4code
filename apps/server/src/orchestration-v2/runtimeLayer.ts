@@ -1,5 +1,6 @@
 import * as WorktreeBranchSync from "./WorktreeBranchSync.ts";
 import * as GuestShareService from "../guest/GuestShareService.ts";
+import * as UsageLimitCooldownStore from "./UsageLimitCooldownStore.ts";
 import * as UsageLimitRecoveryWorker from "./UsageLimitRecoveryWorker.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
 import * as Layer from "effect/Layer";
@@ -132,6 +133,7 @@ const layerProviderEventIngestorProvided = ProviderEventIngestor.layer.pipe(
       ProjectionStore.layer,
       ThreadCommandExecutor.layer,
       GitVcsDriver.layer,
+      UsageLimitCooldownStore.layer,
     ),
   ),
 );
@@ -461,9 +463,11 @@ export const layerProduction = Layer.mergeAll(
         ProjectionStore.layer,
         layerThreadManagementProvided,
         layerOrchestratorProvided,
+        UsageLimitCooldownStore.layer,
       ),
     ),
   ),
+  UsageLimitCooldownStore.layer,
   layerProviderContinuationWorkerProvided,
   layerAgentSessionScannerProvided,
   layerAgentSessionImporterProvided,

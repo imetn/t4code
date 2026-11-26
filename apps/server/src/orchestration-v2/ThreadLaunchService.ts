@@ -10,6 +10,7 @@ import {
   type OrchestrationV2Actor,
   type OrchestrationV2CreationSource,
   type OrchestrationV2DelegatedFrom,
+  type OrchestrationV2FallbackOrigin,
   type OrchestrationV2WorkflowOrigin,
   type OrchestrationV2LinkOrigin,
   type OrchestrationV2ProviderThreadNativeMetadata,
@@ -107,6 +108,7 @@ export interface ThreadLaunchInput {
   /** The caller chose `title`, so a first message keeps it. */
   readonly titleRenamed?: boolean;
   readonly modelSelection: ModelSelection;
+  readonly fallbackOrigin?: OrchestrationV2FallbackOrigin | null;
   readonly runtimeMode: RuntimeMode;
   readonly interactionMode: ProviderInteractionMode;
   readonly workspaceStrategy: ThreadLaunchWorkspaceStrategy;
@@ -1533,6 +1535,9 @@ const make = Effect.gen(function* () {
                 title: input.title,
                 ...(input.titleRenamed === true ? { titleRenamed: true } : {}),
                 modelSelection: input.modelSelection,
+                ...(input.fallbackOrigin === undefined
+                  ? {}
+                  : { fallbackOrigin: input.fallbackOrigin }),
                 runtimeMode: input.runtimeMode,
                 interactionMode: input.interactionMode,
                 branch: initialBranch,
@@ -1575,6 +1580,19 @@ const make = Effect.gen(function* () {
         let runId: RunId | null = null;
         let messageSequence: number | undefined;
         let messageWasAlreadyAccepted = false;
+        if (input.reuseExistingThread === true && initialMessage === undefined) {
+          yield* threads
+            .dispatch({
+              type: "thread.model-selection.set",
+              commandId: CommandId.make(`${input.commandId}:model-selection`),
+              threadId,
+              modelSelection: input.modelSelection,
+              ...(input.fallbackOrigin === undefined
+                ? {}
+                : { fallbackOrigin: input.fallbackOrigin }),
+            })
+            .pipe(Effect.mapError(mapError(input, "update-thread", threadId)));
+        }
         if (initialMessage !== undefined) {
           // A new thread's claim carries its first message. A reused thread, or a replayed
           // claim that carried none, takes it in a command of its own.
@@ -1590,6 +1608,9 @@ const make = Effect.gen(function* () {
                 commandId: messageCommandId,
                 threadId,
                 modelSelection: input.modelSelection,
+                ...(input.fallbackOrigin === undefined
+                  ? {}
+                  : { fallbackOrigin: input.fallbackOrigin }),
                 dispatchMode: { type: "defer_start", workspaceStrategy },
                 createdBy: input.createdBy,
                 creationSource: input.creationSource,

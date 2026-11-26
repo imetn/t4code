@@ -1,4 +1,11 @@
 import { remapComposerContextAttachments } from "@t3tools/shared/composerContextReferences";
+import { modelSelectionsEqual } from "@t3tools/shared/model";
+import {
+  availableAccountSelection,
+  isFallbackOriginRestorable,
+  isModelSelectionExhausted,
+  isModelSelectionUsable,
+} from "@t3tools/shared/usageLimits";
 import { appendUserInputAttachmentPaths } from "../provider/userInputAttachments.ts";
 import {
   AuthProvidersManageScope,
@@ -7,10 +14,10 @@ import {
   type OrchestrationV2Command,
   type ProjectId,
 } from "@t3tools/contracts";
-import { availableAccountSelection } from "@t3tools/shared/usageLimits";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { resolveAttachmentPath } from "../attachmentStore.ts";
 import { rpcAuthorizationError } from "../auth/RpcAuthorization.ts";
@@ -27,6 +34,7 @@ import {
 } from "./CommandPolicy.ts";
 import * as ThreadLaunch from "./ThreadLaunchService.ts";
 import * as ThreadManagement from "./ThreadManagementService.ts";
+import * as UsageLimitCooldownStore from "./UsageLimitCooldownStore.ts";
 
 // These failures precede commitCommand; generic dispatch errors can follow commits and remain ambiguous.
 function dispatchWasNotAccepted(
@@ -185,6 +193,179 @@ const withAvailableAccount = Effect.fn("ThreadMessageIntake.withAvailableAccount
   };
 });
 
+const resolveMessageDispatchFallback = Effect.fn(
+  "ThreadMessageIntake.resolveMessageDispatchFallback",
+)(function* (command: Extract<OrchestrationV2Command, { readonly type: "message.dispatch" }>) {
+  if (
+    command.dispatchMode.type === "steer_active" ||
+    command.createdBy === "agent" ||
+    command.fallbackOrigin !== undefined ||
+    command.manualContinuationOfRunId !== undefined ||
+    command.usageLimitContinuationOfRunId !== undefined ||
+    command.restartContinuationOfRunId !== undefined
+  ) {
+    return command;
+  }
+  const settingsService = Option.getOrUndefined(
+    yield* Effect.serviceOption(ServerSettings.ServerSettingsService),
+  );
+  const providerRegistry = Option.getOrUndefined(
+    yield* Effect.serviceOption(ProviderRegistry.ProviderRegistry),
+  );
+  if (settingsService === undefined || providerRegistry === undefined) {
+    return command;
+  }
+  const cooldownStore = Option.getOrUndefined(
+    yield* Effect.serviceOption(UsageLimitCooldownStore.UsageLimitCooldownStore),
+  );
+  const threads = yield* ThreadManagement.ThreadManagementService;
+  const thread = yield* threads.getThreadSnapshotWindow(command.threadId, { rowLimit: 1 }).pipe(
+    Effect.map(({ projection }) => projection.thread),
+    Effect.orElseSucceed(() => null),
+  );
+  if (thread === null) return command;
+  const settings = yield* settingsService.getSettings.pipe(Effect.orElseSucceed(() => null));
+  if (settings === null) return command;
+  const providers = yield* providerRegistry.getProviders;
+  const now = yield* DateTime.now;
+  const nowMs = DateTime.toEpochMillis(now);
+  const cooldowns = cooldownStore === undefined ? [] : yield* cooldownStore.getActive(nowMs);
+  const fallbackOrigin = thread.fallbackOrigin ?? null;
+
+  // 1. If the thread was previously auto-switched to fallback, switch back once usage returns.
+  if (fallbackOrigin !== null) {
+    const userChangedModel =
+      (command.modelSelection !== undefined &&
+        !modelSelectionsEqual(command.modelSelection, fallbackOrigin.fallbackSelection)) ||
+      !modelSelectionsEqual(thread.modelSelection, fallbackOrigin.fallbackSelection);
+    if (userChangedModel) {
+      return { ...command, fallbackOrigin: null };
+    }
+    if (
+      isFallbackOriginRestorable({
+        fallbackOrigin,
+        providers,
+        now: nowMs,
+        settings,
+        projectId: thread.projectId,
+        cooldowns,
+      })
+    ) {
+      return {
+        ...command,
+        modelSelection: fallbackOrigin.originSelection,
+        fallbackOrigin: null,
+      };
+    }
+    return command;
+  }
+
+  // 2. Otherwise, if opt-in fallback is enabled and the target model is exhausted, route to fallback.
+  const fallback = settings.fallbackModelSelection;
+  if (!settings.fallbackOnUsageLimit || fallback === null) {
+    return command;
+  }
+  const requested = command.modelSelection ?? thread.modelSelection;
+  if (requested.instanceId === fallback.instanceId && requested.model === fallback.model) {
+    return command;
+  }
+  const exhausted = isModelSelectionExhausted({
+    selection: requested,
+    providers,
+    now: nowMs,
+    cooldowns,
+  });
+  if (
+    exhausted === null ||
+    !isModelSelectionUsable({
+      selection: fallback,
+      providers,
+      now: nowMs,
+      settings,
+      projectId: thread.projectId,
+      cooldowns,
+    })
+  ) {
+    return command;
+  }
+  return {
+    ...command,
+    modelSelection: fallback,
+    fallbackOrigin: {
+      originSelection: requested,
+      fallbackSelection: fallback,
+      switchedFromRunId: null,
+      switchedAt: DateTime.formatIso(now),
+      resetAt: exhausted.resetAt,
+    },
+  };
+});
+
+const resolveLaunchFallback = Effect.fn("ThreadMessageIntake.resolveLaunchFallback")(function* (
+  input: ThreadLaunch.ThreadLaunchInput,
+) {
+  if (input.createdBy === "agent" || input.fallbackOrigin !== undefined) {
+    return input;
+  }
+  const settingsService = Option.getOrUndefined(
+    yield* Effect.serviceOption(ServerSettings.ServerSettingsService),
+  );
+  const providerRegistry = Option.getOrUndefined(
+    yield* Effect.serviceOption(ProviderRegistry.ProviderRegistry),
+  );
+  if (settingsService === undefined || providerRegistry === undefined) {
+    return input;
+  }
+  const settings = yield* settingsService.getSettings.pipe(Effect.orElseSucceed(() => null));
+  const fallback = settings?.fallbackModelSelection ?? null;
+  if (!settings?.fallbackOnUsageLimit || fallback === null) {
+    return input;
+  }
+  if (
+    input.modelSelection.instanceId === fallback.instanceId &&
+    input.modelSelection.model === fallback.model
+  ) {
+    return input;
+  }
+  const cooldownStore = Option.getOrUndefined(
+    yield* Effect.serviceOption(UsageLimitCooldownStore.UsageLimitCooldownStore),
+  );
+  const providers = yield* providerRegistry.getProviders;
+  const now = yield* DateTime.now;
+  const nowMs = DateTime.toEpochMillis(now);
+  const cooldowns = cooldownStore === undefined ? [] : yield* cooldownStore.getActive(nowMs);
+  const exhausted = isModelSelectionExhausted({
+    selection: input.modelSelection,
+    providers,
+    now: nowMs,
+    cooldowns,
+  });
+  if (
+    exhausted === null ||
+    !isModelSelectionUsable({
+      selection: fallback,
+      providers,
+      now: nowMs,
+      settings,
+      projectId: input.projectId,
+      cooldowns,
+    })
+  ) {
+    return input;
+  }
+  return {
+    ...input,
+    modelSelection: fallback,
+    fallbackOrigin: {
+      originSelection: input.modelSelection,
+      fallbackSelection: fallback,
+      switchedFromRunId: null,
+      switchedAt: DateTime.formatIso(now),
+      resetAt: exhausted.resetAt,
+    },
+  };
+});
+
 /**
  * `sender.managesProviders` is whether the caller holds `providers:manage`. RPC authorization
  * has already checked every command whose payload shows a provider sign-out; a queued edit
@@ -196,7 +377,16 @@ export const dispatchCommand = Effect.fn("ThreadMessageIntake.dispatchCommand")(
 ) {
   const prepared =
     incoming.type === "message.dispatch"
-      ? yield* withAvailableAccount(yield* withGuestAttachments(incoming))
+      ? yield* withGuestAttachments(incoming).pipe(
+          Effect.flatMap(withAvailableAccount),
+          Effect.flatMap((result) =>
+            result.fallback !== undefined
+              ? Effect.succeed(result)
+              : resolveMessageDispatchFallback(result.command).pipe(
+                  Effect.map((command) => ({ command, fallback: undefined })),
+                ),
+          ),
+        )
       : {
           command:
             incoming.type === "queued-run.edit" && !sender.managesProviders
@@ -364,14 +554,18 @@ export const sendToThread = Effect.fn("ThreadMessageIntake.sendToThread")(functi
 });
 
 export const launchThread = Effect.fn("ThreadMessageIntake.launchThread")(function* (
-  requested: ThreadLaunch.ThreadLaunchInput,
+  incoming: ThreadLaunch.ThreadLaunchInput,
 ) {
+  const fallbackResolved = yield* resolveLaunchFallback(incoming);
   const launches = yield* ThreadLaunch.ThreadLaunchService;
-  const choose = yield* readAccountChoice();
+  const choose = fallbackResolved.fallbackOrigin !== undefined ? null : yield* readAccountChoice();
   const input =
     choose === null
-      ? requested
-      : { ...requested, modelSelection: choose(requested.modelSelection, requested.projectId) };
+      ? fallbackResolved
+      : {
+          ...fallbackResolved,
+          modelSelection: choose(fallbackResolved.modelSelection, fallbackResolved.projectId),
+        };
   yield* AttachmentClaims.validateAttachmentLimits(input.initialMessage?.attachments ?? []);
   if (!input.initialMessage?.attachments.some(AttachmentClaims.attachmentIsPendingUpload)) {
     return yield* launches.launch(input);
