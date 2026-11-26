@@ -173,6 +173,7 @@ import {
 } from "../threadRoutes";
 import type { SidebarThreadSummary } from "../types";
 import { cn } from "~/lib/utils";
+import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { ProjectEnvironmentBadge } from "./ProjectEnvironmentBadge";
 import { ProjectRowActions } from "./ProjectComboboxRow";
 import {
@@ -3449,12 +3450,13 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               <div
                 role="group"
                 aria-label={gt("Filter by environment")}
-                className="mt-1.5 flex items-center gap-1 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                className="mt-2 flex items-center gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
               >
                 <Button
                   type="button"
-                  size="micro"
-                  variant={environmentScopeIds.length === 0 ? "secondary" : "ghost"}
+                  size="compact"
+                  variant={environmentScopeIds.length === 0 ? "outline" : "ghost-muted"}
+                  aria-pressed={environmentScopeIds.length === 0}
                   className="shrink-0"
                   onClick={() => setEnvironmentScopeIds([])}
                 >
@@ -3475,13 +3477,17 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                     <Button
                       key={environment.id}
                       type="button"
-                      size="micro"
-                      variant={isSelected ? "secondary" : "ghost"}
+                      size="compact"
+                      variant={isSelected ? "outline" : "ghost-muted"}
                       aria-pressed={isSelected}
                       className="shrink-0"
                       onClick={(event) => toggleEnvironmentScopeId(environment.id, event.shiftKey)}
                     >
-                      <span className="max-w-24 truncate">{environment.label}</span>
+                      <EnvironmentMachineIcon
+                        kind={environmentMachineById.get(environment.id) ?? "desktop"}
+                        className="size-3.5 shrink-0"
+                      />
+                      <span className="max-w-28 truncate">{environment.label}</span>
                       {workingCount > 0 ? (
                         <span className="inline-flex size-4 items-center justify-center rounded-full bg-info/15 text-3xs font-semibold text-info tabular-nums">
                           {workingCount}
