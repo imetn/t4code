@@ -9,7 +9,6 @@ import {
   type ServerSettings as ServerSettingsContract,
 } from "@t3tools/contracts";
 import { modelSelectionsEqual } from "@t3tools/shared/model";
-import { routineSpan } from "@t3tools/shared/observability";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import {
   availableAccountSelection,
@@ -338,7 +337,7 @@ const makeSweep = Effect.gen(function* () {
   if (providerRegistry !== undefined) {
     yield* forkParked(Stream.runForEach(providerRegistry.streamChanges, () => due.invalidate));
   }
-  return Effect.fn("UsageLimitRecoveryWorker.sweep", { attributes: routineSpan })(function* () {
+  return Effect.fn("UsageLimitRecoveryWorker.sweep")(function* () {
     const now = yield* DateTime.now;
     const nowMs = DateTime.toEpochMillis(now);
     if (yield* due.isIdle(nowMs)) return;
