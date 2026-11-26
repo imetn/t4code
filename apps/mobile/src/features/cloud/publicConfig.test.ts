@@ -49,4 +49,13 @@ describe("resolveCloudPublicConfig", () => {
     });
     expect(hasTracingPublicConfig(config)).toBe(false);
   });
+
+  it("defaults jwtTemplate to t3-relay when publishableKey and secure relay URL are set", () => {
+    const config = resolveCloudPublicConfig({
+      clerk: { publishableKey: "pk_live_example" },
+      relay: { url: "https://relay.example.test" },
+    });
+
+    expect(config.clerk.jwtTemplate).toBe("t3-relay");
+  });
 });

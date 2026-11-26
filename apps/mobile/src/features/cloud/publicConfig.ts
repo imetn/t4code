@@ -43,14 +43,21 @@ function trimNonEmpty(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+const DEFAULT_CLERK_JWT_TEMPLATE = "t3-relay";
+
 export function resolveCloudPublicConfig(extra: ExpoExtra = Constants.expoConfig?.extra) {
+  const publishableKey = trimNonEmpty(extra?.clerk?.publishableKey);
+  const relayUrl = normalizeSecureRelayUrl(trimNonEmpty(extra?.relay?.url) ?? "");
+  const jwtTemplate =
+    trimNonEmpty(extra?.clerk?.jwtTemplate) ??
+    (publishableKey && relayUrl ? DEFAULT_CLERK_JWT_TEMPLATE : null);
   return {
     clerk: {
-      publishableKey: trimNonEmpty(extra?.clerk?.publishableKey),
-      jwtTemplate: trimNonEmpty(extra?.clerk?.jwtTemplate),
+      publishableKey,
+      jwtTemplate,
     },
     relay: {
-      url: normalizeSecureRelayUrl(trimNonEmpty(extra?.relay?.url) ?? ""),
+      url: relayUrl,
     },
     observability: {
       tracesUrl: null,

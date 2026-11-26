@@ -96,4 +96,46 @@ describe("hasCloudPublicConfig", () => {
       tracesToken: null,
     });
   });
+
+  it("defaults clerkJwtTemplate to t3-relay when custom desktop relay and Clerk key are configured without build-time env", () => {
+    vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "");
+    vi.stubEnv("VITE_CLERK_JWT_TEMPLATE", "");
+    vi.stubEnv("VITE_T3CODE_RELAY_URL", "");
+    const key = `pk_live_${btoa("clerk.custom.example$")}`;
+    vi.stubGlobal("window", {
+      location: new URL("t3code://app/settings/access"),
+      desktopBridge: {
+        getCustomRelayUrl: () => "https://relay.custom.example",
+        getCustomClerkPublishableKey: () => key,
+      },
+    });
+
+    expect(resolveCloudPublicConfig()).toEqual({
+      clerkPublishableKey: key,
+      clerkJwtTemplate: "t3-relay",
+      relayUrl: "https://relay.custom.example",
+      relayTracing: {
+        tracesUrl: null,
+        tracesDataset: null,
+        tracesToken: null,
+      },
+    });
+    expect(hasCloudPublicConfig()).toBe(true);
+  });
+
+  it("keeps cloud config disabled when neither build-time nor custom relay/Clerk are configured", () => {
+    vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "");
+    vi.stubEnv("VITE_CLERK_JWT_TEMPLATE", "");
+    vi.stubEnv("VITE_T3CODE_RELAY_URL", "");
+    vi.stubGlobal("window", {
+      location: new URL("t3code://app/settings/access"),
+      desktopBridge: {
+        getCustomRelayUrl: () => null,
+        getCustomClerkPublishableKey: () => null,
+      },
+    });
+
+    expect(resolveCloudPublicConfig().clerkJwtTemplate).toBeNull();
+    expect(hasCloudPublicConfig()).toBe(false);
+  });
 });

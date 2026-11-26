@@ -114,13 +114,20 @@ export function writeWebCustomCloudConfigOverride(config: {
   }
 }
 
+const DEFAULT_CLERK_JWT_TEMPLATE = "t3-relay";
+
 export function resolveCloudPublicConfig(): CloudPublicConfig {
+  const clerkPublishableKey =
+    readCustomClerkPublishableKeyOverride() ??
+    trimNonEmpty(import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined);
+  const relayUrl = readCustomRelayUrlOverride() ?? resolveDefaultRelayUrl();
+  const clerkJwtTemplate =
+    trimNonEmpty(import.meta.env.VITE_CLERK_JWT_TEMPLATE as string | undefined) ??
+    (clerkPublishableKey && relayUrl ? DEFAULT_CLERK_JWT_TEMPLATE : null);
   return {
-    clerkPublishableKey:
-      readCustomClerkPublishableKeyOverride() ??
-      trimNonEmpty(import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined),
-    clerkJwtTemplate: trimNonEmpty(import.meta.env.VITE_CLERK_JWT_TEMPLATE as string | undefined),
-    relayUrl: readCustomRelayUrlOverride() ?? resolveDefaultRelayUrl(),
+    clerkPublishableKey,
+    clerkJwtTemplate,
+    relayUrl,
     relayTracing: {
       tracesUrl: null,
       tracesDataset: null,
