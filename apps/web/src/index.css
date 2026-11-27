@@ -693,6 +693,9 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 }
 
 @layer base {
+  ::highlight(t3-assistant-citation-draft) {
+    background-color: color-mix(in oklab, var(--primary) 18%, transparent);
+  }
   ::highlight(t3-assistant-citation) {
     background-color: color-mix(
       in oklab,

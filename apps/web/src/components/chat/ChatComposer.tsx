@@ -333,6 +333,10 @@ export interface ChatComposerHandle {
     citation: AssistantCitation,
     sourceAnchor: AssistantCitationSourceAnchor,
   ) => boolean;
+  openCitationCommentByIndex: (
+    ordinal: number,
+    sourceAnchor: AssistantCitationSourceAnchor,
+  ) => boolean;
   quoteImage: (file: File) => Promise<boolean>;
   replyToResponse: (response: ResponseContextRecord) => boolean;
   openModelPicker: () => void;
@@ -3394,6 +3398,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           "cursor",
           { ensureLeadingBoundary: true, citationCommentAnchor: sourceAnchor },
         ),
+      openCitationCommentByIndex: (ordinal, sourceAnchor) =>
+        composerEditorRef.current?.openCitationCommentByIndex(ordinal, sourceAnchor) ?? false,
       quoteImage: async (file) => {
         if (
           !activeThreadId ||

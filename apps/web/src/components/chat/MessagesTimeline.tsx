@@ -33,6 +33,7 @@ import { useStableCallback } from "~/hooks/useStableCallback";
 const NOOP_USE_ARTIFACT_TEMPLATE = () => {};
 const EMPTY_PENDING_APPROVALS: ReadonlyArray<PendingApproval> = [];
 const EMPTY_RESPONDING_REQUEST_IDS: TimelineRowSharedState["respondingRequestIds"] = [];
+const EMPTY_DRAFT_CITATIONS: ReadonlyArray<DraftAssistantCitation> = [];
 
 const NOOP_OPEN_ATTACHMENT = (_attachment: ChatFileAttachment) => {};
 
@@ -79,6 +80,7 @@ import {
 import { AssistantSelectionToolbar } from "./AssistantSelectionToolbar";
 import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
 import { type AssistantCitationRequest } from "./AssistantCitationSource";
+import type { DraftAssistantCitation } from "./draftAssistantCitations";
 import { useAssistantCitationTarget } from "./useAssistantCitationTarget";
 import { worktreeSetupAgentStarted } from "@t3tools/client-runtime/worktree-setup";
 import { resolveCitationPhase, type CitedHistory } from "./citationProcedure";
@@ -240,6 +242,10 @@ interface MessagesTimelineProps {
   onRespondToApproval?: TimelineRowSharedState["onRespondToApproval"];
   citationRequest?: AssistantCitationRequest | null;
   citationHistory?: CitedHistory;
+  draftCitations?: ReadonlyArray<DraftAssistantCitation>;
+  onOpenDraftCitationComment?:
+    | ((ordinal: number, sourceAnchor: AssistantCitationSourceAnchor) => boolean)
+    | undefined;
   onCiteAssistantText?: (
     citation: AssistantCitation,
     sourceAnchor: AssistantCitationSourceAnchor,
@@ -369,6 +375,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
   onRespondToApproval,
   citationRequest = null,
   citationHistory = CITED_HISTORY_LOADING,
+  draftCitations = EMPTY_DRAFT_CITATIONS,
+  onOpenDraftCitationComment,
   onCiteAssistantText,
   onReplyToResponse,
   isWorking,
@@ -1135,6 +1143,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
     canOperateThread,
     onRespondToApproval,
     citationRequest: readyCitationRequest,
+    draftCitations,
+    onOpenDraftCitationComment,
     onReplyToResponse,
     listRef,
     timestampFormat,

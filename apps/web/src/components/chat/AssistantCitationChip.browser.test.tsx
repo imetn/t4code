@@ -247,3 +247,13 @@ describe("citation comment popup position", () => {
     expect(rect.right).toBeLessThanOrEqual(window.innerWidth);
   });
 });
+
+describe("citation chip index badge", () => {
+  it("renders the matching 1-based index pill when provided", async () => {
+    using _source = setup();
+    await using _screen = await render(<AssistantCitationChip citation={citation} index={3} />);
+    const indexPill = document.querySelector<HTMLElement>('[data-citation-chip-index="3"]');
+    expect(indexPill).not.toBeNull();
+    expect(indexPill?.textContent?.trim()).toBe("3");
+  });
+});

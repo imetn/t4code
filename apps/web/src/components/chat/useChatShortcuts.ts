@@ -120,7 +120,12 @@ export function useChatShortcuts(input: ChatShortcutsInput) {
       event.isComposing ||
       event.keyCode === 229 ||
       isCommandPaletteOpen() ||
-      isInSideChatPane(event.target) !== embedded
+      (embedded
+        ? !(
+            event.target instanceof Element &&
+            event.target.closest("[data-side-chat-pane], [data-board-thread-pane]") !== null
+          )
+        : isInSideChatPane(event.target))
     )
       return;
     const context = input.getShortcutContext(event.target);
@@ -147,7 +152,8 @@ export function useChatShortcuts(input: ChatShortcutsInput) {
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- attaches keydown listeners for chat shortcuts and find dismissal: on the window, or on an embedded chat's side chat pane
   useEffect(() => {
     const target: Pick<HTMLElement, "addEventListener" | "removeEventListener"> | null = embedded
-      ? (composerElement?.closest<HTMLElement>("[data-side-chat-pane]") ?? null)
+      ? (composerElement?.closest<HTMLElement>("[data-side-chat-pane], [data-board-thread-pane]") ??
+        null)
       : window;
     if (!target) return;
     const onKeyDownCapture = (event: KeyboardEvent) =>

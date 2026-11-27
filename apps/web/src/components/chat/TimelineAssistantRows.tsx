@@ -47,6 +47,8 @@ export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind
             {...(ctx.threadRef ? { threadRef: ctx.threadRef } : {})}
             itemKey={row.id}
             request={ctx.citationRequest}
+            draftCitations={ctx.draftCitations}
+            onOpenDraftCitationComment={ctx.onOpenDraftCitationComment}
             listRef={ctx.listRef}
           >
             <ChatMarkdown
@@ -105,6 +107,8 @@ export function SentMessageTimelineRow({
         {...(ctx.threadRef ? { threadRef: ctx.threadRef } : {})}
         itemKey={row.id}
         request={ctx.citationRequest}
+        draftCitations={ctx.draftCitations}
+        onOpenDraftCitationComment={ctx.onOpenDraftCitationComment}
         listRef={ctx.listRef}
       >
         <ChatMarkdown

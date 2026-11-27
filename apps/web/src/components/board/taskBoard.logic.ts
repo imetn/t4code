@@ -53,7 +53,7 @@ function resolveThreadAttentionReason(
   return null;
 }
 
-function classifyTaskBoardColumn(thread: EnvironmentThreadShell): {
+export function classifyTaskBoardColumn(thread: EnvironmentThreadShell): {
   readonly column: TaskBoardColumnId;
   readonly attentionReason: TaskBoardAttentionReason;
 } {
@@ -72,6 +72,14 @@ function classifyTaskBoardColumn(thread: EnvironmentThreadShell): {
     return { column: "working", attentionReason: null };
   }
   return { column: "active", attentionReason: null };
+}
+
+export function resolveDockedTaskBoardColumn(
+  columnId: TaskBoardColumnId,
+  showSettled: boolean,
+): TaskBoardColumnId {
+  if (!showSettled && columnId === "settled") return "working";
+  return columnId;
 }
 
 function compareBoardCards(left: TaskBoardCardItem, right: TaskBoardCardItem): number {

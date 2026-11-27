@@ -2,7 +2,12 @@ import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import { describe, expect, it } from "vite-plus/test";
 
-import { buildDesktopTrayState, partitionTaskBoardThreads } from "./taskBoard.logic";
+import {
+  buildDesktopTrayState,
+  classifyTaskBoardColumn,
+  partitionTaskBoardThreads,
+  resolveDockedTaskBoardColumn,
+} from "./taskBoard.logic";
 
 function makeThread(
   overrides: Omit<Partial<EnvironmentThreadShell>, "id"> & { id: string },
@@ -134,5 +139,16 @@ describe("taskBoard.logic", () => {
     });
 
     expect(columns.active.map((c) => c.thread.id)).toEqual(["t-2"]);
+  });
+
+  it("classifies individual threads and falls back from hidden settled column", () => {
+    const settled = makeThread({ id: "t-settled", settledOverride: "settled" });
+    expect(classifyTaskBoardColumn(settled)).toEqual({
+      column: "settled",
+      attentionReason: null,
+    });
+    expect(resolveDockedTaskBoardColumn("settled", true)).toBe("settled");
+    expect(resolveDockedTaskBoardColumn("settled", false)).toBe("working");
+    expect(resolveDockedTaskBoardColumn("active", false)).toBe("active");
   });
 });

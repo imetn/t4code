@@ -28,7 +28,7 @@ import {
   type Transaction,
 } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
-import type { NodeType, ResolvedPos } from "@tiptap/pm/model";
+import type { Node as ProseMirrorNode, NodeType, ResolvedPos } from "@tiptap/pm/model";
 import type {
   AssistantCitation,
   ComposerContextClipboardFragment,
@@ -162,6 +162,10 @@ export interface ComposerPromptEditorHandle {
   readSelectionRange: () => { start: number; end: number };
   captureAttachmentInsertion: () => ComposerAttachmentInsertion | undefined;
   requestCitationComment: (request: ComposerCitationCommentRequest) => void;
+  openCitationCommentByIndex: (
+    ordinal: number,
+    sourceAnchor: AssistantCitationSourceAnchor,
+  ) => boolean;
   readSnapshot: () => {
     value: string;
     cursor: number;
@@ -235,13 +239,50 @@ type OpenCitationComment = {
   removeOnCancel?: CitationInsertedSpaces;
 };
 
+const EMPTY_CITATION_INDEX_BY_KEY: ReadonlyMap<string, number> = new Map();
+
+function collectCitationIndexByKey(doc: ProseMirrorNode): ReadonlyMap<string, number> {
+  const indexByKey = new Map<string, number>();
+  let ordinal = 0;
+  doc.descendants((node) => {
+    if (node.type.name !== "composer-citation") return;
+    const citeKey = (node.attrs as { citeKey?: string }).citeKey;
+    if (!citeKey) return;
+    ordinal += 1;
+    indexByKey.set(citeKey, ordinal);
+  });
+  return indexByKey.size === 0 ? EMPTY_CITATION_INDEX_BY_KEY : indexByKey;
+}
+
+function citationIndexMapsEqual(
+  left: ReadonlyMap<string, number>,
+  right: ReadonlyMap<string, number>,
+): boolean {
+  if (left === right) return true;
+  if (left.size !== right.size) return false;
+  for (const [key, value] of left) {
+    if (right.get(key) !== value) return false;
+  }
+  return true;
+}
+
+function updateCitationIndexMap(
+  current: ReadonlyMap<string, number>,
+  doc: ProseMirrorNode,
+): ReadonlyMap<string, number> {
+  const next = collectCitationIndexByKey(doc);
+  return citationIndexMapsEqual(current, next) ? current : next;
+}
+
 const ComposerCitationCommentContext = createContext<{
   openComment: OpenCitationComment | null;
+  citationIndexByKey: ReadonlyMap<string, number>;
   onOpenChange: (citeKey: string, open: boolean) => void;
   onDraftChange: (citeKey: string, comment: string) => void;
   onSubmitAndSend: () => boolean;
 }>({
   openComment: null,
+  citationIndexByKey: EMPTY_CITATION_INDEX_BY_KEY,
   onOpenChange: () => {},
   onDraftChange: () => {},
   onSubmitAndSend: () => false,
@@ -555,6 +596,7 @@ function ComposerCitationNodeView({ node, editor, getPos }: NodeViewProps) {
     >
       <AssistantCitationChip
         citation={citation}
+        index={commentContext.citationIndexByKey.get(citeKey)}
         commentEditor={{
           open: commentTarget !== null,
           sourceAnchor: commentTarget?.sourceAnchor,
@@ -1051,6 +1093,9 @@ function ComposerPromptEditorTiptapInner(
   const hasAppliedControlledSelectionRef = useRef(false);
   const citationRequestRef = useRef<ComposerCitationCommentRequest | null>(null);
   const [openCitation, setOpenCitation] = useState<OpenCitationComment | null>(null);
+  const [citationIndexByKey, setCitationIndexByKey] = useState<ReadonlyMap<string, number>>(
+    EMPTY_CITATION_INDEX_BY_KEY,
+  );
   const citationDraftRef = useRef<{ key: string; comment: string } | null>(null);
   const [isEmpty, setIsEmpty] = useState(value.length === 0);
   const draftKey = props.draftKey ?? "";
@@ -1058,12 +1103,14 @@ function ComposerPromptEditorTiptapInner(
   if (renderedDraftKey !== draftKey) {
     setRenderedDraftKey(draftKey);
     setOpenCitation(null);
+    setCitationIndexByKey(EMPTY_CITATION_INDEX_BY_KEY);
     setIsEmpty(value.length === 0);
   }
   const appliedDraftKeyRef = useRef(draftKey);
 
   const citationCommentActions = {
     openComment: openCitation,
+    citationIndexByKey,
     onOpenChange: (nodeKey: string, open: boolean) => {
       if (!open && citationDraftRef.current?.key === nodeKey) citationDraftRef.current = null;
       setOpenCitation((current) => {
@@ -1081,6 +1128,7 @@ function ComposerPromptEditorTiptapInner(
   };
 
   const handleEditorChange = (updated: TiptapEditor, transaction: Transaction) => {
+    setCitationIndexByKey((current) => updateCitationIndexMap(current, updated.state.doc));
     const map = serializeEditorDoc(updated.state.doc);
     const contextIds = literalText ? [] : [...map.contextIds];
     const { from, to } = updated.state.selection;
@@ -1785,6 +1833,7 @@ function ComposerPromptEditorTiptapInner(
       );
     }
     selectMarkdownOffset(editor, value, normalizedExpandedCursor);
+    setCitationIndexByKey((current) => updateCitationIndexMap(current, editor.state.doc));
     const map = serializeEditorDoc(editor.state.doc);
     if (isFocused) scrollTiptapCaretIntoView(editor);
     // A redraw later in this commit drops the editor's scroll offset, so reveal on the next frame.
@@ -1939,6 +1988,44 @@ function ComposerPromptEditorTiptapInner(
             removeOnCancel: request.insertedSpaces,
           });
         }
+      },
+      openCitationCommentByIndex: (ordinal, sourceAnchor) => {
+        if (!editor || !editor.isEditable || ordinal < 0) return false;
+        const citations = findChildren(
+          editor.state.doc,
+          (node) => node.type.name === "composer-citation",
+        );
+        const target = citations[ordinal];
+        const citeKey = (target?.node.attrs as { citeKey?: string } | undefined)?.citeKey;
+        if (!citeKey) return false;
+        const pendingDraft = citationDraftRef.current;
+        if (pendingDraft && pendingDraft.key !== citeKey) {
+          citationDraftRef.current = null;
+          const previous = citations.find(
+            (entry) =>
+              (entry.node.attrs as { citeKey?: string } | undefined)?.citeKey === pendingDraft.key,
+          );
+          if (previous) {
+            const currentCitation = previous.node.attrs.citation as AssistantCitation;
+            const dismissal = resolveAssistantCitationCommentDismissal({
+              reason: "none",
+              draft: pendingDraft.comment,
+              savedComment: currentCitation.comment,
+            });
+            if (dismissal.kind === "commit") {
+              const next = withAssistantCitationComment(currentCitation, dismissal.comment);
+              editor.view.dispatch(
+                editor.state.tr.setNodeMarkup(previous.pos, undefined, {
+                  ...previous.node.attrs,
+                  citation: next,
+                  source: serializeAssistantCitation(next),
+                }),
+              );
+            }
+          }
+        }
+        setOpenCitation({ key: citeKey, sourceAnchor });
+        return true;
       },
       readSnapshot,
       isCaretOnVisualEdge: (edge) => {

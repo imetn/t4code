@@ -315,6 +315,10 @@ import {
   RevertConfirmHost,
 } from "./chat/ChatOverlayHosts";
 import type { AssistantCitationRequest } from "./chat/AssistantCitationSource";
+import {
+  draftAssistantCitationsSignature,
+  parseDraftAssistantCitationsSignature,
+} from "./chat/draftAssistantCitations";
 import { useCitedHistory } from "./chat/citationProcedure";
 import type { MessagesTimelineHistoryControls } from "./chat/MessagesTimeline";
 import { ThreadTimeline } from "./chat/ThreadTimeline";
@@ -452,8 +456,8 @@ type ChatViewProps =
       onDiffPanelOpen?: () => void;
       reserveTitleBarControlInset?: boolean;
       forceExpandedMobileComposer?: boolean;
-      /** A side chat in its parent's right panel; the parent keeps the keyboard and workspace UI. */
-      embedded?: SideChatParentPanel;
+      /** Embedded inside a side chat panel or the task board split view; hides workspace chrome. */
+      embedded?: SideChatParentPanel | "board";
       routeKind: "server";
       draftId?: never;
     }
@@ -482,9 +486,11 @@ export default function ChatView(props: ChatViewProps) {
     onDiffPanelOpen,
     reserveTitleBarControlInset = true,
     forceExpandedMobileComposer = false,
-    embedded: parentPanel,
+    embedded: embeddedMode,
   } = props;
-  const embedded = parentPanel !== undefined;
+  const parentPanel = typeof embeddedMode === "object" ? embeddedMode : undefined;
+  const embedded = embeddedMode !== undefined;
+  const embeddedInSidePane = parentPanel !== undefined;
   const panelHostShell = useQuietThreadShell(parentPanel?.hostRef ?? null);
   const canOperateThread = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
   const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
@@ -678,6 +684,10 @@ export default function ChatView(props: ChatViewProps) {
     const draft = store.getComposerDraft(composerDraftTarget);
     return draft ? composerDraftHasUserContent({ ...draft, prompt: "" }) : false;
   });
+  const draftCitationsSignature = useComposerDraftStore((store) =>
+    draftAssistantCitationsSignature(store.getComposerDraft(composerDraftTarget)?.prompt ?? ""),
+  );
+  const draftCitations = parseDraftAssistantCitationsSignature(draftCitationsSignature);
   const setComposerDraftPrompt = useComposerDraftStore((store) => store.setPrompt);
   const setDraftThreadContext = useComposerDraftStore((store) => store.setDraftThreadContext);
   const composerImagesRef = useRef<ComposerImageAttachment[]>([]);
@@ -701,6 +711,10 @@ export default function ChatView(props: ChatViewProps) {
     return inserted;
   };
   const citeAssistantTextStable = useStableCallback(citeAssistantText);
+  const openDraftCitationCommentStable = useStableCallback(
+    (ordinal: number, sourceAnchor: AssistantCitationSourceAnchor) =>
+      composerRef.current?.openCitationCommentByIndex(ordinal, sourceAnchor) ?? false,
+  );
   const quoteImageToComposerStable = useStableCallback(async (file: File) => {
     const accepted = (await composerRef.current?.quoteImage(file)) ?? false;
     if (!accepted) {
@@ -989,7 +1003,7 @@ export default function ChatView(props: ChatViewProps) {
     if (sideChatParentRef !== null) {
       const title = sideChatParent?.title ?? gt("Parent thread");
       // Embedded, the parent is the view around it.
-      if (embedded) return { title, sideChat: true };
+      if (embeddedInSidePane) return { title, sideChat: true };
       return {
         title,
         sideChat: true,
@@ -2942,7 +2956,11 @@ export default function ChatView(props: ChatViewProps) {
     modelPickerOpen: composerRef.current?.isModelPickerOpen() ?? false,
     composerFocus:
       document.activeElement?.getAttribute("data-testid") === "composer-editor" &&
-      isInSideChatPane(document.activeElement) === embedded,
+      (embeddedInSidePane
+        ? isInSideChatPane(document.activeElement)
+        : embedded
+          ? document.activeElement.closest("[data-board-thread-pane]") !== null
+          : !isInSideChatPane(document.activeElement)),
     draftThreadRoute: routeKind === "draft",
     turnRunning: phase === "running" || phase === "connecting",
     // A queued-message edit or a question's answer owns the composer even when its text is empty.
@@ -3064,9 +3082,10 @@ export default function ChatView(props: ChatViewProps) {
       if (activeThread) setThreadError(activeThread.id, message);
     },
   });
-  // An embedded thread's commands run in its host's terminal, which is the host's checkout.
+  // An embedded side-chat thread's commands run in its host's terminal, which is the host's checkout.
   const runsOutsideHostCheckout =
-    embedded && (activeThread?.worktreePath ?? null) !== (panelHostShell?.worktreePath ?? null);
+    parentPanel !== undefined &&
+    (activeThread?.worktreePath ?? null) !== (panelHostShell?.worktreePath ?? null);
   // A maximized panel covers the terminal drawer the command runs in.
   const runSideChatShellCommandStable = useStableCallback((command: string) => {
     if (activeThreadRef) useRightPanelStore.getState().setMaximized(activeThreadRef, false);
@@ -3703,9 +3722,13 @@ export default function ChatView(props: ChatViewProps) {
                   detailLoading={threadDetailLoading}
                   citationRequest={citationRequest}
                   citationHistory={citationHistory}
+                  draftCitations={draftCitations}
+                  onOpenDraftCitationComment={openDraftCitationCommentStable}
                   onCiteAssistantText={citeAssistantTextStable}
                   onReplyToResponse={replyToResponseStable}
-                  {...(activeProject && !runsOutsideHostCheckout
+                  {...(activeProject &&
+                  (!embedded || parentPanel !== undefined) &&
+                  !runsOutsideHostCheckout
                     ? { onRunShellCommand: parentPanel?.runShellCommand ?? runShellCommandStable }
                     : {})}
                   isWorking={isWorking}

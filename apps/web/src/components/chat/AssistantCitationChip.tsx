@@ -181,9 +181,11 @@ export function ResponseReplyCard({
 /** The citation chip in the composer, with its comment editor. */
 export function AssistantCitationChip({
   citation,
+  index,
   commentEditor,
 }: {
   citation: AssistantCitation;
+  index?: number | undefined;
   commentEditor?: {
     open: boolean;
     sourceAnchor?: AssistantCitationSourceAnchor | undefined;
@@ -258,7 +260,17 @@ export function AssistantCitationChip({
       className="inline-flex min-w-0 items-center gap-[0.2em] self-baseline text-inherit no-underline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-current rounded-sm"
       aria-label={gt("View cited assistant text: {label}", { label })}
     >
-      <QuoteIcon aria-hidden="true" />
+      {index !== undefined ? (
+        <span
+          data-citation-chip-index={index}
+          aria-hidden="true"
+          className="inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-primary px-1 text-2xs font-semibold leading-none text-primary-foreground tabular-nums"
+        >
+          {index}
+        </span>
+      ) : (
+        <QuoteIcon aria-hidden="true" />
+      )}
       <ContextChipLabel className="max-w-[16em]" dir={textDirection(label)}>
         {label}
       </ContextChipLabel>
