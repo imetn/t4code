@@ -1,4 +1,21 @@
+import {
+  DndContext,
+  type DragEndEvent,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import { restrictToParentElement, restrictToVerticalAxis } from "@dnd-kit/modifiers";
+import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { SettingsGroup } from "./SettingsGroup";
+import {
+  moveProviderInstance,
+  orderProviderInstances,
+  ProviderInstanceOrder,
+} from "./providerInstanceOrder.logic";
+import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import {
   AuthSettingsWriteScope,
@@ -741,6 +758,7 @@ export function EnvironmentProviderSettings({
     readonly driver: ProviderDriverKind;
     readonly isDefault: boolean;
     readonly isDirty?: boolean;
+    readonly enabled: boolean;
   }
 
   const instancesByDriver = new Map<
@@ -760,7 +778,7 @@ export function EnvironmentProviderSettings({
     ),
   );
 
-  const rows: InstanceRow[] = [];
+  const unorderedRows: Omit<InstanceRow, "enabled">[] = [];
   const visibleDriverKinds = new Set<ProviderDriverKind>(
     visibleProviderSettings.map((providerSettings) => providerSettings.provider),
   );
@@ -779,7 +797,7 @@ export function EnvironmentProviderSettings({
         resolveProviderInstanceEnabled(explicitInstance ?? { driver }) ||
         defaultInstanceId === targetInstanceId)
     ) {
-      rows.push({
+      unorderedRows.push({
         instanceId: defaultInstanceId,
         explicitInstance,
         driver,
@@ -789,7 +807,7 @@ export function EnvironmentProviderSettings({
     }
     for (const [id, instance] of instancesByDriver.get(providerSettings.provider) ?? []) {
       if (id === defaultInstanceId) continue;
-      rows.push({
+      unorderedRows.push({
         instanceId: id,
         explicitInstance: instance,
         driver: instance.driver,
@@ -800,7 +818,7 @@ export function EnvironmentProviderSettings({
   for (const [driver, list] of instancesByDriver) {
     if (visibleDriverKinds.has(driver)) continue;
     for (const [id, instance] of list) {
-      rows.push({
+      unorderedRows.push({
         instanceId: id,
         explicitInstance: instance,
         driver: instance.driver,
@@ -808,6 +826,40 @@ export function EnvironmentProviderSettings({
       });
     }
   }
+
+  const [savedOrder, setSavedOrder] = useLocalStorage(
+    `t3code:provider-instance-order:${environmentId}`,
+    [],
+    ProviderInstanceOrder,
+  );
+  const rows = orderProviderInstances(
+    unorderedRows.map((row) => ({
+      ...row,
+      enabled: resolveProviderInstanceEnabled(row.explicitInstance ?? { driver: row.driver }),
+    })),
+    savedOrder,
+  );
+  const reorderable = !readOnly && rows.length > 1;
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
+  const moveRow = (from: ProviderInstanceId, to: ProviderInstanceId) => {
+    const next = moveProviderInstance(rows, from, to);
+    if (next !== undefined) setSavedOrder(next);
+  };
+  const [draggingEnabled, setDraggingEnabled] = useState<boolean>();
+  const onDragEnd = ({ active, over }: DragEndEvent) => {
+    setDraggingEnabled(undefined);
+    if (over) moveRow(active.id as ProviderInstanceId, over.id as ProviderInstanceId);
+  };
+  const announcePosition = (instanceId: unknown, overId: unknown) => {
+    const row = rows.find((candidate) => candidate.instanceId === instanceId);
+    const index = rows.findIndex((candidate) => candidate.instanceId === overId);
+    if (!row || index === -1) return undefined;
+    return gt("{title}, position {position} of {count}.", {
+      title: providerInstanceName(row.explicitInstance ?? { driver: row.driver }),
+      position: index + 1,
+      count: rows.length,
+    });
+  };
 
   const targetInstanceMissing =
     targetInstanceId !== undefined &&
@@ -1111,7 +1163,44 @@ export function EnvironmentProviderSettings({
               className="@min-[48rem]/providers:min-h-0 @min-[48rem]/providers:flex-1"
             >
               <div className="divide-y divide-border/50">
-                {rows.map((row) => renderProviderInstance(row, "list"))}
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  modifiers={[restrictToVerticalAxis, restrictToParentElement]}
+                  onDragStart={({ active }) =>
+                    setDraggingEnabled(rows.find((row) => row.instanceId === active.id)?.enabled)
+                  }
+                  onDragEnd={onDragEnd}
+                  onDragCancel={() => setDraggingEnabled(undefined)}
+                  accessibility={{
+                    announcements: {
+                      onDragStart: ({ active }) => announcePosition(active.id, active.id),
+                      onDragOver: ({ active, over }) => announcePosition(active.id, over?.id),
+                      onDragEnd: ({ active, over }) => announcePosition(active.id, over?.id),
+                      onDragCancel: () => gt("Reorder canceled."),
+                    },
+                  }}
+                >
+                  <SortableContext
+                    items={rows.map((row) => row.instanceId)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    {rows.map((row, index) => (
+                      <SortableProviderRow
+                        key={row.instanceId}
+                        instanceId={row.instanceId}
+                        disabled={!reorderable}
+                        droppable={draggingEnabled === undefined || draggingEnabled === row.enabled}
+                        onStep={(step) => {
+                          const target = rows[index + step];
+                          if (target) moveRow(row.instanceId, target.instanceId);
+                        }}
+                      >
+                        {renderProviderInstance(row, "list")}
+                      </SortableProviderRow>
+                    ))}
+                  </SortableContext>
+                </DndContext>
                 {canAddProvider ? (
                   <button
                     type="button"
@@ -1249,6 +1338,43 @@ export function EnvironmentProviderSettings({
         />
       ) : null}
     </>
+  );
+}
+
+/** Pointer drags anywhere on the row; Alt+Arrow moves it from the keyboard. */
+function SortableProviderRow({
+  instanceId,
+  disabled,
+  droppable,
+  onStep,
+  children,
+}: {
+  readonly instanceId: ProviderInstanceId;
+  readonly disabled: boolean;
+  readonly droppable: boolean;
+  readonly onStep: (step: -1 | 1) => void;
+  readonly children: ReactNode;
+}) {
+  const { setNodeRef, listeners, transform, transition, isDragging } = useSortable({
+    id: instanceId,
+    disabled: { draggable: disabled, droppable: disabled || !droppable },
+  });
+  return (
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      style={{ transform: CSS.Translate.toString(transform), transition }}
+      // The drop animation runs after isDragging clears, so every row keeps an opaque background.
+      className={isDragging ? "relative z-10 bg-card shadow-md" : "relative bg-card"}
+      onKeyDown={(event) => {
+        if (disabled || !event.altKey) return;
+        if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+        event.preventDefault();
+        onStep(event.key === "ArrowUp" ? -1 : 1);
+      }}
+    >
+      {children}
+    </div>
   );
 }
 
