@@ -649,6 +649,29 @@ const makeProviderAdapter = Effect.fnUntraced(function* (
   });
 });
 
+function layerRebuildableRegistry(
+  adapter: ProviderAdapter.ProviderAdapterV2["Service"],
+  generation: Ref.Ref<number>,
+) {
+  const builds = new Map<number, ProviderAdapter.ProviderAdapterV2["Service"]>();
+  return Layer.succeed(
+    ProviderAdapterRegistry.ProviderAdapterRegistryV2,
+    ProviderAdapterRegistry.ProviderAdapterRegistryV2.of({
+      get: () =>
+        Ref.get(generation).pipe(
+          Effect.map((current) => {
+            const existing = builds.get(current);
+            if (existing !== undefined) return existing;
+            const build = { ...adapter };
+            builds.set(current, build);
+            return build;
+          }),
+        ),
+      list: () => Effect.succeed([adapter.instanceId]),
+    }),
+  );
+}
+
 function layerTest(input: {
   readonly state: Ref.Ref<TestProviderRuntimeState>;
   readonly idleTimeoutMs?: number;
@@ -689,6 +712,8 @@ function layerTest(input: {
   readonly serverSettingsLayer?: ReturnType<typeof ServerSettings.layerTest>;
   readonly projectServiceLayer?: Layer.Layer<ProjectService.ProjectService>;
   readonly installationGateLayer?: Layer.Layer<ProviderInstallationGate.ProviderInstallationGate>;
+  /** Bumping it simulates a settings change that rebuilds the provider instance. */
+  readonly instanceGeneration?: Ref.Ref<number>;
 }) {
   const layerConfiguredEventSink =
     input.flakyReleaseWrites !== undefined
@@ -741,7 +766,13 @@ function layerTest(input: {
       ...(input.eventStreamsEnded === undefined
         ? {}
         : { eventStreamsEnded: input.eventStreamsEnded }),
-    }).pipe(Effect.map(ProviderAdapterRegistry.layerSingle)),
+    }).pipe(
+      Effect.map((adapter) =>
+        input.instanceGeneration === undefined
+          ? ProviderAdapterRegistry.layerSingle(adapter)
+          : layerRebuildableRegistry(adapter, input.instanceGeneration),
+      ),
+    ),
   );
   const layerConfiguredMcpRegistry =
     input.pauseResolve === undefined
@@ -1246,6 +1277,45 @@ it.effect("ProviderSessionManagerV2 opens provider sessions inside the installat
       ),
     );
   }),
+);
+
+it.effect(
+  "ProviderSessionManagerV2 reopens an idle session after its provider instance is rebuilt",
+  () =>
+    Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      const instanceGeneration = yield* Ref.make(0);
+      const effect = Effect.gen(function* () {
+        const eventSink = yield* EventSink.EventSinkV2;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+        const now = yield* DateTime.now;
+        const threadId = ThreadId.make("thread-provider-session-manager-instance-rebuilt");
+        const providerSessionId = yield* idAllocator.allocate.providerSession({
+          providerInstanceId: modelSelection.instanceId,
+          threadId,
+        });
+        yield* eventSink.write({
+          events: [yield* makeThreadCreatedEvent({ idAllocator, threadId, now })],
+        });
+        const open = manager.open({ threadId, providerSessionId, modelSelection, runtimePolicy });
+
+        const first = yield* open;
+        assert.strictEqual(yield* open, first);
+
+        // Settings changes close the old instance's scope, which can stop the session's process.
+        yield* Ref.set(instanceGeneration, 1);
+        const reopened = yield* open;
+
+        assert.notStrictEqual(reopened, first);
+        assert.equal((yield* Ref.get(state)).openCount, 2);
+        assert.strictEqual(yield* open, reopened);
+      });
+
+      yield* effect.pipe(
+        Effect.provide(layerTest({ state, idleTimeoutMs: 60_000, instanceGeneration })),
+      );
+    }),
 );
 
 it.effect("ProviderSessionManagerV2 opens a duplicate session only once", () =>

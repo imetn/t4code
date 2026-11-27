@@ -14,6 +14,7 @@ import * as ModelManifest from "../provider/ModelManifest.ts";
 import { brokenRuntimeError } from "../provider/providerCompatibility.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import { ProviderAdapterDriverCreateError } from "@t3tools/provider-core/server/adapterDriver";
+import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 
 const isProviderSetupError = Schema.is(ProviderSetupError);
@@ -71,12 +72,16 @@ export const layerFromProviderInstanceRegistry: Layer.Layer<
   Effect.gen(function* () {
     const instances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
     const manifest = yield* ModelManifest.ModelManifest;
+    // One adapter per instance build, so sessions can tell when a settings change replaced theirs.
+    const adapters = new WeakMap<ProviderInstance, ProviderAdapter.ProviderAdapterV2["Service"]>();
     return ProviderAdapterRegistryV2.of({
       get: Effect.fn("ProviderAdapterRegistryV2.get")(function (instanceId) {
         return instances.getInstance(instanceId).pipe(
           Effect.flatMap((instance) => {
             if (instance === undefined)
               return new ProviderAdapterRegistryLookupError({ instanceId });
+            const cached = adapters.get(instance);
+            if (cached !== undefined) return Effect.succeed(cached);
             const adapter = instance.orchestrationAdapter;
             const auth = instance.auth;
             const refuseBroken = Effect.fnUntraced(function* (snapshot: ServerProvider) {
@@ -93,7 +98,7 @@ export const layerFromProviderInstanceRegistry: Layer.Layer<
                   })
                 : undefined;
             });
-            return Effect.succeed({
+            const wrapped: ProviderAdapter.ProviderAdapterV2["Service"] = {
               ...adapter,
               openSession: (input) => {
                 const open = Effect.gen(function* () {
@@ -146,7 +151,9 @@ export const layerFromProviderInstanceRegistry: Layer.Layer<
                   ),
                 );
               },
-            } satisfies ProviderAdapter.ProviderAdapterV2["Service"]);
+            };
+            adapters.set(instance, wrapped);
+            return Effect.succeed(wrapped);
           }),
         );
       }),

@@ -89,6 +89,28 @@ it.effect("routes two configured instances of the same driver independently", ()
   }).pipe(Effect.provide(layerTest)),
 );
 
+it.effect("keeps one adapter per instance build and a new one after a rebuild", () =>
+  Effect.gen(function* () {
+    let current = makeInstance(personalId, personalAdapter);
+    const registry = yield* Effect.service(ProviderAdapterRegistry.ProviderAdapterRegistryV2).pipe(
+      Effect.provide(
+        layerRegistry.pipe(
+          Layer.provide(
+            Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({
+              getInstance: () => Effect.succeed(current),
+            }),
+          ),
+        ),
+      ),
+    );
+    const first = yield* registry.get(personalId);
+    assert.strictEqual(yield* registry.get(personalId), first);
+
+    current = makeInstance(personalId, personalAdapter);
+    assert.notStrictEqual(yield* registry.get(personalId), first);
+  }),
+);
+
 const openOn = Effect.fn("openOn")(function* (instance: ProviderInstance) {
   const registry = yield* Effect.service(ProviderAdapterRegistry.ProviderAdapterRegistryV2).pipe(
     Effect.provide(

@@ -333,6 +333,8 @@ interface LiveSessionEntry {
   /** Scope revocation to recorded credential ids so superseded sessions cannot revoke replacements opened before detach. */
   readonly mcpCredentialIdByThread: ReadonlyMap<ThreadId, string>;
   readonly supportsMultipleProviderThreads: boolean;
+  /** The instance build that opened the session; a settings change replaces it. */
+  readonly adapter: ProviderAdapter.ProviderAdapterV2["Service"];
   readonly runtime: ProviderAdapter.ProviderAdapterV2SessionRuntime;
   readonly exposedRuntime: ProviderAdapter.ProviderAdapterV2SessionRuntime;
   readonly eventSubscribers: Ref.Ref<
@@ -2393,66 +2395,78 @@ export const layerWithOptions = (
         );
       });
 
-      /** An exclusive runtime configures MCP at open, so it reopens once nothing would be lost. */
-      const releaseForLinkedEnvironments = Effect.fn(
-        "ProviderSessionManager.releaseForLinkedEnvironments",
-      )(function* (entry: LiveSessionEntry) {
+      const staleSessionDetail = Effect.fnUntraced(function* (entry: LiveSessionEntry) {
+        // Replacing an instance closes its scope, which can stop this session's process.
+        const current = yield* registry.get(entry.runtime.instanceId).pipe(Effect.option);
+        if (Option.isNone(current) || current.value !== entry.adapter) {
+          return "Provider settings changed; reopening the provider session.";
+        }
+        // An exclusive runtime configures MCP at open.
         if (
           entry.supportsMultipleProviderThreads ||
           entry.runtime.canResumeAfterRestart === false ||
-          entry.openedWithLinkedEnvironments === undefined ||
-          entry.busyTurns.size > 0
+          entry.openedWithLinkedEnvironments === undefined
         ) {
-          return;
+          return undefined;
         }
         const linkedEnvironments = yield* readLinkedEnvironments;
         if (
           typeof linkedEnvironments !== "boolean" ||
           linkedEnvironments === entry.openedWithLinkedEnvironments
         ) {
-          return;
+          return undefined;
         }
-        const providerSessionId = entry.runtime.providerSessionId;
-        // Any activity during these reads bumps the generation and keeps the runtime.
-        const generation = entry.idleGeneration;
-        const hasPendingWork =
-          entry.runtime.hasPendingBackgroundWork === undefined
-            ? false
-            : yield* entry.runtime.hasPendingBackgroundWork.pipe(
-                Effect.catchCause(() => Effect.succeed(true)),
-              );
-        if (hasPendingWork) return;
-        // Checked under the request permit so a runless request mid-persist is not cancelled.
-        const hasUnfinishedRecords = Effect.forEach(entry.attachedThreadIds, (threadId) =>
-          projectionStore.getThreadRecords(threadId, ["runtimeRequests", "providerThreads"], {
-            runtimeRequestStatuses: ["pending"],
-          }),
-        ).pipe(
-          Effect.map((projections) =>
-            projections.some(
-              (projection) =>
-                projection.runtimeRequests.some(
-                  (request) =>
-                    request.responseCapability.type === "live" &&
-                    request.responseCapability.providerSessionId === providerSessionId,
-                ) ||
-                projection.providerThreads.some(
-                  (providerThread) =>
-                    providerThread.providerSessionId === providerSessionId &&
-                    (providerThread.pendingBackgroundTasks ?? []).length > 0,
-                ),
-            ),
-          ),
-          Effect.orElseSucceed(() => true),
-        );
-        yield* releaseEntry({
-          providerSessionId,
-          reason: "idle_timeout",
-          detail: "Linked environments changed; reopening the provider session.",
-          onlyIfIdleGeneration: generation,
-          keepIf: hasUnfinishedRecords,
-        }).pipe(logReleaseFailure(providerSessionId));
+        return "Linked environments changed; reopening the provider session.";
       });
+
+      /** Reopens a session whose instance or MCP setup changed, once nothing would be lost. */
+      const releaseStaleSession = Effect.fn("ProviderSessionManager.releaseStaleSession")(
+        function* (entry: LiveSessionEntry) {
+          if (entry.busyTurns.size > 0) return;
+          const detail = yield* staleSessionDetail(entry);
+          if (detail === undefined) return;
+          const providerSessionId = entry.runtime.providerSessionId;
+          // Any activity during these reads bumps the generation and keeps the runtime.
+          const generation = entry.idleGeneration;
+          const hasPendingWork =
+            entry.runtime.hasPendingBackgroundWork === undefined
+              ? false
+              : yield* entry.runtime.hasPendingBackgroundWork.pipe(
+                  Effect.catchCause(() => Effect.succeed(true)),
+                );
+          if (hasPendingWork) return;
+          // Checked under the request permit so a runless request mid-persist is not cancelled.
+          const hasUnfinishedRecords = Effect.forEach(entry.attachedThreadIds, (threadId) =>
+            projectionStore.getThreadRecords(threadId, ["runtimeRequests", "providerThreads"], {
+              runtimeRequestStatuses: ["pending"],
+            }),
+          ).pipe(
+            Effect.map((projections) =>
+              projections.some(
+                (projection) =>
+                  projection.runtimeRequests.some(
+                    (request) =>
+                      request.responseCapability.type === "live" &&
+                      request.responseCapability.providerSessionId === providerSessionId,
+                  ) ||
+                  projection.providerThreads.some(
+                    (providerThread) =>
+                      providerThread.providerSessionId === providerSessionId &&
+                      (providerThread.pendingBackgroundTasks ?? []).length > 0,
+                  ),
+              ),
+            ),
+            Effect.orElseSucceed(() => true),
+          );
+          yield* releaseEntry({
+            providerSessionId,
+            reason: "idle_timeout",
+            detail,
+            onlyIfIdleGeneration: generation,
+            keepIf: hasUnfinishedRecords,
+          }).pipe(logReleaseFailure(providerSessionId));
+        },
+      );
 
       const observeActivity = (
         providerSessionId: ProviderSessionId,
@@ -3256,7 +3270,7 @@ export const layerWithOptions = (
               }
               const key = sessionKey(input.providerSessionId);
               const live = (yield* Ref.get(sessions)).get(key);
-              if (live !== undefined) yield* releaseForLinkedEnvironments(live);
+              if (live !== undefined) yield* releaseStaleSession(live);
               const existing = (yield* Ref.get(sessions)).get(key);
               if (existing !== undefined) {
                 const attached = existing.attachedThreadIds.has(input.threadId);
@@ -3375,6 +3389,7 @@ export const layerWithOptions = (
                 supportsMultipleProviderThreads:
                   runtime.providerSession.capabilities.sessions
                     .supportsMultipleProviderThreadsPerSession,
+                adapter,
                 runtime,
                 exposedRuntime,
                 eventSubscribers,
