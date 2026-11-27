@@ -401,6 +401,20 @@ describe("readAntigravityUsage", () => {
             20,
             new Uint8Array(protoBytes(9, [...protoNumber(1, 1537), ...protoNumber(2, 30)])),
           ]);
+          for (const [offset, id] of [1525, 1527, 1535].entries()) {
+            yield* db.run("INSERT INTO steps VALUES (?, ?)", [
+              21 + offset,
+              new Uint8Array(protoBytes(9, [...protoNumber(1, id), ...protoNumber(2, 30)])),
+            ]);
+          }
+          yield* db.run("INSERT INTO gen_metadata VALUES (?, ?)", [
+            24,
+            new Uint8Array(protoBytes(1, protoText(19, "Gemini 4 Neon (XHigh)"))),
+          ]);
+          yield* db.run("INSERT INTO steps VALUES (?, ?)", [
+            24,
+            new Uint8Array(protoBytes(9, protoNumber(2, 30))),
+          ]);
         }),
       );
       const result = yield* readAntigravityUsage(dir, 0);
@@ -417,6 +431,10 @@ describe("readAntigravityUsage", () => {
           ["gemini-4-hydrogen-orchestrator", "gemini-4-hydrogen"],
           ["gemini-pro-orchestrator-g1-pro", "gemini-4-argon"],
           ["gemini-pro-orchestrator-neon", "gemini-4-neon"],
+          ["gemini-4-hydrogen", undefined],
+          ["gemini-4-hydrogen", undefined],
+          ["gemini-4-neon", undefined],
+          ["gemini-4-neon-xhigh", "gemini-4-neon"],
         ],
       );
     }).pipe(Effect.provide(NodeServices.layer)),

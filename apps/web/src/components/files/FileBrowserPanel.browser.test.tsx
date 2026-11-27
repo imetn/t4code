@@ -46,6 +46,8 @@ vi.mock("~/state/queries", () => ({ useProjectPathSearch: () => pathSearch }));
 vi.mock("~/fileContextMenu", () => ({
   useFileContextMenu: () => ({ buildItems: () => [], activate: () => Promise.resolve() }),
 }));
+const downloadFile = vi.fn();
+vi.mock("./useFileDownload", () => ({ useFileDownload: () => downloadFile }));
 vi.mock("~/hooks/useWorkspaceMutationRefresh", () => ({ useWorkspaceMutationRefresh: () => {} }));
 
 function findTreeRow(path: string): HTMLElement | null {
@@ -118,15 +120,39 @@ describe("FileBrowserPanel", () => {
       }),
     );
     const action = page.getByRole("menuitem", { name: "Copy mention", exact: true });
+    const download = page.getByRole("menuitem", { name: "Download", exact: true });
     await expect.element(action).toBeVisible();
     await userEvent.click(action);
     await vi.waitFor(() => expect(clipboard).toHaveBeenCalledWith("[README.md](README.md)"));
+
+    findTreeRow("README.md")!.dispatchEvent(
+      new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        button: 2,
+      }),
+    );
+    await userEvent.click(download);
+    expect(downloadFile).toHaveBeenCalledWith("/repo", "README.md");
+
+    findTreeRow("src")!.dispatchEvent(
+      new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        button: 2,
+      }),
+    );
+    await expect.element(action).toBeVisible();
+    await expect.element(download).not.toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
 
     const row = findTreeRow("README.md")!;
     await userEvent.keyboard("{Tab}");
     row.focus();
     await userEvent.keyboard("{Shift>}{F10}{/Shift}");
-    await expect.element(action).toHaveFocus();
+    await expect.element(download).toHaveFocus();
     await userEvent.keyboard("{Escape}");
     await vi.waitFor(() => expect((row.getRootNode() as ShadowRoot).activeElement).toBe(row));
   });

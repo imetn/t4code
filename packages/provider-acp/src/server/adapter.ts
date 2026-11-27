@@ -3411,7 +3411,9 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                 yield* publishNativeChildStatus(child, "failed");
               }
               agentRequests.clear();
+              yield* Ref.update(continuationGeneration, (value) => value + 1);
               yield* Ref.set(wakeBuffer, []);
+              yield* Ref.set(wakeReports, noWakeReports);
               yield* Ref.set(continuationRequested, false);
               yield* cancelPendingRuntimeRequests();
               const context = yield* Ref.get(activeTurn);
@@ -6209,32 +6211,49 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             });
           });
 
-        const offerContinuationRun = Effect.fnUntraced(function* (_sessionId: string) {
+        const offerContinuationRun = Effect.fnUntraced(function* (
+          _sessionId: string,
+        ): Effect.fn.Return<boolean> {
           if (continuationRequests === undefined) {
             return false;
           }
           const pending = yield* continuationPermit.withPermit(
             Effect.gen(function* () {
-              if (yield* Ref.get(continuationClosed)) return Option.none();
-              if (yield* Ref.get(stoppedRunQuarantine)) return Option.none();
-              if (yield* Ref.get(continuationRequested)) return Option.none();
+              if (yield* Ref.get(continuationClosed)) return { status: "skip" as const };
+              if (yield* Ref.get(stoppedRunQuarantine)) return { status: "skip" as const };
+              if (yield* Ref.get(continuationRequested)) {
+                return {
+                  status: "already-requested" as const,
+                  wakeBufferLength: (yield* Ref.get(wakeBuffer)).length,
+                };
+              }
               const route = yield* Ref.get(lastTurnRoute);
-              if (route === null) return Option.none();
+              if (route === null) return { status: "skip" as const };
               yield* Ref.set(continuationRequested, true);
               const generation = yield* Ref.updateAndGet(
                 continuationGeneration,
                 (value) => value + 1,
               );
+              const offeredWakeCount = (yield* Ref.get(wakeBuffer)).length;
               const reports = yield* Ref.modify(wakeReports, ({ reports }) => [
                 reports,
                 { reports, offered: new Set(reports.keys()) },
               ]);
-              return Option.some({ route, generation, reports });
+              return { status: "offer" as const, route, generation, offeredWakeCount, reports };
             }),
           );
-          if (Option.isNone(pending)) return false;
+          if (pending.status !== "offer") {
+            if (pending.status === "already-requested" && pending.wakeBufferLength > 0) {
+              yield* Effect.logDebug("orchestration-v2.acp-wake-offer-skipped-already-requested", {
+                driver,
+                providerSessionId: input.providerSessionId,
+                wakeBufferLength: pending.wakeBufferLength,
+              });
+            }
+            return false;
+          }
           yield* cancelPromptSuggestion();
-          const { route, generation, reports } = pending.value;
+          const { route, generation, offeredWakeCount, reports } = pending;
           const notification = backgroundWorkNotification([...reports.values()]);
           yield* Effect.logInfo("orchestration-v2.acp-wake-turn-detected", {
             driver,
@@ -6242,20 +6261,56 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             threadId: route.threadId,
             providerThreadId: route.providerThreadId,
           });
+          const clearIfCurrent = () =>
+            continuationPermit.withPermit(
+              Effect.gen(function* () {
+                if ((yield* Ref.get(continuationGeneration)) === generation) {
+                  yield* Ref.set(continuationRequested, false);
+                }
+              }),
+            );
           yield* continuationRequests.offer({
             threadId: route.threadId,
             providerThreadId: route.providerThreadId,
             driver,
             detail: null,
             ...(notification === null ? {} : { notification }),
-            clearIfCurrent: () =>
-              continuationPermit.withPermit(
-                Effect.gen(function* () {
-                  if ((yield* Ref.get(continuationGeneration)) === generation) {
+            clearIfCurrent,
+            // Release the wake latch and retire the cancelled slice if a queued continuation ends before starting.
+            onRunEndedWithoutStarting: Effect.fn("AcpAdapterV2.onContinuationEndedWithoutStarting")(
+              function* () {
+                const shouldReoffer = yield* continuationPermit.withPermit(
+                  Effect.gen(function* () {
+                    if ((yield* Ref.get(continuationGeneration)) !== generation) return false;
                     yield* Ref.set(continuationRequested, false);
+                    const remaining = yield* Ref.modify(wakeBuffer, (current) => {
+                      const rest = current.slice(offeredWakeCount);
+                      return [rest, rest] as const;
+                    });
+                    yield* Ref.update(wakeReports, ({ reports, offered }) => ({
+                      reports: new Map([...reports].filter(([key]) => !offered.has(key))),
+                      offered: noWakeReports.offered,
+                    }));
+                    if (yield* Ref.get(continuationClosed)) return false;
+                    if (yield* Ref.get(stoppedRunQuarantine)) return false;
+                    if ((yield* Ref.get(activeTurn)) !== null) return false;
+                    if (remaining.length === 0) return false;
+                    if (followsAgentWorkState) return true;
+                    return (
+                      postSettleContinuationEnabled &&
+                      (yield* Ref.get(runningBackgroundTaskIds)).size === 0 &&
+                      remaining.some((item) => acpPostSettleContinuationOfferEvidence(item, flavor))
+                    );
+                  }),
+                );
+                if (shouldReoffer) {
+                  const sessionId = yield* Ref.get(activeSessionId);
+                  if (sessionId !== null) {
+                    yield* offerContinuationRun(sessionId);
                   }
-                }),
-              ),
+                }
+              },
+            ),
             dispatchIfCurrent: (effect) =>
               continuationPermit.withPermit(
                 Effect.gen(function* () {
@@ -6628,7 +6683,14 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                 if (yield* Ref.get(stoppedRunQuarantine)) return false;
                 if ((yield* Ref.get(activeTurn)) !== null) return null;
                 const sessionId = yield* Ref.get(activeSessionId);
-                if (sessionId !== null) yield* offerContinuationRun(sessionId);
+                if (sessionId !== null) {
+                  const offered = yield* offerContinuationRun(sessionId);
+                  yield* Effect.logDebug("orchestration-v2.acp-request-awaiting-turn", {
+                    driver,
+                    providerSessionId: input.providerSessionId,
+                    offeredContinuation: offered,
+                  });
+                }
                 return turnAttached;
               }),
             );

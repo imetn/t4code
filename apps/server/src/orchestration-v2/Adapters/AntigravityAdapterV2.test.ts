@@ -4049,4 +4049,93 @@ describe("AntigravityAdapterV2 prompt suggestions", () => {
         );
       }).pipe(Effect.provide(layerSession)),
   );
+
+  it.effect(
+    "releases the wake latch when a queued continuation ends without starting so later wakes still offer",
+    () =>
+      Effect.gen(function* () {
+        const offers: Array<ProviderContinuationRequests.ProviderContinuationRequest> = [];
+        const { session, until, makeTurn, emitSessionUpdate } = yield* makePromptSuggestionSession({
+          continuationRequests: {
+            offer: (request) =>
+              Effect.sync(() => {
+                offers.push(request);
+              }),
+          },
+        });
+
+        yield* session.startTurn(makeTurn(1, { text: "First turn" }));
+        yield* until((event) => event.type === "turn.terminal");
+
+        yield* emitSessionUpdate({
+          sessionId: "mock-suggestion-session",
+          update: {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: "First background wake" },
+          },
+        });
+        assert.equal(offers.length, 1);
+        assert.isDefined(offers[0]?.onRunEndedWithoutStarting);
+
+        yield* offers[0]!.onRunEndedWithoutStarting!();
+
+        yield* emitSessionUpdate({
+          sessionId: "mock-suggestion-session",
+          update: {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: "Second background wake after cancelled offer" },
+          },
+        });
+        assert.equal(offers.length, 2);
+      }).pipe(Effect.provide(layerSession)),
+  );
+
+  it.effect(
+    "re-offers immediately when new wake output arrived before an unstarted continuation ended",
+    () =>
+      Effect.gen(function* () {
+        const offers: Array<ProviderContinuationRequests.ProviderContinuationRequest> = [];
+        const { session, until, makeTurn, emitSessionUpdate } = yield* makePromptSuggestionSession({
+          continuationRequests: {
+            offer: (request) =>
+              Effect.sync(() => {
+                offers.push(request);
+              }),
+          },
+        });
+
+        yield* session.startTurn(makeTurn(1, { text: "First turn" }));
+        yield* until((event) => event.type === "turn.terminal");
+
+        yield* emitSessionUpdate({
+          sessionId: "mock-suggestion-session",
+          update: {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: "Wake 1" },
+          },
+        });
+        assert.equal(offers.length, 1);
+
+        // New wake frames arrive while offer 1 is queued but not started.
+        yield* emitSessionUpdate({
+          sessionId: "mock-suggestion-session",
+          update: {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: "Wake 2 buffered while latched" },
+          },
+        });
+        assert.equal(offers.length, 1);
+
+        yield* offers[0]!.onRunEndedWithoutStarting!();
+        assert.equal(offers.length, 2);
+
+        // Starting the re-offered continuation replays only the fresh wake, not the cancelled one.
+        yield* session.startTurn(makeTurn(2, { continuation: true }));
+        yield* TestClock.adjust("3 minutes");
+        const continuationEvents = yield* until((event) => event.type === "turn.terminal");
+        const replayed = JSON.stringify(continuationEvents);
+        assert.include(replayed, "Wake 2 buffered while latched");
+        assert.notInclude(replayed, "Wake 1");
+      }).pipe(Effect.provide(layerSession)),
+  );
 });

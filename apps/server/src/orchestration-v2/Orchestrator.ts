@@ -3738,6 +3738,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           : { scheduledTaskId: message.scheduledTaskId }),
         ...(message.senderThreadId === undefined ? {} : { senderThreadId: message.senderThreadId }),
         ...(message.linkedSender === undefined ? {} : { linkedSender: message.linkedSender }),
+        ...(message.sentFrom === undefined ? {} : { sentFrom: message.sentFrom }),
       }).pipe(
         Effect.catchCause((cause) =>
           Effect.logWarning("Failed to requeue an unread steer", {
@@ -6595,6 +6596,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     readonly scheduledTaskId?: OrchestrationV2ConversationMessage["scheduledTaskId"];
     readonly senderThreadId?: OrchestrationV2ConversationMessage["senderThreadId"];
     readonly linkedSender?: OrchestrationV2ConversationMessage["linkedSender"];
+    readonly sentFrom?: OrchestrationV2ConversationMessage["sentFrom"];
     readonly idleCompaction?: OrchestrationV2ConversationMessage["idleCompaction"];
     readonly delegatedCompletion?: OrchestrationV2ConversationMessage["delegatedCompletion"];
     readonly notification?: OrchestrationV2ConversationMessage["notification"];
@@ -6750,6 +6752,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             : { scheduledTaskId: input.scheduledTaskId }),
           ...(input.senderThreadId === undefined ? {} : { senderThreadId: input.senderThreadId }),
           ...(input.linkedSender === undefined ? {} : { linkedSender: input.linkedSender }),
+          ...(input.sentFrom === undefined ? {} : { sentFrom: input.sentFrom }),
           ...(input.idleCompaction === undefined ? {} : { idleCompaction: input.idleCompaction }),
           id: input.messageId,
           threadId: input.command.threadId,
@@ -8205,6 +8208,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           : { scheduledTaskId: command.scheduledTaskId }),
         ...(command.senderThreadId === undefined ? {} : { senderThreadId: command.senderThreadId }),
         ...(command.linkedSender === undefined ? {} : { linkedSender: command.linkedSender }),
+        ...(command.sentFrom === undefined ? {} : { sentFrom: command.sentFrom }),
         ...(command.idleCompaction === undefined ? {} : { idleCompaction: command.idleCompaction }),
         forceRestart: dispatchMode.type === "restart_active",
       });
@@ -8518,6 +8522,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           : { scheduledTaskId: command.scheduledTaskId }),
         ...(command.senderThreadId === undefined ? {} : { senderThreadId: command.senderThreadId }),
         ...(command.linkedSender === undefined ? {} : { linkedSender: command.linkedSender }),
+        ...(command.sentFrom === undefined ? {} : { sentFrom: command.sentFrom }),
         ...(command.idleCompaction === undefined ? {} : { idleCompaction: command.idleCompaction }),
         ...(followsThreadSelection ? { followsThreadSelection: true as const } : {}),
         id: command.messageId,
@@ -8957,6 +8962,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           : { scheduledTaskId: command.scheduledTaskId }),
         ...(command.senderThreadId === undefined ? {} : { senderThreadId: command.senderThreadId }),
         ...(command.linkedSender === undefined ? {} : { linkedSender: command.linkedSender }),
+        ...(command.sentFrom === undefined ? {} : { sentFrom: command.sentFrom }),
         ...(command.idleCompaction === undefined ? {} : { idleCompaction: command.idleCompaction }),
         ...(followsThreadSelection ? { followsThreadSelection: true as const } : {}),
         id: command.messageId,
@@ -9779,6 +9785,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         : { scheduledTaskId: command.scheduledTaskId }),
       ...(command.senderThreadId === undefined ? {} : { senderThreadId: command.senderThreadId }),
       ...(command.linkedSender === undefined ? {} : { linkedSender: command.linkedSender }),
+      ...(command.sentFrom === undefined ? {} : { sentFrom: command.sentFrom }),
       ...(command.idleCompaction === undefined ? {} : { idleCompaction: command.idleCompaction }),
       id: command.messageId,
       threadId: command.threadId,
@@ -12609,6 +12616,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       ...(queuedMessage.linkedSender === undefined
         ? {}
         : { linkedSender: queuedMessage.linkedSender }),
+      ...(queuedMessage.sentFrom === undefined ? {} : { sentFrom: queuedMessage.sentFrom }),
       ...(queuedMessage.idleCompaction === undefined
         ? {}
         : { idleCompaction: queuedMessage.idleCompaction }),

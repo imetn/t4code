@@ -35,6 +35,7 @@ import * as DesktopEnvironment from "../../app/DesktopEnvironment.ts";
 import * as DesktopPrimaryPaste from "../../app/DesktopPrimaryPaste.ts";
 import * as DesktopAppSettings from "../../settings/DesktopAppSettings.ts";
 import * as DesktopWslBackend from "../../wsl/DesktopWslBackend.ts";
+import * as DesktopWindow from "../../window/DesktopWindow.ts";
 import * as DesktopWslEnvironment from "../../wsl/DesktopWslEnvironment.ts";
 import * as ElectronApp from "../../electron/ElectronApp.ts";
 import * as ElectronAudio from "../../electron/ElectronAudio.ts";
@@ -504,6 +505,26 @@ const htmlFullscreenStates = new WeakMap<
   Electron.BrowserWindow,
   { owned: boolean; leaving: boolean }
 >();
+
+// Chromium zooms only on Ctrl+wheel, so the macOS preload sends Cmd+wheel here to zoom like the menu.
+export const wheelZoom = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.WHEEL_ZOOM_CHANNEL,
+  payload: Schema.Literals(["in", "out"]),
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.window.wheelZoom")(function* (direction, event) {
+    const electronWindow = yield* ElectronWindow.ElectronWindow;
+    const main = yield* electronWindow.main;
+    if (
+      event === undefined ||
+      Option.isNone(main) ||
+      main.value.isDestroyed() ||
+      main.value.webContents.id !== event.sender.id
+    ) {
+      return;
+    }
+    yield* (yield* DesktopWindow.DesktopWindow).zoomMain(direction);
+  }),
+});
 
 const htmlFullscreenState = (window: Electron.BrowserWindow) => {
   const existing = htmlFullscreenStates.get(window);
