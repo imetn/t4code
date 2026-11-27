@@ -494,7 +494,8 @@ export const prepareAntigravityProfile = Effect.fn("prepareAntigravityProfile")(
   };
   const environment = antigravityEnvironment(profile, input.baseEnv ?? process.env, auth);
   if (!input.skipBrowserPreflight) {
-    yield* Effect.gen(function* () {
+    const expectedLine = `${ANTIGRAVITY_AUTH_BROWSER_MARKER}"${browserPreflightUrl}"`;
+    const verifyOnce = Effect.gen(function* () {
       const child = yield* spawner.spawn(
         ChildProcess.make(
           helperExecutable,
@@ -514,17 +515,23 @@ export const prepareAntigravityProfile = Effect.fn("prepareAntigravityProfile")(
         ],
         { concurrency: "unbounded" },
       );
-      if (
-        Number(exitCode) !== 0 ||
-        stdout.bytes !== 0 ||
-        stdout.truncated ||
-        stderr.truncated ||
-        stderr.text !== `${ANTIGRAVITY_AUTH_BROWSER_MARKER}"${browserPreflightUrl}"\n`
-      ) {
+      // Runtime warnings (Node deprecations, Electron notices) may share stderr; only the marker matters.
+      const markerSeen = stderr.text.split(/\r?\n/).some((line) => line === expectedLine);
+      if (Number(exitCode) !== 0 || !markerSeen) {
+        yield* Effect.logWarning(
+          "Antigravity browser suppression check returned unexpected output.",
+          {
+            exitCode: Number(exitCode),
+            stdoutBytes: stdout.bytes,
+            stderr: stderr.text.slice(0, 1_000),
+          },
+        );
         return yield* authSupportError("Antigravity browser suppression could not be verified.");
       }
-    }).pipe(
-      Effect.scoped,
+    }).pipe(Effect.scoped);
+    // A cold start under load can fail the first run; one retry within the same 30s budget absorbs it.
+    yield* verifyOnce.pipe(
+      Effect.retry({ times: 1 }),
       Effect.timeoutOrElse({
         duration: "30 seconds",
         orElse: () =>
@@ -599,10 +606,49 @@ export function buildAntigravityAcpSpawnInput(input: {
   };
 }
 
+const ANTIGRAVITY_USAGE_AGENT_NAME = "t3-usage";
+
 /**
- * Isolated environment for an opt-in manual `agy -p /usage` invocation.
+ * Prepares the temp cwd for `agy -p /usage`: a tool-less agent so a misrouted prompt cannot act,
+ * and browser stubs that fail so a signed-out profile cannot open a sign-in page.
+ */
+export const prepareAntigravityCliUsageWorkspace = Effect.fn("prepareAntigravityCliUsageWorkspace")(
+  function* (cwd: string, platform: NodeJS.Platform) {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const agentDirectory = path.join(cwd, ".agents", "agents", ANTIGRAVITY_USAGE_AGENT_NAME);
+    yield* fs.makeDirectory(agentDirectory, { recursive: true });
+    yield* fs.writeFileString(
+      path.join(agentDirectory, "agent.md"),
+      [
+        "---",
+        `name: ${ANTIGRAVITY_USAGE_AGENT_NAME}`,
+        "description: Read CLI usage only",
+        "mainAgent: true",
+        "subagent: false",
+        "tools: []",
+        "mcpServers: []",
+        "---",
+        "Do not run model prompts or tools.",
+        "",
+      ].join("\n"),
+      { mode: 0o600 },
+    );
+    if (platform === "win32") {
+      yield* fs.writeFileString(path.join(cwd, "open.cmd"), "@exit /b 1\r\n");
+      return;
+    }
+    for (const name of ["open", "xdg-open"]) {
+      yield* fs.writeFileString(path.join(cwd, name), "#!/bin/sh\nexit 1\n", { mode: 0o700 });
+    }
+  },
+);
+
+/**
+ * Isolated environment for an opt-in `agy -p /usage` invocation.
  * Points root `agy` at the instance's own ACP profile directory and strips display variables
  * so the command can never open a browser window or touch another account's home.
+ * `cwd` must be prepared by `prepareAntigravityCliUsageWorkspace`.
  */
 export function buildAntigravityCliUsageSpawnInput(input: {
   readonly installation: { readonly executablePath: string };
@@ -623,6 +669,9 @@ export function buildAntigravityCliUsageSpawnInput(input: {
     input.auth ?? ANTIGRAVITY_PERSONAL_AUTH,
     input.runtimeTempDirectory,
   );
+  const windows = input.profile.platform === "win32";
+  const pathKey = Object.keys(env).find((key) => key.toUpperCase() === "PATH") ?? "PATH";
+  const inheritedPath = env[pathKey];
   return {
     command: input.installation.executablePath,
     args: [
@@ -630,12 +679,16 @@ export function buildAntigravityCliUsageSpawnInput(input: {
       "/usage",
       "--output-format",
       "json",
+      "--agent",
+      ANTIGRAVITY_USAGE_AGENT_NAME,
       "--print-timeout",
       input.printTimeout ?? "20s",
     ] as const,
     cwd: input.cwd,
     env: {
       ...env,
+      [pathKey]: inheritedPath ? `${input.cwd}${windows ? ";" : ":"}${inheritedPath}` : input.cwd,
+      BROWSER: `${input.cwd}${windows ? "\\open.cmd" : "/open"}`,
       ANTIGRAVITY_GEMINI_DIR: input.profile.geminiHome,
       ANTIGRAVITY_APP_DATA_DIR: "antigravity-acp",
     },

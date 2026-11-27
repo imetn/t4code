@@ -45,6 +45,7 @@ import {
   antigravityAuthUsesBrowser,
   buildAntigravityAcpSpawnInput,
   buildAntigravityCliUsageSpawnInput,
+  prepareAntigravityCliUsageWorkspace,
   isAntigravitySignInRequiredError,
   prepareAntigravityProfile,
   resolveAntigravityInstanceDirectories,
@@ -620,6 +621,10 @@ export const AntigravityDriver: ProviderDriver<
         Effect.provideService(FileSystem.FileSystem, fileSystem),
         Effect.provideService(Path.Path, path),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+      );
+      yield* prepareAntigravityCliUsageWorkspace(cwd, profile.platform).pipe(
+        Effect.provideService(FileSystem.FileSystem, fileSystem),
+        Effect.provideService(Path.Path, path),
       );
       const runtimeTempDirectory = yield* Effect.acquireRelease(
         fileSystem.makeTempDirectory({ directory: profile.tempDirectory, prefix: "usage-" }),

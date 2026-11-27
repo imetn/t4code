@@ -183,9 +183,9 @@ const PACKAGE_FIELD_TEXT: ReadonlyMap<string, string> = new Map([
     msg("Custom ACP executable. Leave empty to select automatically."),
   ],
   [
-    "Off uses ACP only with zero extra CLI calls. Manual runs the official agy CLI `/usage` command only when you click Refresh.",
+    "Off uses ACP only with zero extra CLI calls. Manual runs the official agy CLI `/usage` command only when you click Refresh. Automatic also runs it about every 15 minutes, backing off after failures.",
     msg(
-      "Off uses ACP only with zero extra CLI calls. Manual runs the official agy CLI `/usage` command only when you click Refresh.",
+      "Off uses ACP only with zero extra CLI calls. Manual runs the official agy CLI `/usage` command only when you click Refresh. Automatic also runs it about every 15 minutes, backing off after failures.",
     ),
   ],
   [
@@ -260,6 +260,7 @@ const PACKAGE_FIELD_TEXT: ReadonlyMap<string, string> = new Map([
   ["Gemini API key", msg("Gemini API key")],
   ["Off (ACP only, recommended)", msg("Off (ACP only, recommended)")],
   ["Manual refresh via agy CLI", msg("Manual refresh via agy CLI")],
+  ["Automatic via agy CLI", msg("Automatic via agy CLI")],
   ["Local command", msg("Local command")],
 ]);
 

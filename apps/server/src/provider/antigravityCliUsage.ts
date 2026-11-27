@@ -24,6 +24,9 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 // Pre-1.1.11 agy binaries do not handle `/usage` locally in `-p` mode and send it to the model.
 export const MIN_ANTIGRAVITY_USAGE_CLI_VERSION = [1, 1, 11] as const;
 export const ANTIGRAVITY_CLI_USAGE_COOLDOWN_MS = 60_000;
+const ANTIGRAVITY_CLI_USAGE_AUTO_INTERVAL_MS = 15 * 60_000;
+const AUTO_FAILURE_BACKOFF_MS = 10 * 60_000;
+const AUTO_FAILURE_BACKOFF_MAX_MS = 6 * 60 * 60_000;
 export const ANTIGRAVITY_CLI_USAGE_PRINT_TIMEOUT = "20s";
 export const ANTIGRAVITY_CLI_USAGE_PROCESS_TIMEOUT_MS = 25_000;
 export const ANTIGRAVITY_CLI_USAGE_MAX_OUTPUT_BYTES = 512 * 1024;
@@ -174,7 +177,7 @@ function bucketToWindow(
       : id.startsWith("gemini-")
         ? "Gemini"
         : id.startsWith("3p-")
-          ? "Claude & GPT (shared)"
+          ? "Claude & GPT"
           : groupLabel || id;
   const bucketLabel = (bucket.displayName ?? bucket.name)
     ?.trim()
@@ -299,15 +302,26 @@ export interface AntigravityCliUsageProbeContext {
   readonly authenticated: boolean;
 }
 
+export type AntigravityCliUsageTrigger = "manual" | "automatic";
+
 interface ProbeState {
   readonly quarantine: AntigravityCliUsageQuarantine | null;
   readonly lastProbeAtMs: number | null;
+  readonly nextAutomaticAtMs: number | null;
+  readonly automaticFailures: number;
 }
 
+const INITIAL_PROBE_STATE = {
+  lastProbeAtMs: null,
+  nextAutomaticAtMs: null,
+  automaticFailures: 0,
+} as const;
+
 const QUARANTINE_MODEL_TURN_MESSAGE =
-  "Antigravity manual quota checks were disabled because the CLI treated /usage as a model turn.";
+  "Antigravity quota checks were disabled because the CLI treated /usage as a model turn.";
 const QUARANTINE_SUSPENDED_MESSAGE =
-  "Antigravity manual quota checks were paused after Google reported an account restriction or verification requirement.";
+  "Antigravity quota checks were paused after Google reported an account restriction or verification requirement.";
+const UNSUPPORTED_VERSION_MESSAGE = "Antigravity CLI 1.1.11 or newer is required for quota checks.";
 
 export const makeAntigravityCliUsageProbe = Effect.fn("makeAntigravityCliUsageProbe")(
   function* (input: {
@@ -329,7 +343,7 @@ export const makeAntigravityCliUsageProbe = Effect.fn("makeAntigravityCliUsagePr
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const stateRef = yield* Ref.make<ProbeState>({
       quarantine: input.persistedQuarantine ?? null,
-      lastProbeAtMs: null,
+      ...INITIAL_PROBE_STATE,
     });
     const cooldownMs = input.cooldownMs ?? ANTIGRAVITY_CLI_USAGE_COOLDOWN_MS;
     const processTimeoutMs = input.processTimeoutMs ?? ANTIGRAVITY_CLI_USAGE_PROCESS_TIMEOUT_MS;
@@ -340,7 +354,7 @@ export const makeAntigravityCliUsageProbe = Effect.fn("makeAntigravityCliUsagePr
         Effect.andThen(input.persistQuarantine ? input.persistQuarantine(quarantine) : Effect.void),
       );
 
-    const clear = Ref.set(stateRef, { quarantine: null, lastProbeAtMs: null }).pipe(
+    const clear = Ref.set(stateRef, { quarantine: null, ...INITIAL_PROBE_STATE }).pipe(
       Effect.andThen(input.persistQuarantine ? input.persistQuarantine(null) : Effect.void),
     );
 
@@ -352,10 +366,46 @@ export const makeAntigravityCliUsageProbe = Effect.fn("makeAntigravityCliUsagePr
 
     const probe = Effect.fn("AntigravityCliUsage.probe")(function* (
       context: AntigravityCliUsageProbeContext,
+      trigger: AntigravityCliUsageTrigger = "manual",
     ): Effect.fn.Return<ServerProviderUsageLimits | undefined> {
-      if (input.usageProbeMode !== "manual") {
-        return undefined;
+      if (input.usageProbeMode === "off") return undefined;
+      if (trigger === "automatic") {
+        if (input.usageProbeMode !== "auto") return undefined;
+        const { nextAutomaticAtMs } = yield* Ref.get(stateRef);
+        if (nextAutomaticAtMs !== null && (yield* Clock.currentTimeMillis) < nextAutomaticAtMs) {
+          return undefined;
+        }
       }
+      const result = yield* probeNow(context);
+      if (result !== undefined && input.usageProbeMode === "auto") {
+        const nowMs = yield* Clock.currentTimeMillis;
+        yield* Ref.update(stateRef, (current) => {
+          if (result.unavailable === undefined) {
+            return {
+              ...current,
+              automaticFailures: 0,
+              nextAutomaticAtMs: nowMs + ANTIGRAVITY_CLI_USAGE_AUTO_INTERVAL_MS,
+            };
+          }
+          const automaticFailures = current.automaticFailures + 1;
+          return {
+            ...current,
+            automaticFailures,
+            nextAutomaticAtMs:
+              nowMs +
+              Math.min(
+                AUTO_FAILURE_BACKOFF_MS * 2 ** (automaticFailures - 1),
+                AUTO_FAILURE_BACKOFF_MAX_MS,
+              ),
+          };
+        });
+      }
+      return result;
+    });
+
+    const probeNow = Effect.fn("AntigravityCliUsage.probeNow")(function* (
+      context: AntigravityCliUsageProbeContext,
+    ): Effect.fn.Return<ServerProviderUsageLimits | undefined> {
       const checkedAt = DateTime.formatIso(yield* DateTime.now);
       if (input.authMethod !== "oauth-personal" && input.authMethod !== "oauth-business") {
         return makeUnavailableUsageLimits({ checkedAt, reason: "unsupported" });
@@ -388,7 +438,7 @@ export const makeAntigravityCliUsageProbe = Effect.fn("makeAntigravityCliUsagePr
         return makeUnavailableUsageLimits({
           checkedAt,
           reason: "unsupported",
-          message: "Antigravity CLI 1.1.11 or newer is required for manual quota checks.",
+          message: UNSUPPORTED_VERSION_MESSAGE,
         });
       }
 
@@ -409,7 +459,7 @@ export const makeAntigravityCliUsageProbe = Effect.fn("makeAntigravityCliUsagePr
           return makeUnavailableUsageLimits({
             checkedAt,
             reason: "unsupported",
-            message: "Antigravity CLI 1.1.11 or newer is required for manual quota checks.",
+            message: UNSUPPORTED_VERSION_MESSAGE,
           });
         }
 

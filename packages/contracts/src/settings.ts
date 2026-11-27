@@ -908,6 +908,7 @@ export type AntigravityAuthMethod = typeof AntigravityAuthMethod.Type;
 export const ANTIGRAVITY_USAGE_PROBE_MODES = [
   { value: "off", label: "Off (ACP only, recommended)" },
   { value: "manual", label: "Manual refresh via agy CLI" },
+  { value: "auto", label: "Automatic via agy CLI" },
 ] as const satisfies ReadonlyArray<ProviderSettingsFormOption>;
 export const AntigravityUsageProbeMode = Schema.Literals(
   ANTIGRAVITY_USAGE_PROBE_MODES.map((mode) => mode.value),
@@ -976,7 +977,7 @@ export const AntigravitySettings = makeProviderSettingsSchema(
       Schema.annotateKey({
         title: "Quota checks",
         description:
-          "Off uses ACP only with zero extra CLI calls. Manual runs the official agy CLI `/usage` command only when you click Refresh.",
+          "Off uses ACP only with zero extra CLI calls. Manual runs the official agy CLI `/usage` command only when you click Refresh. Automatic also runs it about every 15 minutes, backing off after failures.",
         providerSettingsForm: {
           control: "select",
           options: ANTIGRAVITY_USAGE_PROBE_MODES,

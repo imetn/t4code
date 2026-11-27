@@ -159,7 +159,10 @@ Google's official ACP runtime and makes no extra CLI calls. **Usage** still show
 from Antigravity's local history. If you want to check remaining Gemini and shared Claude/GPT
 allowances on demand, switch **Quota checks** to **Manual refresh via agy CLI** in Antigravity
 provider settings, then click Refresh under **Usage > Limits**. Manual checks never run in the
-background and invoke only your installed official `agy` binary. Note that `oauth-business`
+background. To keep limits current without clicking, choose **Automatic via agy CLI**: T3 Code
+then checks about every 15 minutes while the server runs, and waits longer after a failed check.
+Both modes invoke only your installed official `agy` binary's `/usage` command, never a model
+turn. Note that `oauth-business`
 instances or custom `agy` binaries without file token storage rely on the OS keyring just like ACP
 sessions.
 

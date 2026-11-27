@@ -186,7 +186,7 @@ describe("parseAntigravityCliUsageOutput", () => {
       },
       {
         id: "3p-5h",
-        label: "Claude & GPT (shared) · 5-hour",
+        label: "Claude & GPT · 5-hour",
         kind: "session",
         usedPercent: 60,
         resetsAt: "2026-11-27T04:00:00.000Z",
@@ -277,6 +277,8 @@ describe("buildAntigravityCliUsageSpawnInput", () => {
       "/usage",
       "--output-format",
       "json",
+      "--agent",
+      "t3-usage",
       "--print-timeout",
       "20s",
     ]);
@@ -289,6 +291,8 @@ describe("buildAntigravityCliUsageSpawnInput", () => {
     expect(spawn.env.DISPLAY).toBeUndefined();
     expect(spawn.env.WAYLAND_DISPLAY).toBeUndefined();
     expect(spawn.env.GEMINI_API_KEY).toBeUndefined();
+    expect(spawn.env.PATH).toBe("/tmp/work:/usr/bin");
+    expect(spawn.env.BROWSER).toBe("/tmp/work/open");
   });
 });
 
@@ -338,6 +342,61 @@ describe("makeAntigravityCliUsageProbe", () => {
 
         expect(yield* Ref.get(spawned)).toEqual([]);
       }),
+  );
+
+  it.effect("automatic mode runs on its interval and backs off after failures", () =>
+    Effect.gen(function* () {
+      const replies = yield* Ref.make<FakeProcessReply>({ stdout: VALID_USAGE_JSON });
+      const spawned = yield* Ref.make<
+        ReadonlyArray<{ readonly command: string; readonly args: ReadonlyArray<string> }>
+      >([]);
+      const spawner = makeFakeSpawner(replies, spawned);
+      const context = { version: "1.5.15", authenticated: true };
+
+      const manualOnly = yield* makeAntigravityCliUsageProbe({
+        usageProbeMode: "manual",
+        authMethod: "oauth-personal",
+        prepareSpawn: Effect.succeed(DEFAULT_SPAWN),
+      }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
+      expect(yield* manualOnly.probe(context, "automatic")).toBeUndefined();
+      expect(yield* Ref.get(spawned)).toHaveLength(0);
+
+      const probe = yield* makeAntigravityCliUsageProbe({
+        usageProbeMode: "auto",
+        authMethod: "oauth-personal",
+        prepareSpawn: Effect.succeed(DEFAULT_SPAWN),
+      }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
+
+      expect((yield* probe.probe(context, "automatic"))?.windows).toHaveLength(3);
+      expect(yield* Ref.get(spawned)).toHaveLength(1);
+
+      yield* TestClock.adjust("14 minutes");
+      expect(yield* probe.probe(context, "automatic")).toBeUndefined();
+      expect(yield* Ref.get(spawned)).toHaveLength(1);
+
+      yield* TestClock.adjust("1 minute");
+      yield* Ref.set(replies, { exitCode: 1, stderr: "boom" });
+      expect((yield* probe.probe(context, "automatic"))?.unavailable).toBeDefined();
+      expect(yield* Ref.get(spawned)).toHaveLength(2);
+
+      // First failure waits 10 minutes before the next automatic run.
+      yield* TestClock.adjust("9 minutes");
+      expect(yield* probe.probe(context, "automatic")).toBeUndefined();
+      expect(yield* Ref.get(spawned)).toHaveLength(2);
+      yield* TestClock.adjust("1 minute");
+      expect((yield* probe.probe(context, "automatic"))?.unavailable).toBeDefined();
+      expect(yield* Ref.get(spawned)).toHaveLength(3);
+
+      // Second failure doubles to 20 minutes.
+      yield* TestClock.adjust("19 minutes");
+      expect(yield* probe.probe(context, "automatic")).toBeUndefined();
+      expect(yield* Ref.get(spawned)).toHaveLength(3);
+
+      // Manual refresh still works regardless of the automatic schedule.
+      yield* Ref.set(replies, { stdout: VALID_USAGE_JSON });
+      expect((yield* probe.probe(context, "manual"))?.windows).toHaveLength(3);
+      expect(yield* Ref.get(spawned)).toHaveLength(4);
+    }),
   );
 
   it.effect("enforces 60s cooldown and reads quota after cooldown expires", () =>

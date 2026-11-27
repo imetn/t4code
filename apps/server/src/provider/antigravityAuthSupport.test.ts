@@ -636,6 +636,59 @@ it.layer(NodeServices.layer)("Antigravity profile preparation", (it) => {
     }).pipe(Effect.provideService(HostProcess.IsExecutable, true)),
   );
 
+  it.effect(
+    "tolerates stderr noise around the browser marker and retries a failed check once",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const temporaryDirectory = yield* fs.makeTempDirectoryScoped();
+        const marker = `${ANTIGRAVITY_AUTH_BROWSER_MARKER}"https://example.invalid/t3-antigravity-browser-preflight"`;
+        const replies = [
+          { exitCode: 1, stderr: "" },
+          {
+            exitCode: 0,
+            stderr: `(node:1) ExperimentalWarning: something\r\n${marker}\r\n`,
+          },
+        ];
+        let calls = 0;
+        const spawner = ChildProcessSpawner.make(() =>
+          Effect.sync(() => {
+            const reply = replies[Math.min(calls++, replies.length - 1)]!;
+            return {
+              [ChildProcessSpawner.HandleTypeId]: ChildProcessSpawner.HandleTypeId,
+              pid: ChildProcessSpawner.ProcessId(1),
+              stdin: Sink.drain,
+              stdout: Stream.empty,
+              stderr: reply.stderr ? Stream.succeed(encode(reply.stderr)) : Stream.empty,
+              all: Stream.empty,
+              exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(reply.exitCode)),
+              isRunning: Effect.succeed(false),
+              kill: () => Effect.void,
+              getInputFd: () => Sink.drain,
+              getOutputFd: () => Stream.empty,
+            } as unknown as ChildProcessSpawner.ChildProcessHandle;
+          }),
+        );
+        const profile = yield* prepareAntigravityProfile({
+          profileDirectory: path.join(temporaryDirectory, "profile"),
+        }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
+        expect(calls).toBe(2);
+        expect(yield* fs.exists(profile.acpDirectory)).toBe(true);
+
+        calls = 0;
+        replies[1] = { exitCode: 0, stderr: "unrelated output\n" };
+        const failed = yield* prepareAntigravityProfile({
+          profileDirectory: path.join(temporaryDirectory, "profile-2"),
+        }).pipe(
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+          Effect.result,
+        );
+        expect(calls).toBe(2);
+        expect(Result.isFailure(failed)).toBe(true);
+      }),
+  );
+
   it.effect("preflights the no-browser helper and creates private directories only", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

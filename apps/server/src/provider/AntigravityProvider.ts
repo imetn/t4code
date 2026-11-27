@@ -43,7 +43,10 @@ import {
 import { resolveUsageLimitsAfterProbe } from "@t3tools/provider-core/server/usageLimits";
 
 import { antigravityThinkingConfig } from "./acp/AntigravityAcpSupport.ts";
-import type { AntigravityCliUsageProbeContext } from "./antigravityCliUsage.ts";
+import type {
+  AntigravityCliUsageProbeContext,
+  AntigravityCliUsageTrigger,
+} from "./antigravityCliUsage.ts";
 
 const EMPTY_MODEL_CAPABILITIES = createModelCapabilities({ optionDescriptors: [] });
 const MAX_WORKSPACE_SNAPSHOTS = 32;
@@ -170,6 +173,7 @@ interface AntigravityProviderOptions {
   readonly supportsTextGeneration: Effect.Effect<boolean>;
   readonly probeUsage?: (
     context: AntigravityCliUsageProbeContext,
+    trigger?: AntigravityCliUsageTrigger,
   ) => Effect.Effect<ServerProviderUsageLimits | undefined>;
   readonly clearUsage?: Effect.Effect<void>;
   readonly quarantineUsage?: Effect.Effect<void>;
@@ -181,6 +185,8 @@ interface AntigravityProviderOptions {
   readonly rememberedRuntimeModes?: ReadonlyArray<RuntimeMode>;
   readonly rememberRuntimeModes?: (modes: ReadonlyArray<RuntimeMode>) => Effect.Effect<void>;
 }
+
+const AUTO_USAGE_TICK = "1 minute";
 
 const RUNTIME_MODES_WITHOUT_AUTO = [
   "approval-required",
@@ -270,22 +276,25 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
     Effect.flatMap((state) => options.stampIdentity(state.draft)),
   );
 
-  // Manual-only quota check: never triggered by background health checks or session starts.
+  // Opt-in quota check: Refresh clicks, plus a slow timer when the user chose automatic checks.
   // One read runs at a time; sign-in and sign-out interrupt it so a stale account never lands.
   const usageRead = yield* FiberHandle.make();
   const republish = yield* Deferred.make<Effect.Effect<ServerProvider>>();
-  const refreshUsage = Effect.fn("AntigravityProvider.refreshUsage")(function* () {
+  const refreshUsage = Effect.fn("AntigravityProvider.refreshUsage")(function* (
+    trigger: AntigravityCliUsageTrigger = "manual",
+  ) {
     if (!settings.enabled || !options.probeUsage || (yield* PublishingUsage)) return;
     const before = yield* SubscriptionRef.get(metadata);
     if (before.restricted) return;
     const context: AntigravityCliUsageProbeContext = {
       version: before.draft.version,
-      authenticated: before.draft.auth.status === "authenticated",
+      // Status stays unknown until a session starts; agy aborts fast on a sign-in prompt, so only skip known sign-outs.
+      authenticated: before.draft.auth.status !== "unauthenticated",
     };
     const startedAuthRevision = before.authRevision;
     yield* FiberHandle.run(
       usageRead,
-      options.probeUsage(context).pipe(
+      options.probeUsage(context, trigger).pipe(
         Effect.flatMap((probed) => {
           if (probed === undefined) return Effect.succeed(false);
           return SubscriptionRef.modify(metadata, (state) => {
@@ -464,6 +473,15 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
       ),
   });
   yield* Deferred.succeed(republish, managed.refresh);
+
+  if (settings.enabled && settings.usageProbeMode === "auto" && options.probeUsage) {
+    // Ticks are cheap: the probe itself decides when agy actually runs (interval and failure backoff).
+    yield* Effect.sleep(AUTO_USAGE_TICK).pipe(
+      Effect.andThen(refreshUsage("automatic").pipe(Effect.ignoreCause({ log: true }))),
+      Effect.forever,
+      Effect.forkScoped,
+    );
+  }
 
   const onSessionStarted = Effect.fn("AntigravityProvider.onSessionStarted")(function* (
     started: AcpSessionRuntime.AcpSessionRuntimeStartResult,
@@ -650,7 +668,7 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
     onConfigOptionsUpdated,
     onAvailableCommands,
     // The new sign-in may be another account. Clear its cached limits and any restriction/quarantine
-    // so a previous account's state cannot bleed into the new account; limits refresh only on demand.
+    // so a previous account's state cannot bleed into the new account.
     onSignedIn: resetUsage.pipe(
       Effect.andThen(clearAccountRestriction()),
       Effect.andThen(
