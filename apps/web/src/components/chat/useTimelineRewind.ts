@@ -15,7 +15,7 @@ import {
   type RunId,
 } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouter } from "@tanstack/react-router";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -85,6 +85,7 @@ export function useTimelineRewind(input: TimelineRewindInput) {
     setThreadError,
   } = input;
   const navigate = useNavigate();
+  const router = useRouter();
   const createAttachmentAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
     reportFailure: false,
     refresh: true,
@@ -195,6 +196,7 @@ export function useTimelineRewind(input: TimelineRewindInput) {
     readonly runId: RunId;
   }) => {
     if (!activeThread || activeEnvironmentUnavailable) return;
+    const location = router.latestLocation;
     const targetThreadId = newThreadId();
     const targetThreadRef = scopeThreadRef(environmentId, targetThreadId);
     const result = await forkThreadFromRun({
@@ -237,6 +239,7 @@ export function useTimelineRewind(input: TimelineRewindInput) {
         description: thrownErrorMessage(error, m) ?? String(error),
       });
     }
+    if (router.latestLocation !== location) return;
     await navigate({
       to: "/$environmentId/$threadId",
       params: buildThreadRouteParams(targetThreadRef),

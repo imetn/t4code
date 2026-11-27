@@ -1659,7 +1659,13 @@ export const layerWithOptions = (
           }
           // Capture runtime identity before yielding; replacements can reuse the session id.
           const probedRuntime = entry.runtime;
+          // Check idle pins before pending work: an idle callback buffers its wake before dropping the pin.
           const hasPendingWork =
+            (probedRuntime.keepsIdleSessionAlive === undefined
+              ? false
+              : yield* probedRuntime.keepsIdleSessionAlive.pipe(
+                  Effect.catchCause(() => Effect.succeed(false)),
+                )) ||
             (probedRuntime.hasPendingBackgroundWork === undefined
               ? false
               : yield* probedRuntime.hasPendingBackgroundWork.pipe(
