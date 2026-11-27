@@ -12,8 +12,10 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import { Command, Flag } from "effect/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
@@ -60,6 +62,153 @@ class DirtyWorktreeError extends Schema.TaggedError<DirtyWorktreeError>()("Dirty
   }
 }
 
+class UnsignedPublishForbiddenError extends Schema.TaggedError<UnsignedPublishForbiddenError>()(
+  "UnsignedPublishForbiddenError",
+  {},
+) {
+  override get message(): string {
+    return "Refusing to publish an unsigned macOS release (breaks Squirrel.Mac auto-updates and Gatekeeper).";
+  }
+}
+
+class MissingSigningEnvError extends Schema.TaggedError<MissingSigningEnvError>()(
+  "MissingSigningEnvError",
+  { missing: Schema.Array(Schema.String) },
+) {
+  override get message(): string {
+    return `Missing required macOS signing/notarization environment variables: ${this.missing.join(", ")}. Export them before building, or pass --unsigned for an unpublished local build.`;
+  }
+}
+
+class ReleaseVerificationError extends Schema.TaggedError<ReleaseVerificationError>()(
+  "ReleaseVerificationError",
+  { check: Schema.String, detail: Schema.String },
+) {
+  override get message(): string {
+    return `Signed macOS artifact verification failed (${this.check}):\n${this.detail}`;
+  }
+}
+
+const hasNonEmptyEnv = (name: string): boolean => (process.env[name]?.trim().length ?? 0) > 0;
+
+const assertSigningAndNotaryEnv = Effect.fn("release-t4.assertSigningAndNotaryEnv")(function* () {
+  const missing: string[] = [];
+  if (!hasNonEmptyEnv("CSC_LINK") && !hasNonEmptyEnv("CSC_NAME")) {
+    missing.push("CSC_LINK (or CSC_NAME)");
+  }
+
+  const hasApiKeyNotary =
+    hasNonEmptyEnv("APPLE_API_KEY") &&
+    hasNonEmptyEnv("APPLE_API_KEY_ID") &&
+    hasNonEmptyEnv("APPLE_API_ISSUER");
+  const hasAppleIdNotary =
+    hasNonEmptyEnv("APPLE_ID") &&
+    hasNonEmptyEnv("APPLE_APP_SPECIFIC_PASSWORD") &&
+    hasNonEmptyEnv("APPLE_TEAM_ID");
+
+  if (!hasApiKeyNotary && !hasAppleIdNotary) {
+    missing.push(
+      "APPLE_API_KEY + APPLE_API_KEY_ID + APPLE_API_ISSUER (or APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD + APPLE_TEAM_ID)",
+    );
+  }
+
+  if (missing.length > 0) {
+    return yield* new MissingSigningEnvError({ missing });
+  }
+});
+
+const spawnAndCollect = Effect.fn("release-t4.spawnAndCollect")(function* (
+  command: ChildProcess.Command,
+) {
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  const child = yield* spawner.spawn(command);
+  const [stdout, stderr, exitCode] = yield* Effect.all(
+    [
+      child.stdout.pipe(Stream.decodeText(), Stream.mkString),
+      child.stderr.pipe(Stream.decodeText(), Stream.mkString),
+      child.exitCode.pipe(Effect.map(Number)),
+    ],
+    { concurrency: "unbounded" },
+  );
+  return { stdout, stderr, exitCode } as const;
+});
+
+// electron-builder staples the .app bundle inside the DMG rather than the outer DMG itself.
+const verifySignedMacDmg = Effect.fn("release-t4.verifySignedMacDmg")(function* (dmgPath: string) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const mountDir = yield* fs.makeTempDirectoryScoped({ prefix: "t4-release-verify-" });
+
+  yield* Effect.acquireRelease(
+    spawnAndCollect(
+      ChildProcess.make("hdiutil", [
+        "attach",
+        "-readonly",
+        "-nobrowse",
+        "-mountpoint",
+        mountDir,
+        dmgPath,
+      ]),
+    ).pipe(
+      Effect.flatMap((result) =>
+        result.exitCode === 0
+          ? Effect.void
+          : Effect.fail(
+              new ReleaseVerificationError({
+                check: "hdiutil attach",
+                detail: `${result.stdout}\n${result.stderr}`.trim(),
+              }),
+            ),
+      ),
+    ),
+    () =>
+      spawnAndCollect(ChildProcess.make("hdiutil", ["detach", mountDir, "-force"])).pipe(
+        Effect.ignore,
+      ),
+  );
+
+  const appPath = path.join(mountDir, "T4 Code.app");
+  if (!(yield* fs.exists(appPath))) {
+    return yield* new ReleaseVerificationError({
+      check: "app bundle",
+      detail: `Expected 'T4 Code.app' inside mounted DMG at ${mountDir}.`,
+    });
+  }
+
+  const codesign = yield* spawnAndCollect(
+    ChildProcess.make("codesign", ["-dv", "--verbose=2", appPath]),
+  );
+  const codesignOutput = `${codesign.stdout}\n${codesign.stderr}`.trim();
+  if (codesign.exitCode !== 0 || !codesignOutput.includes("Authority=Developer ID Application:")) {
+    return yield* new ReleaseVerificationError({
+      check: "codesign Developer ID Application",
+      detail: codesignOutput || `codesign exited with code ${codesign.exitCode}`,
+    });
+  }
+
+  const stapler = yield* spawnAndCollect(
+    ChildProcess.make("xcrun", ["stapler", "validate", appPath]),
+  );
+  if (stapler.exitCode !== 0) {
+    return yield* new ReleaseVerificationError({
+      check: "xcrun stapler validate",
+      detail: `${stapler.stdout}\n${stapler.stderr}`.trim(),
+    });
+  }
+
+  const spctl = yield* spawnAndCollect(ChildProcess.make("spctl", ["-a", "-vvv", appPath]));
+  if (spctl.exitCode !== 0) {
+    return yield* new ReleaseVerificationError({
+      check: "spctl assessment",
+      detail: `${spctl.stdout}\n${spctl.stderr}`.trim(),
+    });
+  }
+
+  yield* Effect.log(
+    `[release-t4] Verified Developer ID signature, Apple notarization staple, and Gatekeeper assessment for ${path.basename(dmgPath)}.`,
+  );
+});
+
 const runCommand = Effect.fn("release-t4.runCommand")(function* (
   command: ChildProcess.Command,
   label: string,
@@ -92,10 +241,17 @@ const releaseT4 = Effect.fn("release-t4.run")(function* (input: {
   readonly verbose: boolean;
   readonly publish: boolean;
   readonly draft: boolean;
+  readonly notesFile: Option.Option<string>;
 }) {
   const normalizedVersion = input.version.trim().replace(/^v/u, "");
   if (!SEMVER_PATTERN.test(normalizedVersion)) {
     return yield* new InvalidReleaseVersionError({ version: input.version });
+  }
+  if (input.publish && input.unsigned) {
+    return yield* new UnsignedPublishForbiddenError();
+  }
+  if (!input.unsigned) {
+    yield* assertSigningAndNotaryEnv();
   }
 
   const fs = yield* FileSystem.FileSystem;
@@ -159,6 +315,12 @@ const releaseT4 = Effect.fn("release-t4.run")(function* (input: {
 
   yield* Effect.log(`[release-t4] Verified macOS release assets in ${outputDir}.`);
 
+  if (!input.unsigned) {
+    yield* verifySignedMacDmg(
+      path.join(outputDir, `T4-Code-${normalizedVersion}-${input.arch}.dmg`),
+    );
+  }
+
   if (!input.publish) {
     yield* Effect.log("[release-t4] Build complete (dry run; pass --publish to upload via gh).");
     return;
@@ -192,6 +354,10 @@ const releaseT4 = Effect.fn("release-t4.run")(function* (input: {
     .map((entry) => path.join(outputDir, entry));
 
   const tag = `v${normalizedVersion}`;
+  const notesArgs = Option.match(input.notesFile, {
+    onNone: () => ["--generate-notes"],
+    onSome: (file) => ["--notes-file", path.resolve(repoRoot, file)],
+  });
   const ghArgs = [
     "release",
     "create",
@@ -203,7 +369,7 @@ const releaseT4 = Effect.fn("release-t4.run")(function* (input: {
     targetSha,
     "--title",
     `T4 Code ${tag}`,
-    "--generate-notes",
+    ...notesArgs,
     ...(input.draft ? ["--draft"] : ["--latest"]),
   ];
 
@@ -253,6 +419,10 @@ const command = Command.make(
     draft: Flag.Boolean("draft").pipe(
       Flag.withDefault(false),
       Flag.withDescription("When publishing, create the GitHub Release as a draft."),
+    ),
+    notesFile: Flag.String("notes-file").pipe(
+      Flag.optional,
+      Flag.withDescription("Optional path to a release notes file (defaults to --generate-notes)."),
     ),
   },
   (input) => releaseT4(input).pipe(Effect.scoped),
