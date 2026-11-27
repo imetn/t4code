@@ -130,6 +130,24 @@ describe("McpProviderSessions tool results", () => {
       yield* sessions.recordToolResult(siblings, "device_screenshot", phone, shot("C"));
       assert.isUndefined(yield* take(siblings, phone));
       assert.deepEqual(yield* take(siblings, tablet), shot("B"));
+
+      // A later same-input call after eviction must not satisfy an input-only lookup for the evicted call,
+      // while exact reported output lookup still works and clearToolResults resets the turn taint.
+      const readded = ThreadId.make("thread-tool-results-readded");
+      yield* sessions.recordToolResult(readded, "device_screenshot", phone, shot("A"));
+      yield* sessions.recordToolResult(readded, "device_screenshot", tablet, shot("B"));
+      yield* sessions.recordToolResult(readded, "device_screenshot", watch, shot("C"));
+      assert.deepEqual(yield* take(readded, tablet), shot("B"));
+      assert.deepEqual(yield* take(readded, watch), shot("C"));
+      yield* sessions.recordToolResult(readded, "device_screenshot", phone, shot("D"));
+      assert.isUndefined(yield* take(readded, phone));
+      assert.deepEqual(
+        yield* sessions.takeToolResult(readded, "device_screenshot", phone, shot("D")),
+        shot("D"),
+      );
+      yield* sessions.clearToolResults(readded);
+      yield* sessions.recordToolResult(readded, "device_screenshot", phone, shot("E"));
+      assert.deepEqual(yield* take(readded, phone), shot("E"));
     }).pipe(Effect.provide(McpProviderSessions.layer)),
   );
 

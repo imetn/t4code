@@ -678,11 +678,16 @@ export interface RunExecutionServiceV2StartRootRunInput {
   ) => Effect.Effect<UnsettledWork, ProjectionStoreV2Error>;
   /**
    * Runs the turn in a fresh native session when its start found the native session gone,
+   * calling `onCommitted` as soon as the replacement thread and attempt are persisted, and
    * returning that session's thread, or undefined to let the start fail.
    */
   readonly recoverLostNativeSession?: (
     turnInput: ProviderAdapter.ProviderAdapterV2TurnInput,
     error: ProviderAdapter.ProviderAdapterV2Error,
+    onCommitted: (recovered: {
+      readonly providerThread: OrchestrationV2ProviderThread;
+      readonly attempt: OrchestrationV2RunAttempt;
+    }) => Effect.Effect<void>,
   ) => Effect.Effect<
     OrchestrationV2ProviderThread | undefined,
     ProviderAdapter.ProviderAdapterV2Error
@@ -1232,6 +1237,7 @@ export const layer: Layer.Layer<
         const terminalEvent = yield* Ref.make<ProviderTerminalEvent | null>(null);
         const latestTurnItemOrdinal = yield* Ref.make(input.providerTurnOrdinal * 100);
         const latestProviderThread = yield* Ref.make(input.providerThread);
+        const latestAttempt = yield* Ref.make(input.attempt);
         const latestRootProviderTurn = yield* Ref.make<OrchestrationV2ProviderTurn | null>(null);
         // Later root turns in one attempt are provider continuations, such as Codex goal turns.
         let firstRootProviderTurnId: ProviderTurnId | undefined;
@@ -1326,6 +1332,7 @@ export const layer: Layer.Layer<
             return;
           }
           const providerThread = yield* Ref.get(latestProviderThread);
+          const attempt = yield* Ref.get(latestAttempt);
           const openSubagents = yield* Ref.get(openRunOwnedSubagents);
           const writeTerminal = Effect.fnUntraced(
             function* (settledTerminal: ProviderTerminalEvent) {
@@ -1339,7 +1346,7 @@ export const layer: Layer.Layer<
                 rootNode: input.rootNode,
                 checkpointScope: input.checkpointScope,
                 providerThread,
-                attempt: input.attempt,
+                attempt,
                 ...(input.shouldFinalizeRun === undefined
                   ? {}
                   : {
@@ -2199,12 +2206,13 @@ export const layer: Layer.Layer<
                       )
                     : [];
                   let nextRetryWarningAt = completedAt;
+                  const attempt = yield* Ref.get(latestAttempt);
                   yield* writeFinalRunEvents({
                     run: input.run,
                     rootNode: input.rootNode,
                     checkpointScope: input.checkpointScope,
                     providerThread,
-                    attempt: input.attempt,
+                    attempt,
                     writeIfRunCurrent: {
                       activeAttemptId: input.attempt.id,
                       expectedStatus: "running",
@@ -2360,12 +2368,14 @@ export const layer: Layer.Layer<
                       input.recoverLostNativeSession === undefined
                         ? Effect.fail(error)
                         : input
-                            .recoverLostNativeSession(turnInput, error)
+                            .recoverLostNativeSession(turnInput, error, (recovered) =>
+                              Ref.set(latestProviderThread, recovered.providerThread).pipe(
+                                Effect.andThen(Ref.set(latestAttempt, recovered.attempt)),
+                              ),
+                            )
                             .pipe(
                               Effect.flatMap((recovered) =>
-                                recovered === undefined
-                                  ? Effect.fail(error)
-                                  : Ref.set(latestProviderThread, recovered),
+                                recovered === undefined ? Effect.fail(error) : Effect.void,
                               ),
                             ),
                     ),
@@ -2385,8 +2395,8 @@ export const layer: Layer.Layer<
               cause,
             }).pipe(
               Effect.andThen(Fiber.interrupt(providerEventFiber)),
-              Effect.andThen(Ref.get(latestProviderThread)),
-              Effect.flatMap((providerThread) =>
+              Effect.andThen(Effect.all([Ref.get(latestProviderThread), Ref.get(latestAttempt)])),
+              Effect.flatMap(([providerThread, attempt]) =>
                 Ref.get(latestTurnItemOrdinal).pipe(
                   Effect.flatMap((latestItemOrdinal) =>
                     Ref.get(openRunOwnedSubagents).pipe(
@@ -2396,7 +2406,7 @@ export const layer: Layer.Layer<
                           rootNode: input.rootNode,
                           checkpointScope: input.checkpointScope,
                           providerThread,
-                          attempt: input.attempt,
+                          attempt,
                           writeIfRunCurrent: {
                             activeAttemptId: input.attempt.id,
                             expectedStatus: "running",

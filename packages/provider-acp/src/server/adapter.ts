@@ -6612,6 +6612,13 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           const terminalKey = sessionScopedId(notification.sessionId, update.terminalId);
           const next = applyAcpAgentTerminalUpdate(agentTerminalsById.get(terminalKey), update);
           agentTerminalsById.set(terminalKey, next);
+          const embeddedToolCallIds = toolCallIdsByAgentTerminalId.get(terminalKey);
+          const linked = embeddedToolCallIds !== undefined && embeddedToolCallIds.size > 0;
+          if (!linked && next.exitStatus !== undefined) {
+            expiredHoldCommandIds.delete(
+              sessionScopedId(notification.sessionId, `acp-agent-terminal:${update.terminalId}`),
+            );
+          }
           if (context === null || notification.sessionId !== context.nativeThreadId) return true;
           const status =
             next.exitStatus === undefined
@@ -6619,8 +6626,6 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               : next.exitStatus.exitCode === 0
                 ? ("completed" as const)
                 : ("failed" as const);
-          const embeddedToolCallIds = toolCallIdsByAgentTerminalId.get(terminalKey);
-          const linked = embeddedToolCallIds !== undefined && embeddedToolCallIds.size > 0;
           const projectedToolCallIds = linked
             ? [...embeddedToolCallIds]
             : [`acp-agent-terminal:${update.terminalId}`];
@@ -6648,11 +6653,6 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                 },
                 output,
               ),
-            );
-          }
-          if (!linked && next.exitStatus !== undefined) {
-            expiredHoldCommandIds.delete(
-              sessionScopedId(notification.sessionId, `acp-agent-terminal:${update.terminalId}`),
             );
           }
           return true;

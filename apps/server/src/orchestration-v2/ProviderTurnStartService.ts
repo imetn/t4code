@@ -2379,6 +2379,10 @@ export const layer: Layer.Layer<
         function* (
           turnInput: ProviderAdapter.ProviderAdapterV2TurnInput,
           error: ProviderAdapter.ProviderAdapterV2Error,
+          onCommitted: (recovered: {
+            readonly providerThread: OrchestrationV2ProviderThread;
+            readonly attempt: typeof runningAttempt;
+          }) => Effect.Effect<void>,
         ) {
           if (
             resumeFellBack ||
@@ -2421,6 +2425,10 @@ export const layer: Layer.Layer<
             contextUsage: freshContext.handoffUsage,
             updatedAt: yield* DateTime.now,
           };
+          const recoveredAttempt = {
+            ...runningAttempt,
+            nativeThreadId: replacement.nativeThreadRef.nativeId,
+          };
           const { handoff, turnItem, events: recoveryEventList } = yield* recoveryRecords();
           const recoveryWrite = yield* eventSink.writeIfRunCurrent({
             threadId: projection.thread.id,
@@ -2435,10 +2443,7 @@ export const layer: Layer.Layer<
                   { type: "provider-thread.updated" as const, payload: recoveredThread },
                   {
                     type: "run-attempt.updated" as const,
-                    payload: {
-                      ...runningAttempt,
-                      nativeThreadId: replacement.nativeThreadRef.nativeId,
-                    },
+                    payload: recoveredAttempt,
                   },
                 ],
                 (event) =>
@@ -2459,6 +2464,10 @@ export const layer: Layer.Layer<
             ],
           });
           if (!recoveryWrite.committed) return undefined;
+          yield* onCommitted({
+            providerThread: recoveredThread,
+            attempt: recoveredAttempt,
+          });
           resumeFellBack = true;
           effectiveHandoffs = withRecoveryHandoff(handoff);
           deliveryTarget = {

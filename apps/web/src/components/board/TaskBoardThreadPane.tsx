@@ -83,7 +83,13 @@ export function TaskBoardThreadPane({
             </Button>
           </span>
           {project ? <ProjectFavicon project={project} className="size-4 shrink-0" /> : null}
-          <h2 className="min-w-0 truncate text-sm font-medium text-foreground">{title}</h2>
+          <h2
+            tabIndex={-1}
+            data-task-board-pane-title=""
+            className="min-w-0 truncate text-sm font-medium text-foreground focus:outline-hidden"
+          >
+            {title}
+          </h2>
           {statusBadge ? (
             <Badge size="sm" variant={statusBadge.variant}>
               <span className="inline-flex items-center gap-1">

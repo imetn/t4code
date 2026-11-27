@@ -113,4 +113,39 @@ describe("draftAssistantCitations", () => {
     // Second overlapping badge shifts left so both stay clickable.
     expect(positions[1]).toMatchObject({ index: 2, x: 376, y: 0 });
   });
+
+  it("avoids stacking badges on identical coordinates at the left edge", () => {
+    const c1 = makeCitation("msg-1", "a", 0);
+    const c2 = makeCitation("msg-1", "b", 2);
+    const c3 = makeCitation("msg-1", "c", 4);
+    const positions = computeDraftCitationBadgePositions({
+      containerRect: { left: 100, top: 200, width: 60 },
+      anchors: [
+        {
+          index: 1,
+          citation: c1,
+          rects: [{ left: 100, right: 105, top: 202, bottom: 220, width: 5, height: 18 }],
+        },
+        {
+          index: 2,
+          citation: c2,
+          rects: [{ left: 100, right: 105, top: 202, bottom: 220, width: 5, height: 18 }],
+        },
+        {
+          index: 3,
+          citation: c3,
+          rects: [{ left: 100, right: 105, top: 202, bottom: 220, width: 5, height: 18 }],
+        },
+      ],
+    });
+
+    expect(positions).toHaveLength(3);
+    for (let i = 0; i < positions.length; i += 1) {
+      for (let j = i + 1; j < positions.length; j += 1) {
+        const dx = Math.abs(positions[i]!.x - positions[j]!.x);
+        const dy = Math.abs(positions[i]!.y - positions[j]!.y);
+        expect(dx >= 22 || dy >= 20).toBe(true);
+      }
+    }
+  });
 });

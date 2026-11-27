@@ -22,7 +22,14 @@ import {
   SearchIcon,
   XIcon,
 } from "lucide-react";
-import { useEffect, useState, type DragEvent, type MouseEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type DragEvent,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 
 import { useHandleNewThread } from "../../hooks/useHandleNewThread";
 import { useThreadActions } from "../../hooks/useThreadActions";
@@ -106,6 +113,14 @@ function isEscapeCapturedTarget(target: EventTarget | null): boolean {
   );
 }
 
+function focusTaskBoardThreadPane(root: HTMLElement | null) {
+  if (!root) return;
+  const target =
+    root.querySelector<HTMLElement>("[data-task-board-pane-title]") ??
+    root.querySelector<HTMLElement>('[data-testid="task-board-thread-pane"]');
+  target?.focus();
+}
+
 export function TaskBoardPage() {
   const gt = useGT();
   const navigate = useNavigate();
@@ -125,14 +140,56 @@ export function TaskBoardPage() {
   const [dragOverColumn, setDragOverColumn] = useState<TaskBoardColumnId | null>(null);
   const [selectedThreadRef, setSelectedThreadRef] = useState<ScopedThreadRef | null>(null);
   const [dockedColumnId, setDockedColumnId] = useState<TaskBoardColumnId>("working");
+  const boardBodyRef = useRef<HTMLDivElement | null>(null);
+  const pendingFocusRef = useRef<
+    | { readonly kind: "pane" }
+    | { readonly kind: "card"; readonly key: string; readonly columnId: TaskBoardColumnId }
+    | null
+  >(null);
 
   const selectedThreadShell = useQuietThreadShell(selectedThreadRef);
   const selectedThreadKey = selectedThreadRef ? scopedThreadKey(selectedThreadRef) : null;
   const activeDockedColumnId = resolveDockedTaskBoardColumn(dockedColumnId, showSettled);
 
+  const closeSplitView = () => {
+    if (selectedThreadKey !== null) {
+      pendingFocusRef.current = {
+        kind: "card",
+        key: selectedThreadKey,
+        columnId: activeDockedColumnId,
+      };
+    }
+    setSelectedThreadRef(null);
+  };
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- moves DOM focus into the opened thread pane or back onto the originating board card across split-view mount/unmount
+  useEffect(() => {
+    const pending = pendingFocusRef.current;
+    const root = boardBodyRef.current;
+    if (!pending || !root) return;
+    if (pending.kind === "pane" && selectedThreadKey !== null) {
+      focusTaskBoardThreadPane(root);
+      pendingFocusRef.current = null;
+      return;
+    }
+    if (pending.kind === "card" && selectedThreadKey === null) {
+      const escapedKey =
+        typeof CSS !== "undefined" && typeof CSS.escape === "function"
+          ? CSS.escape(pending.key)
+          : pending.key.replaceAll('"', '\\"');
+      const card = root.querySelector<HTMLElement>(`[data-task-board-card="${escapedKey}"]`);
+      const fallback =
+        card ??
+        root.querySelector<HTMLElement>(`[data-task-board-column="${pending.columnId}"]`) ??
+        root.querySelector<HTMLElement>("[data-task-board-column]");
+      fallback?.focus();
+      pendingFocusRef.current = null;
+    }
+  }, [selectedThreadKey]);
+
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to Escape on window to exit the board split view back to the full board
   useEffect(() => {
-    if (selectedThreadRef === null) return;
+    if (selectedThreadKey === null) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (
         event.key !== "Escape" ||
@@ -144,11 +201,16 @@ export function TaskBoardPage() {
         return;
       }
       event.preventDefault();
+      pendingFocusRef.current = {
+        kind: "card",
+        key: selectedThreadKey,
+        columnId: activeDockedColumnId,
+      };
       setSelectedThreadRef(null);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selectedThreadRef]);
+  }, [activeDockedColumnId, selectedThreadKey]);
 
   const environments = environmentPresentations.map((environment) => ({
     id: environment.environmentId,
@@ -200,6 +262,9 @@ export function TaskBoardPage() {
     if (event && (event.metaKey || event.ctrlKey)) {
       navigateToThreadRoute(threadRef);
       return;
+    }
+    if (event) {
+      pendingFocusRef.current = null;
     }
     setDockedColumnId(item.column);
     setSelectedThreadRef(threadRef);
@@ -345,6 +410,7 @@ export function TaskBoardPage() {
     return (
       <section
         key={column.id}
+        tabIndex={-1}
         aria-label={column.title}
         data-task-board-column={column.id}
         onDragOver={(event) => handleColumnDragOver(event, column.id)}
@@ -353,7 +419,7 @@ export function TaskBoardPage() {
         }}
         onDrop={(event) => handleColumnDrop(event, column.id)}
         className={cn(
-          "flex min-h-0 flex-col rounded-xl border p-2.5 transition-colors",
+          "flex min-h-0 flex-col rounded-xl border p-2.5 transition-colors focus:outline-hidden",
           docked && "flex-1",
           column.accentClass,
           isDropTarget && "ring-2 ring-primary/60",
@@ -402,7 +468,12 @@ export function TaskBoardPage() {
                     onKeyDown={(event) => {
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
-                        handleSelectCard(item);
+                        if (isSelected) {
+                          focusTaskBoardThreadPane(boardBodyRef.current);
+                        } else {
+                          pendingFocusRef.current = { kind: "pane" };
+                          handleSelectCard(item);
+                        }
                       }
                     }}
                     className={cn(
@@ -567,12 +638,7 @@ export function TaskBoardPage() {
             ) : null}
           </div>
           {selectedThreadRef !== null ? (
-            <Button
-              type="button"
-              size="xs"
-              variant="outline"
-              onClick={() => setSelectedThreadRef(null)}
-            >
+            <Button type="button" size="xs" variant="outline" onClick={closeSplitView}>
               <Columns4Icon className="size-3.5" />
               <span>
                 <T>All columns</T>
@@ -711,85 +777,87 @@ export function TaskBoardPage() {
         </div>
       ) : null}
 
-      {selectedThreadRef !== null ? (
-        <div
-          data-testid="task-board-split-view"
-          className="flex min-h-0 flex-1 gap-3 overflow-hidden p-4"
-        >
+      <div ref={boardBodyRef} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        {selectedThreadRef !== null ? (
           <div
-            data-testid="task-board-docked-column"
-            className="hidden min-h-0 w-[clamp(17.5rem,25%,22rem)] shrink-0 flex-col gap-2 md:flex"
+            data-testid="task-board-split-view"
+            className="flex min-h-0 flex-1 gap-3 overflow-hidden p-4"
           >
             <div
-              role="tablist"
-              aria-label={gt("Task board columns")}
+              data-testid="task-board-docked-column"
+              className="hidden min-h-0 w-[clamp(17.5rem,25%,22rem)] shrink-0 flex-col gap-2 md:flex"
+            >
+              <div
+                role="tablist"
+                aria-label={gt("Task board columns")}
+                className={cn(
+                  "grid shrink-0 gap-1",
+                  columnDefs.length === 4 ? "grid-cols-2" : "grid-cols-3",
+                )}
+              >
+                {columnDefs.map((column) => {
+                  const isActive = column.id === dockedColumn.id;
+                  const isDropTarget = column.droppable && dragOverColumn === column.id;
+                  return (
+                    <button
+                      key={column.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={isActive}
+                      data-task-board-column-tab={column.id}
+                      onClick={() => setDockedColumnId(column.id)}
+                      onDragOver={(event) => handleColumnDragOver(event, column.id)}
+                      onDragLeave={() => {
+                        if (dragOverColumn === column.id) setDragOverColumn(null);
+                      }}
+                      onDrop={(event) => handleColumnDrop(event, column.id)}
+                      className={cn(
+                        "flex min-w-0 cursor-pointer items-center justify-between gap-1.5 rounded-lg border px-2 py-1.5 text-left text-xs font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                        isActive
+                          ? cn("text-foreground shadow-2xs", column.accentClass)
+                          : "border-border/50 bg-background text-muted-foreground hover:border-border hover:bg-accent/40 hover:text-foreground",
+                        isDropTarget && "ring-2 ring-inset ring-primary/60",
+                      )}
+                    >
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        {column.icon}
+                        <span className="truncate">{column.title}</span>
+                      </span>
+                      <span className="shrink-0 text-2xs tabular-nums text-muted-foreground">
+                        {column.totalCount}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              {renderColumnSection(dockedColumn, true)}
+            </div>
+
+            <TaskBoardThreadPane
+              threadRef={selectedThreadRef}
+              project={selectedProject}
+              environmentLabel={environmentLabelById.get(selectedThreadRef.environmentId) ?? null}
+              showEnvironmentBadge={showEnvironmentFilter}
+              statusBadge={selectedStatusBadge}
+              onClose={closeSplitView}
+              onOpenFullView={() => navigateToThreadRoute(selectedThreadRef)}
+            />
+          </div>
+        ) : (
+          <div className="flex min-h-0 flex-1 overflow-x-auto p-4">
+            <div
               className={cn(
-                "grid shrink-0 gap-1",
-                columnDefs.length === 4 ? "grid-cols-2" : "grid-cols-3",
+                "grid min-h-0 min-w-full flex-1 gap-3",
+                showSettled
+                  ? "grid-cols-[repeat(4,minmax(17rem,1fr))]"
+                  : "grid-cols-[repeat(3,minmax(18rem,1fr))]",
               )}
             >
-              {columnDefs.map((column) => {
-                const isActive = column.id === dockedColumn.id;
-                const isDropTarget = column.droppable && dragOverColumn === column.id;
-                return (
-                  <button
-                    key={column.id}
-                    type="button"
-                    role="tab"
-                    aria-selected={isActive}
-                    data-task-board-column-tab={column.id}
-                    onClick={() => setDockedColumnId(column.id)}
-                    onDragOver={(event) => handleColumnDragOver(event, column.id)}
-                    onDragLeave={() => {
-                      if (dragOverColumn === column.id) setDragOverColumn(null);
-                    }}
-                    onDrop={(event) => handleColumnDrop(event, column.id)}
-                    className={cn(
-                      "flex min-w-0 cursor-pointer items-center justify-between gap-1.5 rounded-lg border px-2 py-1.5 text-left text-xs font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                      isActive
-                        ? cn("text-foreground shadow-2xs", column.accentClass)
-                        : "border-border/50 bg-background text-muted-foreground hover:border-border hover:bg-accent/40 hover:text-foreground",
-                      isDropTarget && "ring-2 ring-inset ring-primary/60",
-                    )}
-                  >
-                    <span className="flex min-w-0 items-center gap-1.5">
-                      {column.icon}
-                      <span className="truncate">{column.title}</span>
-                    </span>
-                    <span className="shrink-0 text-2xs tabular-nums text-muted-foreground">
-                      {column.totalCount}
-                    </span>
-                  </button>
-                );
-              })}
+              {columnDefs.map((column) => renderColumnSection(column, false))}
             </div>
-            {renderColumnSection(dockedColumn, true)}
           </div>
-
-          <TaskBoardThreadPane
-            threadRef={selectedThreadRef}
-            project={selectedProject}
-            environmentLabel={environmentLabelById.get(selectedThreadRef.environmentId) ?? null}
-            showEnvironmentBadge={showEnvironmentFilter}
-            statusBadge={selectedStatusBadge}
-            onClose={() => setSelectedThreadRef(null)}
-            onOpenFullView={() => navigateToThreadRoute(selectedThreadRef)}
-          />
-        </div>
-      ) : (
-        <div className="flex min-h-0 flex-1 overflow-x-auto p-4">
-          <div
-            className={cn(
-              "grid min-h-0 min-w-full flex-1 gap-3",
-              showSettled
-                ? "grid-cols-[repeat(4,minmax(17rem,1fr))]"
-                : "grid-cols-[repeat(3,minmax(18rem,1fr))]",
-            )}
-          >
-            {columnDefs.map((column) => renderColumnSection(column, false))}
-          </div>
-        </div>
-      )}
+        )}
+      </div>
     </SidebarInset>
   );
 }

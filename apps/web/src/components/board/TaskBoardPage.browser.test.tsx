@@ -260,5 +260,42 @@ describe("TaskBoardPage", () => {
       to: "/$environmentId/$threadId",
       params: { environmentId: envId, threadId: ThreadId.make("t-working") },
     });
+
+    // Keyboard open moves focus into the opened thread pane, and Escape restores focus to the card.
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    const activeCardAgain = document.querySelector<HTMLElement>(
+      `[data-task-board-card="${envId}:t-active"]`,
+    )!;
+    activeCardAgain.focus();
+    await act(async () => {
+      activeCardAgain.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+    expect(document.activeElement).toBe(document.querySelector("[data-task-board-pane-title]"));
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    expect(document.activeElement?.getAttribute("data-task-board-card")).toBe(`${envId}:t-active`);
+
+    // If the open card is filtered out before closing, focus falls back to the column instead of body.
+    await act(async () => {
+      document
+        .querySelector<HTMLElement>(`[data-task-board-card="${envId}:t-active"]`)!
+        .dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+    const filterInput = document.querySelector<HTMLInputElement>(
+      'input[aria-label="Filter tasks"]',
+    )!;
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      setter.call(filterInput, "Build feature");
+      filterInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    expect(document.activeElement?.getAttribute("data-task-board-column")).toBe("active");
   });
 });

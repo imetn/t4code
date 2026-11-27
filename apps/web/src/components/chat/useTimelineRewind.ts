@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef } from "react";
 import { msg } from "gt-react";
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
 import { m } from "~/i18n/messages";
@@ -86,6 +87,17 @@ export function useTimelineRewind(input: TimelineRewindInput) {
   } = input;
   const navigate = useNavigate();
   const router = useRouter();
+  const selectionTokenRef = useRef<{ readonly key: string } | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- invalidates pending async fork navigation when the mounted thread changes or unmounts (e.g. Task Board split view)
+  useLayoutEffect(() => {
+    const token = { key: routeThreadKey };
+    selectionTokenRef.current = token;
+    return () => {
+      if (selectionTokenRef.current === token) {
+        selectionTokenRef.current = null;
+      }
+    };
+  }, [routeThreadKey]);
   const createAttachmentAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
     reportFailure: false,
     refresh: true,
@@ -197,6 +209,7 @@ export function useTimelineRewind(input: TimelineRewindInput) {
   }) => {
     if (!activeThread || activeEnvironmentUnavailable) return;
     const location = router.latestLocation;
+    const selectionToken = selectionTokenRef.current;
     const targetThreadId = newThreadId();
     const targetThreadRef = scopeThreadRef(environmentId, targetThreadId);
     const result = await forkThreadFromRun({
@@ -239,7 +252,13 @@ export function useTimelineRewind(input: TimelineRewindInput) {
         description: thrownErrorMessage(error, m) ?? String(error),
       });
     }
-    if (router.latestLocation !== location) return;
+    if (
+      router.latestLocation !== location ||
+      selectionToken === null ||
+      selectionTokenRef.current !== selectionToken
+    ) {
+      return;
+    }
     await navigate({
       to: "/$environmentId/$threadId",
       params: buildThreadRouteParams(targetThreadRef),

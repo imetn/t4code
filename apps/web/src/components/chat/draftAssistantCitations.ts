@@ -90,22 +90,46 @@ export function computeDraftCitationBadgePositions(input: {
       if (rect.top < minTop) minTop = rect.top;
     }
 
-    let x = Math.max(BADGE_MIN_X, Math.min(Math.round(maxRight - containerRect.left + 8), maxX));
-    const y = Math.max(0, Math.round(minTop - containerRect.top - BADGE_VERTICAL_LIFT));
-
-    // Nudge left when another badge occupies the same top-right anchor.
-    let attempts = 0;
-    while (
-      attempts < 8 &&
+    const baseX = Math.max(
+      BADGE_MIN_X,
+      Math.min(Math.round(maxRight - containerRect.left + 8), maxX),
+    );
+    const baseY = Math.max(0, Math.round(minTop - containerRect.top - BADGE_VERTICAL_LIFT));
+    const collides = (candidateX: number, candidateY: number) =>
       placed.some(
         (other) =>
-          Math.abs(other.x - x) < BADGE_COLLISION_X && Math.abs(other.y - y) < BADGE_COLLISION_Y,
-      )
-    ) {
-      const nextX = x - BADGE_COLLISION_STEP;
-      if (nextX < BADGE_MIN_X) break;
-      x = nextX;
-      attempts += 1;
+          Math.abs(other.x - candidateX) < BADGE_COLLISION_X &&
+          Math.abs(other.y - candidateY) < BADGE_COLLISION_Y,
+      );
+
+    let x = baseX;
+    let y = baseY;
+    // Prefer shifting left on the same row, then right, then wrapping down if a narrow line is full.
+    for (let row = 0; row < 8 && collides(x, y); row += 1) {
+      const candidateY = baseY + row * BADGE_COLLISION_Y;
+      let resolved = false;
+      for (let step = 0; step <= 8; step += 1) {
+        const leftX = baseX - step * BADGE_COLLISION_STEP;
+        if (leftX >= BADGE_MIN_X && !collides(leftX, candidateY)) {
+          x = leftX;
+          y = candidateY;
+          resolved = true;
+          break;
+        }
+      }
+      if (resolved) break;
+      for (let step = 1; step <= 8; step += 1) {
+        const rightX = baseX + step * BADGE_COLLISION_STEP;
+        if (rightX <= maxX && !collides(rightX, candidateY)) {
+          x = rightX;
+          y = candidateY;
+          resolved = true;
+          break;
+        }
+      }
+      if (resolved) break;
+      y = candidateY + BADGE_COLLISION_Y;
+      x = baseX;
     }
 
     placed.push({ index: anchor.index, citation: anchor.citation, x, y });

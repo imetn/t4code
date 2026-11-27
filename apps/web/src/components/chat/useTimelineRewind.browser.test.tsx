@@ -22,19 +22,25 @@ vi.mock(import("../../state/entities"), async (importOriginal) => ({
 
 const environmentId = EnvironmentId.make("test");
 const sourceThreadId = ThreadId.make("source");
-const sourceRef = scopeThreadRef(environmentId, sourceThreadId);
 const sourcePath = "/test/source";
 const runId = RunId.make("run");
 
-function ForkButton({ start }: { start: (completion: Promise<void>) => void }) {
-  const routeThreadKey = scopedThreadKey(sourceRef);
+function ForkButton({
+  start,
+  threadId = sourceThreadId,
+}: {
+  start: (completion: Promise<void>) => void;
+  threadId?: ThreadId;
+}) {
+  const threadRef = scopeThreadRef(environmentId, threadId);
+  const routeThreadKey = scopedThreadKey(threadRef);
   const { onForkFromRunStable } = useTimelineRewind({
     environmentId,
-    routeThreadRef: sourceRef,
+    routeThreadRef: threadRef,
     routeThreadKey,
     currentRouteThreadKeyRef: { current: routeThreadKey },
     serverProjection: null,
-    activeThread: { id: sourceThreadId, title: "Source" } as EnvironmentThreadShell,
+    activeThread: { id: threadId, title: "Source" } as EnvironmentThreadShell,
     timelineMessages: [],
     phase: "ready",
     isSendBusy: false,
@@ -44,12 +50,15 @@ function ForkButton({ start }: { start: (completion: Promise<void>) => void }) {
     activeEnvironmentUnavailableLabel: null,
     promptRef: { current: "" },
     composerRef: { current: null },
-    composerDraftTarget: sourceRef,
+    composerDraftTarget: threadRef,
     setThreadError: () => undefined,
   });
 
   return (
-    <button type="button" onClick={() => start(onForkFromRunStable({ sourceThreadId, runId }))}>
+    <button
+      type="button"
+      onClick={() => start(onForkFromRunStable({ sourceThreadId: threadId, runId }))}
+    >
       Fork from this response
     </button>
   );
@@ -84,4 +93,44 @@ it.each([
   });
 
   expect(router.state.location.pathname).toBe(destination);
+});
+
+it("skips navigation when an embedded board selection changes or closes before a fork finishes", async () => {
+  for (const mode of ["switch", "roundtrip", "unmount"] as const) {
+    const shellRequested = Promise.withResolvers<void>();
+    const shellReady = Promise.withResolvers<boolean>();
+    commands.fork.mockResolvedValue({ _tag: "Success" });
+    commands.waitForThreadShell.mockImplementation(() => {
+      shellRequested.resolve();
+      return shellReady.promise;
+    });
+
+    const forkFinished = Promise.withResolvers<void>();
+    await using screen = await render(<ForkButton start={forkFinished.resolve} />, {
+      router: "/board",
+    });
+    const router = screen.router!;
+    await screen.getByRole("button", { name: "Fork from this response" }).click();
+    await shellRequested.promise;
+
+    if (mode === "switch") {
+      await screen.rerender(
+        <ForkButton start={forkFinished.resolve} threadId={ThreadId.make("other")} />,
+      );
+    } else if (mode === "roundtrip") {
+      await screen.rerender(
+        <ForkButton start={forkFinished.resolve} threadId={ThreadId.make("other")} />,
+      );
+      await screen.rerender(<ForkButton start={forkFinished.resolve} threadId={sourceThreadId} />);
+    } else {
+      await screen.rerender(null);
+    }
+
+    await act(async () => {
+      shellReady.resolve(true);
+      await forkFinished.promise;
+    });
+
+    expect(router.state.location.pathname).toBe("/board");
+  }
 });

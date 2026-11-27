@@ -41,8 +41,11 @@ interface KeptToolResult {
 
 interface ToolResultState {
   readonly entries: ReadonlyMap<ThreadId, ReadonlyArray<KeptToolResult>>;
+  readonly evictedInputKeys: ReadonlyMap<ThreadId, ReadonlySet<string>>;
   readonly epochs: ReadonlyMap<ThreadId, number>;
 }
+
+const toolInputKey = (toolName: string, inputHash: string) => `${toolName}\0${inputHash}`;
 
 const hashText = (text: string) => NodeCrypto.createHash("sha256").update(text).digest("hex");
 
@@ -185,26 +188,35 @@ const matchingToolResultIndex = (
  * Drops the oldest results until the thread fits. Every result kept for the same call input goes
  * with it, so an input-only lookup can never hand the dropped call's sibling output to another call.
  */
-const withinByteLimit = (kept: ReadonlyArray<KeptToolResult>): ReadonlyArray<KeptToolResult> => {
+const withinByteLimit = (
+  kept: ReadonlyArray<KeptToolResult>,
+): {
+  readonly kept: ReadonlyArray<KeptToolResult>;
+  readonly evicted: ReadonlyArray<KeptToolResult>;
+} => {
   let rest = kept;
+  const evicted: Array<KeptToolResult> = [];
   let bytes = rest.reduce((total, entry) => total + entry.outputJson.length, 0);
   while (bytes > MAX_KEPT_TOOL_RESULT_BYTES && rest.length > 0) {
     const oldest = rest[0]!;
     const dropped = rest.filter(
       (entry) => entry.toolName === oldest.toolName && entry.inputHash === oldest.inputHash,
     );
+    evicted.push(...dropped);
     rest = rest.filter((entry) => !dropped.includes(entry));
     bytes -= dropped.reduce((total, entry) => total + entry.outputJson.length, 0);
   }
-  return rest;
+  return { kept: rest, evicted };
 };
 
 const clearThreadToolResults = (state: ToolResultState, threadId: ThreadId): ToolResultState => {
   const entries = new Map(state.entries);
   entries.delete(threadId);
+  const evictedInputKeys = new Map(state.evictedInputKeys);
+  evictedInputKeys.delete(threadId);
   const epochs = new Map(state.epochs);
   epochs.set(threadId, (state.epochs.get(threadId) ?? 0) + 1);
-  return { entries, epochs };
+  return { entries, evictedInputKeys, epochs };
 };
 
 const make = Effect.gen(function* () {
@@ -212,6 +224,7 @@ const make = Effect.gen(function* () {
   const htmlRenders = yield* Ref.make(new Map<ThreadId, ReadonlyArray<KeptHtmlRender>>());
   const toolResultState = yield* Ref.make<ToolResultState>({
     entries: new Map(),
+    evictedInputKeys: new Map(),
     epochs: new Map(),
   });
   const toolResultImagesRecoveredBy = yield* Ref.make<ReadonlySet<ProviderInstanceId>>(new Set());
@@ -326,14 +339,29 @@ const make = Effect.gen(function* () {
           if (expectedEpoch !== undefined && (state.epochs.get(threadId) ?? 0) !== expectedEpoch) {
             return state;
           }
+          const combined = [...(state.entries.get(threadId) ?? []), entry];
+          const overflowCount = Math.max(0, combined.length - MAX_KEPT_TOOL_RESULTS);
+          const countEvicted = overflowCount > 0 ? combined.slice(0, overflowCount) : [];
+          const withinCount = overflowCount > 0 ? combined.slice(overflowCount) : combined;
+          const { kept, evicted: byteEvicted } = withinByteLimit(withinCount);
+          const allEvicted = [...countEvicted, ...byteEvicted];
+          let evictedInputKeys = state.evictedInputKeys;
+          if (allEvicted.length > 0) {
+            const nextThreadEvicted = new Set(evictedInputKeys.get(threadId));
+            for (const dropped of allEvicted) {
+              nextThreadEvicted.add(toolInputKey(dropped.toolName, dropped.inputHash));
+            }
+            const nextEvictedMap = new Map(evictedInputKeys);
+            nextEvictedMap.set(threadId, nextThreadEvicted);
+            evictedInputKeys = nextEvictedMap;
+          }
           const entries = new Map(state.entries);
-          entries.set(
-            threadId,
-            withinByteLimit(
-              [...(entries.get(threadId) ?? []), entry].slice(-MAX_KEPT_TOOL_RESULTS),
-            ),
-          );
-          return { ...state, entries };
+          if (kept.length === 0) {
+            entries.delete(threadId);
+          } else {
+            entries.set(threadId, kept);
+          }
+          return { ...state, entries, evictedInputKeys };
         });
       },
     ),
@@ -341,6 +369,14 @@ const make = Effect.gen(function* () {
       function (threadId, toolName, input, reported) {
         const canonicalTool = resolveT3McpToolId(toolName) ?? toolName;
         return Ref.modify(toolResultState, (state) => {
+          if (
+            reported === undefined &&
+            state.evictedInputKeys
+              .get(threadId)
+              ?.has(toolInputKey(canonicalTool, hashToolInput(input)))
+          ) {
+            return [undefined, state];
+          }
           const kept = state.entries.get(threadId) ?? [];
           const index = matchingToolResultIndex(kept, canonicalTool, input, reported);
           if (index === -1) {
