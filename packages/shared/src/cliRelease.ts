@@ -1,6 +1,3 @@
-import * as Option from "effect/Option";
-import * as Schema from "effect/Schema";
-
 import { compareSemverVersions } from "./semver.ts";
 
 const CLI_RELEASE_REPOSITORY = "imetn/t4code";
@@ -136,6 +133,10 @@ export function cliReleaseIndexPageUrl(page: number): string {
   return `https://api.github.com/repos/${CLI_RELEASE_REPOSITORY}/releases?per_page=100&page=${page}`;
 }
 
+export function cliReleaseTagUrl(version: string): string {
+  return `https://api.github.com/repos/${CLI_RELEASE_REPOSITORY}/releases/tags/v${encodeURIComponent(version)}`;
+}
+
 /** Draft assets are not downloadable. */
 export function newestCliReleaseVersion(
   releases: ReadonlyArray<{
@@ -151,15 +152,4 @@ export function newestCliReleaseVersion(
     if (cliReleaseChannelOf(version) === channel) return version;
   }
   return undefined;
-}
-
-const NpmReleaseMigrationManifest = Schema.Struct({
-  t3code: Schema.Struct({ databaseMigration: Schema.Int }),
-});
-const decodeNpmReleaseMigrationManifest = Schema.decodeUnknownOption(NpmReleaseMigrationManifest);
-
-/** Highest database migration a release's server knows, from its npm `t3` manifest. */
-export function npmReleaseDatabaseMigration(manifest: unknown): number | undefined {
-  return Option.getOrUndefined(decodeNpmReleaseMigrationManifest(manifest))?.t3code
-    .databaseMigration;
 }

@@ -68,12 +68,9 @@ export function UpdateTrackSwitchDialog({
             {AsyncResult.isFailure(release)
               ? npmReleaseFailureMessage(release.cause, m)
               : AsyncResult.isSuccess(release)
-                ? gt(
-                    "Could not find the latest {label} release in this environment's npm registry.",
-                    {
-                      label,
-                    },
-                  )
+                ? gt("Could not find the latest {label} release for T4 Code.", {
+                    label,
+                  })
                 : gt("Checking releases…")}
           </AlertDialogDescription>
         </AlertDialogHeader>

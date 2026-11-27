@@ -1570,7 +1570,7 @@ function ConnectionsSettingsContent({
                         "Let your other devices connect to T4 Code over the network. Pair devices to give them access. T4 Code will restart.",
                       )
                     : gt(
-                        "Devices connected over your local network will disconnect. Existing tunnels, such as T3 Connect or Tailscale HTTPS, keep working. T4 Code will restart.",
+                        "Devices connected over your local network will disconnect. Existing tunnels, such as T4 Connect or Tailscale HTTPS, keep working. T4 Code will restart.",
                       )}
                 </AlertDialogDescription>
               </AlertDialogHeader>

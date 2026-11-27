@@ -62,7 +62,7 @@ function probeFailureLabel(
         ? gt("HTTP {status}", { status: result.status })
         : gt("Error response");
     case "invalid-response":
-      return gt("Not a T3 relay");
+      return gt("Not a T4 relay");
     case "invalid-url":
       return gt("Invalid URL");
     case "unreachable":
@@ -300,7 +300,7 @@ export function CustomRelayUrlSetting() {
         <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0 text-warning-foreground" />
         <span>
           {gt(
-            "Using {activeHost}, but this machine's T3 Connect link was revoked. Re-link in Sharing & access.",
+            "Using {activeHost}, but this machine's T4 Connect link was revoked. Re-link in Sharing & access.",
             { activeHost: verification.activeHost ?? "" },
           )}
         </span>
@@ -325,13 +325,13 @@ export function CustomRelayUrlSetting() {
         <InfoIcon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
         <span>
           {gt(
-            "Configured for {activeHost}. Turn on T3 Connect in Sharing & access to provision a tunnel on this relay.",
+            "Configured for {activeHost}. Turn on T4 Connect in Sharing & access to provision a tunnel on this relay.",
             { activeHost: verification.activeHost ?? "" },
           )}
         </span>
       </span>
     ) : (
-      gt("Route T3 Connect through your own relay and Clerk instance.")
+      gt("Route T4 Connect through your own relay and Clerk instance.")
     );
 
   const latencyReadout = isProbing ? (
@@ -420,7 +420,7 @@ export function CustomRelayUrlSetting() {
                 <T>Relay URL</T>
               </label>
               <p className="text-xs text-muted-foreground">
-                {gt("HTTPS origin for your T3 Connect relay. Leave empty to use {url}.", {
+                {gt("HTTPS origin for your T4 Connect relay. Leave empty to use {url}.", {
                   url: effectiveDefaultRelayUrl,
                 })}
               </p>

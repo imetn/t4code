@@ -1254,72 +1254,76 @@ function SidebarEnvironmentFilter(props: {
   };
 
   return (
-    <div className="relative mt-2">
-      <div
-        ref={scrollerRef}
-        role="group"
-        aria-label={gt("Filter by environment")}
-        onScroll={updateScrollEdges}
-        onClickCapture={(event) => {
-          if (!suppressNextClickRef.current) return;
-          suppressNextClickRef.current = false;
-          event.preventDefault();
-          event.stopPropagation();
-        }}
-        className="flex flex-nowrap items-center overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+    <div
+      role="group"
+      aria-label={gt("Filter by environment")}
+      className="mt-2 flex items-center gap-1.5"
+    >
+      <Button
+        type="button"
+        size="compact"
+        variant={environmentScopeIds.length === 0 ? "outline" : "ghost-muted"}
+        aria-pressed={environmentScopeIds.length === 0}
+        className="mb-0.5 shrink-0"
+        onClick={onSelectAll}
       >
-        <div ref={contentRef} className="flex w-max flex-nowrap items-center gap-1.5">
-          <Button
-            type="button"
-            size="compact"
-            variant={environmentScopeIds.length === 0 ? "outline" : "ghost-muted"}
-            aria-pressed={environmentScopeIds.length === 0}
-            className="shrink-0"
-            onClick={onSelectAll}
-          >
-            <T>All</T>
-          </Button>
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            modifiers={ENVIRONMENT_FILTER_DRAG_MODIFIERS}
-            onDragStart={() => {
-              if (resetSuppressTimerRef.current !== null) {
-                window.clearTimeout(resetSuppressTimerRef.current);
-                resetSuppressTimerRef.current = null;
-              }
-              suppressNextClickRef.current = true;
-            }}
-            onDragEnd={handleDragEnd}
-            onDragCancel={scheduleResetSuppressClick}
-          >
-            <SortableContext items={environmentIds} strategy={horizontalListSortingStrategy}>
-              {environments.map((environment) => (
-                <SortableEnvironmentChip
-                  key={environment.id}
-                  environment={environment}
-                  machineKind={environmentMachineById.get(environment.id) ?? "desktop"}
-                  isSelected={environmentScopeIds.includes(environment.id)}
-                  workingCount={workingCountByEnvironmentId.get(environment.id) ?? 0}
-                  onToggle={onToggleEnvironment}
-                />
-              ))}
-            </SortableContext>
-          </DndContext>
+        <T>All</T>
+      </Button>
+      <div className="relative min-w-0 flex-1">
+        <div
+          ref={scrollerRef}
+          onScroll={updateScrollEdges}
+          onClickCapture={(event) => {
+            if (!suppressNextClickRef.current) return;
+            suppressNextClickRef.current = false;
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          className="flex flex-nowrap items-center overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
+          <div ref={contentRef} className="flex w-max flex-nowrap items-center gap-1.5">
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              modifiers={ENVIRONMENT_FILTER_DRAG_MODIFIERS}
+              onDragStart={() => {
+                if (resetSuppressTimerRef.current !== null) {
+                  window.clearTimeout(resetSuppressTimerRef.current);
+                  resetSuppressTimerRef.current = null;
+                }
+                suppressNextClickRef.current = true;
+              }}
+              onDragEnd={handleDragEnd}
+              onDragCancel={scheduleResetSuppressClick}
+            >
+              <SortableContext items={environmentIds} strategy={horizontalListSortingStrategy}>
+                {environments.map((environment) => (
+                  <SortableEnvironmentChip
+                    key={environment.id}
+                    environment={environment}
+                    machineKind={environmentMachineById.get(environment.id) ?? "desktop"}
+                    isSelected={environmentScopeIds.includes(environment.id)}
+                    workingCount={workingCountByEnvironmentId.get(environment.id) ?? 0}
+                    onToggle={onToggleEnvironment}
+                  />
+                ))}
+              </SortableContext>
+            </DndContext>
+          </div>
         </div>
+        {scrollEdges.canScrollLeft ? (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 left-0 z-20 w-6 bg-linear-to-r from-sidebar to-transparent"
+          />
+        ) : null}
+        {scrollEdges.canScrollRight ? (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 right-0 z-20 w-6 bg-linear-to-l from-sidebar to-transparent"
+          />
+        ) : null}
       </div>
-      {scrollEdges.canScrollLeft ? (
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-y-0 left-0 z-20 w-6 bg-linear-to-r from-sidebar to-transparent"
-        />
-      ) : null}
-      {scrollEdges.canScrollRight ? (
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-y-0 right-0 z-20 w-6 bg-linear-to-l from-sidebar to-transparent"
-        />
-      ) : null}
     </div>
   );
 }

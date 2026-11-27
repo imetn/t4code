@@ -36,11 +36,7 @@ export function npmReleaseFailureMessage(
   const error = Option.getOrUndefined(Cause.findErrorOption(cause));
   return isServerNpmReleaseError(error)
     ? error.message
-    : resolve(
-        msg(
-          "Could not check this environment's npm registry. Check the connection and registry settings.",
-        ),
-      );
+    : resolve(msg("Could not check T4 Code releases. Check your connection and try again."));
 }
 
 export const npmReleaseAtom = Atom.family((spec: string) =>

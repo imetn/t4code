@@ -219,8 +219,16 @@ jobs:
 
           if [[ -n "${CSC_LINK:-}" && -n "${CSC_KEY_PASSWORD:-}" ]]; then
             dmg_path="release/T4-Code-${{ needs.preflight.outputs.version }}-arm64.dmg"
-            xcrun stapler validate "$dmg_path"
-            spctl -a -t open --context context:primary-signature -v "$dmg_path"
+            mount_dir="$(mktemp -d)"
+            trap 'hdiutil detach "$mount_dir" -force >/dev/null 2>&1 || true; rm -rf "$mount_dir"' EXIT
+            hdiutil attach -readonly -nobrowse -mountpoint "$mount_dir" "$dmg_path"
+            codesign_out="$(codesign -dv --verbose=2 "$mount_dir/T4 Code.app" 2>&1)"
+            grep -q "Authority=Developer ID Application:" <<< "$codesign_out"
+            xcrun stapler validate "$mount_dir/T4 Code.app"
+            spctl -a -vvv "$mount_dir/T4 Code.app"
+            hdiutil detach "$mount_dir" -force
+            rm -rf "$mount_dir"
+            trap - EXIT
           fi
 
       - name: Collect macOS release assets

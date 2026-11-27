@@ -100,7 +100,7 @@ function UseInAnotherAppDialog({ requested }: { readonly requested: EnvironmentI
                 title={
                   environment === null
                     ? gt("Connect to an environment first.")
-                    : gt("T3 Connect is not available in this build.")
+                    : gt("T4 Connect is not available in this build.")
                 }
               />
             </WizardPanel>
@@ -401,27 +401,27 @@ function GateScreen({
       <T>Check again</T>
     </Button>
   );
-  const offlineTitle = gt("{environment}''s T3 Connect is offline", { environment: name });
-  const cannotCheckTitle = gt("Can't check T3 Connect on {environment}", { environment: name });
+  const offlineTitle = gt("{environment}''s T4 Connect is offline", { environment: name });
+  const cannotCheckTitle = gt("Can't check T4 Connect on {environment}", { environment: name });
   const checkAgain = retry(() => void check());
   switch (gate.kind) {
     case "checking":
       return (
         <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
           <Spinner size="sm" tone="muted" />
-          <T>Checking T3 Connect…</T>
+          <T>Checking T4 Connect…</T>
         </p>
       );
     case "sign-in":
       return (
         <GateMessage
-          title={gt("Sign in to T3 Connect")}
+          title={gt("Sign in to T4 Connect")}
           lines={[
             gt(
               "Apps like Poke and Claude run in the cloud. They need a public address to reach {environment}.",
               { environment: name },
             ),
-            gt("T3 Connect gives {environment} that address. Each app still needs your approval.", {
+            gt("T4 Connect gives {environment} that address. Each app still needs your approval.", {
               environment: name,
             }),
           ]}
@@ -433,7 +433,7 @@ function GateScreen({
               openAuthPrompt();
             }}
           >
-            <T>Sign in to T3 Connect</T>
+            <T>Sign in to T4 Connect</T>
           </Button>
         </GateMessage>
       );
@@ -481,7 +481,7 @@ function GateScreen({
       }
       return (
         <GateMessage
-          title={gt("Turn on T3 Connect for {environment}", { environment: name })}
+          title={gt("Turn on T4 Connect for {environment}", { environment: name })}
           lines={[
             gt("{environment} gets a public https address, with no router setup.", {
               environment: name,
@@ -500,7 +500,7 @@ function GateScreen({
               {tunnelLimit !== null ? (
                 <>
                   <p className="text-sm text-destructive-foreground">
-                    <T>Your T3 Connect account is out of tunnels.</T>
+                    <T>Your T4 Connect account is out of tunnels.</T>
                   </p>
                   <ManageAccessButton environment={environment} label={gt("Manage tunnels")} />
                 </>
@@ -616,10 +616,10 @@ function ConnectStep({
       <p className="text-sm text-muted-foreground">
         {app === null
           ? gt(
-              "When the app opens the sign-in page, choose what it may do and approve with your T3 Connect account.",
+              "When the app opens the sign-in page, choose what it may do and approve with your T4 Connect account.",
             )
           : gt(
-              "When {app} opens the sign-in page, choose what it may do and approve with your T3 Connect account.",
+              "When {app} opens the sign-in page, choose what it may do and approve with your T4 Connect account.",
               { app: app.name },
             )}
       </p>

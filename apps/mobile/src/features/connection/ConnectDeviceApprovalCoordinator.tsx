@@ -103,13 +103,13 @@ const newDeviceNotices = createApprovalPromptQueue<NewDeviceNotice>((notice, ans
         ? m(
             msg(
               "{device} connected through {product}. If this was not you, remove it in Settings → Access in T3 Code on that computer.",
-              { device: firstDevice, product: "T3 Connect" },
+              { device: firstDevice, product: "T4 Connect" },
             ),
           )
         : m(
             msg(
               "{count, plural, one {{count} device} other {{count} devices}} connected through {product}. If this was not you, remove them in Settings → Access in T3 Code on that computer.",
-              { count: unseen.length, product: "T3 Connect" },
+              { count: unseen.length, product: "T4 Connect" },
             ),
           ),
       [

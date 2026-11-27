@@ -366,7 +366,7 @@ const layerCapabilities = Layer.effectContext(
         if (session === null) {
           return yield* new ConnectionBlockedError({
             reason: "authentication",
-            detail: m(msg("Sign in to T3 Connect to connect this environment.")),
+            detail: m(msg("Sign in to T4 Connect to connect this environment.")),
           });
         }
         const token = yield* session.readClerkToken().pipe(
@@ -381,7 +381,7 @@ const layerCapabilities = Layer.effectContext(
         if (token === null) {
           return yield* new ConnectionBlockedError({
             reason: "authentication",
-            detail: m(msg("The T3 Connect session is unavailable.")),
+            detail: m(msg("The T4 Connect session is unavailable.")),
           });
         }
         return token;

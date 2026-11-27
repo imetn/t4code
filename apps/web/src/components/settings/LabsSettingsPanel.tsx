@@ -41,7 +41,7 @@ export function LabsSettingsPanel() {
     <SettingsPageContainer>
       <SettingsSection id="beta" title={gt("Beta")}>
         <BoringSidebarRow />
-        {/* Clerk is only mounted when this build has T3 Connect. */}
+        {/* Clerk is only mounted when this build has T4 Connect. */}
         {hasCloudPublicConfig() ? <GuestLinksRowWithSignIn /> : <GuestLinksRow />}
         <LinkedEnvironmentsRow />
         <WorkflowsRow />
@@ -149,7 +149,7 @@ function GuestLinksRowWithSignIn() {
     <SettingsRow
       {...searchableSetting("guest-links")}
       description={gt(
-        "Share a thread with a guest who watches it live in a browser and sends messages you approve. Sign in to T3 Connect to use guest links.",
+        "Share a thread with a guest who watches it live in a browser and sends messages you approve. Sign in to T4 Connect to use guest links.",
       )}
       control={
         <Button size="sm" variant="outline" onClick={openAuthPrompt}>
@@ -185,7 +185,7 @@ function GuestLinksRow() {
       description={
         <T>
           Share a thread with a guest who watches it live in a browser and sends messages you
-          approve. Needs T3 Connect: sign in and link this machine in{" "}
+          approve. Needs T4 Connect: sign in and link this machine in{" "}
           <Link to="/settings/access" className="underline underline-offset-2">
             Sharing & access
           </Link>

@@ -85,9 +85,9 @@ const results = (state: SupervisorConnectionState, via?: "relay" | "direct") =>
   diagnose(state, via)?.hops.map((hop) => `${hop.hop}:${hop.result}`);
 
 describe("presentConnectionDiagnosis", () => {
-  it("tells a working tunnel apart from T3 Code not answering", () => {
+  it("tells a working tunnel apart from T4 Code not answering", () => {
     expect(diagnose(backoff(unavailable("origin_unreachable")))?.headline).toBe(
-      "Tunnel works, but T3 Code on Mac mini did not answer",
+      "Tunnel works, but T4 Code on Mac mini did not answer",
     );
     expect(results(backoff(unavailable("origin_unreachable")), "direct")).toEqual([
       "device:ok",
@@ -109,7 +109,7 @@ describe("presentConnectionDiagnosis", () => {
     expect(diagnosis?.steps.join(" ")).not.toContain("On Mac mini");
   });
 
-  it("stops at T3 Connect when this device cannot reach the relay", () => {
+  it("stops at T4 Connect when this device cannot reach the relay", () => {
     const failure = mapManagedRelayError(
       new ManagedRelayRequestFailedError({
         action: "connect relay environment",
@@ -117,7 +117,7 @@ describe("presentConnectionDiagnosis", () => {
         cause: new TypeError("Failed to fetch"),
       }),
     );
-    expect(diagnose(backoff(failure))?.headline).toBe("This device can't reach T3 Connect");
+    expect(diagnose(backoff(failure))?.headline).toBe("This device can't reach T4 Connect");
     expect(results(backoff(failure))).toEqual([
       "device:ok",
       "relay:failed",
@@ -126,7 +126,7 @@ describe("presentConnectionDiagnosis", () => {
     ]);
   });
 
-  it("does not blame this device's network when T3 Connect answered with an error", () => {
+  it("does not blame this device's network when T4 Connect answered with an error", () => {
     const failure = mapManagedRelayError(
       new ManagedRelayRequestFailedError({
         action: "connect relay environment",
@@ -135,7 +135,7 @@ describe("presentConnectionDiagnosis", () => {
       }),
     );
     const diagnosis = diagnose(backoff(failure));
-    expect(diagnosis?.headline).toBe("T3 Connect returned an error");
+    expect(diagnosis?.headline).toBe("T4 Connect returned an error");
     expect(diagnosis?.steps.join(" ")).not.toContain("this device");
   });
 
@@ -199,7 +199,7 @@ describe("presentConnectionDiagnosis", () => {
     expect(relayOnline?.headline).toBe(
       "Mac mini is online on T4 Connect, but its Tailscale address did not answer",
     );
-    expect(relayOnline?.facts).toContainEqual(["T3 Connect", "online"]);
+    expect(relayOnline?.facts).toContainEqual(["T4 Connect", "online"]);
 
     const tailscaleOff = presentConnectionDiagnosis({
       hostLabel: "Mac mini",
@@ -216,7 +216,7 @@ describe("presentConnectionDiagnosis", () => {
     // A Tailscale route that answered leaves the generic diagnosis.
     const answered = { ...TAILNET_FAILED, result: "answered" } as const;
     expect(diagnose({ ...state, routes: [answered] }, "direct")?.headline).toBe(
-      "T3 Code on Mac mini did not answer",
+      "T4 Code on Mac mini did not answer",
     );
   });
 
@@ -313,7 +313,7 @@ describe("Tailscale facts in the diagnosis", () => {
     expect(running([peer])?.headline).toBe("Mac mini did not answer over Tailscale");
     // A direct path needs a handshake, so Tailscale reached the host.
     expect(running([{ ...peer, curAddr: "203.0.113.4:41641" }])?.headline).toBe(
-      "T3 Code on Mac mini did not answer",
+      "T4 Code on Mac mini did not answer",
     );
   });
 
@@ -379,17 +379,17 @@ describe("offTailnetHint", () => {
     expect(offTailnetHint({ ...connected, routes: [hostFailed, RELAY_ANSWERED] })).toBeNull();
   });
 
-  it("blames this device, not the host, while its own T3 Connect sign-in loads", () => {
+  it("blames this device, not the host, while its own T4 Connect sign-in loads", () => {
     const failure = new ConnectionTransientError({
       reason: "session-pending",
-      detail: "Waiting for the T3 Connect sign-in to load.",
+      detail: "Waiting for the T4 Connect sign-in to load.",
     });
     const diagnosis = diagnose(backoff(failure));
     expect(diagnosis?.headline).not.toContain("did not answer");
     expect(diagnosis?.hops.find((hop) => hop.result === "failed")?.hop).toBe("device");
     expect(diagnosis?.steps.join(" ")).not.toContain("Mac mini");
     expect(diagnosis?.moreInfoUrl).toContain("sign-in-account-or-link-problems");
-    // A host with a LAN route as well uses the direct route, still authorized through T3 Connect.
+    // A host with a LAN route as well uses the direct route, still authorized through T4 Connect.
     expect(diagnose(backoff(failure), "direct")?.moreInfoUrl).toContain(
       "sign-in-account-or-link-problems",
     );
@@ -412,7 +412,7 @@ describe("offTailnetHint", () => {
     expect(diagnosis?.steps.join(" ")).toContain("t3 auth connect-device approve K7QM-2XFD");
   });
 
-  it("tells a host that refused this device's login to sign in again, not to start T3 Code", () => {
+  it("tells a host that refused this device's login to sign in again, not to start T4 Code", () => {
     const failure = mapRemoteEnvironmentError(
       new EnvironmentAuthInvalidError({
         code: "auth_invalid",
@@ -421,7 +421,7 @@ describe("offTailnetHint", () => {
       }),
     );
     const steps = diagnose(backoff(failure), "direct")?.steps.join(" ");
-    expect(steps).not.toContain("Make sure T3 Code is running");
+    expect(steps).not.toContain("Make sure T4 Code is running");
     expect(steps).toMatch(/pair|sign in/i);
   });
 

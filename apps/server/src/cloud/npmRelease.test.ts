@@ -1,128 +1,165 @@
-import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { ServerNpmReleaseError } from "@t3tools/contracts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
-import * as FileSystem from "effect/FileSystem";
-import * as Path from "effect/Path";
-import * as Queue from "effect/Queue";
 import * as Fiber from "effect/Fiber";
-import { HttpClient, HttpClientResponse } from "effect/http";
+import * as Queue from "effect/Queue";
 import * as Result from "effect/Result";
 import * as TestClock from "effect/testing/TestClock";
-import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
+import { HttpClient, HttpClientResponse, type HttpClientRequest } from "effect/http";
 
-import * as ProcessRunner from "../processRunner.ts";
 import * as NpmRelease from "./npmRelease.ts";
 
-const version = "0.1.5-nightly.20261030.1";
-const output = (stdout: string, code = 0): ProcessRunner.ProcessRunOutput => ({
-  stdout,
-  stderr: "",
-  code: ChildProcessSpawner.ExitCode(code),
-  timedOut: false,
-  stdoutTruncated: false,
-  stderrTruncated: false,
-  stdoutInvalidUtf8: false,
-  stderrInvalidUtf8: false,
+const stableVersion = "0.1.12-t4.10";
+const nightlyVersion = "0.1.12-nightly.20261127.1";
+
+const makeService = Effect.fnUntraced(function* (
+  handler: (
+    request: HttpClientRequest.HttpClientRequest,
+  ) => Effect.Effect<HttpClientResponse.HttpClientResponse>,
+) {
+  return yield* NpmRelease.make().pipe(
+    Effect.provideService(HttpClient.HttpClient, HttpClient.make(handler)),
+  );
 });
 
-const noPublicRegistry = HttpClient.make(() =>
-  Effect.die("a configured npm lookup must not fall back to public npm"),
-);
-// A fake npm on PATH decides whether npm counts as installed.
-const makeService = Effect.fnUntraced(function* (
-  run: ProcessRunner.ProcessRunner["Service"]["run"],
-  publicRegistry: HttpClient.HttpClient = noPublicRegistry,
-  npmInstalled = true,
-) {
-  const fs = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
-  const npmBin = yield* fs.makeTempDirectoryScoped({ prefix: "t3-npm-release-" });
-  for (const name of ["npm", "npm.cmd"]) {
-    yield* fs.writeFileString(path.join(npmBin, name), "", { mode: 0o755 });
-  }
-  return yield* NpmRelease.make().pipe(
-    Effect.provideService(ProcessRunner.ProcessRunner, { run }),
-    Effect.provideService(HttpClient.HttpClient, publicRegistry),
-    Effect.provideService(HostProcess.Environment, {
-      PATH: npmInstalled ? npmBin : "",
-      PATHEXT: ".CMD",
-    }),
-  );
-}, Effect.provide(NodeServices.layer));
-
-it.effect.each([
-  {
-    spec: version,
-    stdout: JSON.stringify({ version, t3code: { databaseMigration: 42 } }),
-    migration: 42,
-  },
-  {
-    spec: "nightly",
-    stdout: JSON.stringify([{ version, t3code: { databaseMigration: 42 } }]),
-    migration: 42,
-  },
-  { spec: "latest", stdout: JSON.stringify(version), migration: undefined },
-])("reads $spec through npm and retains migration compatibility metadata", (fixture) =>
+it.effect("reads latest and nightly tracks from imetn/t4code GitHub releases and caches them", () =>
   Effect.gen(function* () {
-    const calls: ProcessRunner.ProcessRunInput[] = [];
-    const service = yield* makeService((input) => {
-      calls.push(input);
-      return Effect.succeed(output(fixture.stdout));
+    const urls: string[] = [];
+    const service = yield* makeService((request) => {
+      urls.push(request.url);
+      const body = JSON.stringify([
+        { tag_name: "v0.1.12-t4.11", draft: true },
+        {
+          tag_name: `v${stableVersion}`,
+          draft: false,
+          body: "Release notes\nt3code-database-migration: 42\n",
+        },
+        { tag_name: `v${nightlyVersion}`, draft: false, body: "Nightly notes" },
+      ]);
+      return Effect.succeed(HttpClientResponse.fromWeb(request, new Response(body)));
     });
-    const expected = {
-      version,
-      ...(fixture.migration === undefined ? {} : { databaseMigration: fixture.migration }),
-    };
-    expect(yield* service.get({ spec: fixture.spec })).toEqual(expected);
-    expect(yield* service.get({ spec: fixture.spec })).toEqual(expected);
-    expect(calls).toHaveLength(1);
-    expect(calls[0]).toMatchObject({
-      command: expect.stringMatching(/[/\\]npm(?:\.cmd)?$/i),
-      args: ["view", "--global", "--json", `t3@${fixture.spec}`, "version", "t3code"],
-      maxOutputBytes: 256 * 1024,
+
+    expect(yield* service.get({ spec: "latest" })).toEqual({
+      version: stableVersion,
+      databaseMigration: 42,
     });
+    expect(yield* service.get({ spec: "latest" })).toEqual({
+      version: stableVersion,
+      databaseMigration: 42,
+    });
+    expect(yield* service.get({ spec: "nightly" })).toEqual({
+      version: nightlyVersion,
+    });
+    expect(urls).toEqual([
+      "https://api.github.com/repos/imetn/t4code/releases?per_page=100&page=1",
+      "https://api.github.com/repos/imetn/t4code/releases?per_page=100&page=1",
+    ]);
+
     yield* TestClock.adjust("1 minute");
-    expect(yield* service.get({ spec: fixture.spec })).toEqual(expected);
-    expect(calls).toHaveLength(2);
+    expect(yield* service.get({ spec: "latest" })).toEqual({
+      version: stableVersion,
+      databaseMigration: 42,
+    });
+    expect(urls).toHaveLength(3);
   }),
 );
 
-it.effect("treats a registry 404 as unpublished without trying another registry", () =>
+it.effect("returns null for nightly when imetn/t4code has no nightly releases", () =>
   Effect.gen(function* () {
-    const service = yield* makeService(() =>
-      Effect.succeed(output('{"error":{"code":"E404"}}', 1)),
-    );
-    expect(yield* service.get({ spec: version })).toBeNull();
+    const urls: string[] = [];
+    const service = yield* makeService((request) => {
+      urls.push(request.url);
+      const body = JSON.stringify([{ tag_name: `v${stableVersion}`, draft: false }]);
+      return Effect.succeed(HttpClientResponse.fromWeb(request, new Response(body)));
+    });
+
+    expect(yield* service.get({ spec: "nightly" })).toBeNull();
+    // Stops after a partial page (< 100 entries) without fetching an extra empty page.
+    expect(urls).toEqual([
+      "https://api.github.com/repos/imetn/t4code/releases?per_page=100&page=1",
+    ]);
   }),
 );
 
-const spawnFailure = () =>
-  Effect.fail(
-    new ProcessRunner.ProcessSpawnError({
-      command: "npm",
-      argumentCount: 6,
-      cause: new Error("EACCES"),
+it.effect("reports a clear rate-limit error on GitHub 429 or exhausted 403", () =>
+  Effect.gen(function* () {
+    const service = yield* makeService((request) =>
+      Effect.succeed(
+        HttpClientResponse.fromWeb(
+          request,
+          new Response("{}", { status: 403, headers: { "x-ratelimit-remaining": "0" } }),
+        ),
+      ),
+    );
+    const found = yield* service.get({ spec: "latest" }).pipe(Effect.result);
+    expect(Result.isFailure(found)).toBe(true);
+    if (Result.isFailure(found)) {
+      expect(found.failure).toBeInstanceOf(ServerNpmReleaseError);
+      expect(found.failure.message).toContain("rate limit");
+    }
+  }),
+);
+
+it.effect(
+  "resolves exact versions via GitHub release tag lookup and treats 404 or draft as null",
+  () =>
+    Effect.gen(function* () {
+      const urls: string[] = [];
+      const service = yield* makeService((request) => {
+        urls.push(request.url);
+        if (request.url.endsWith(`/v${stableVersion}`)) {
+          return Effect.succeed(
+            HttpClientResponse.fromWeb(
+              request,
+              new Response(
+                JSON.stringify({
+                  tag_name: `v${stableVersion}`,
+                  draft: false,
+                  body: "t3code-database-migration: 55",
+                }),
+              ),
+            ),
+          );
+        }
+        if (request.url.endsWith("/v0.1.12-t4.99")) {
+          return Effect.succeed(
+            HttpClientResponse.fromWeb(
+              request,
+              new Response(JSON.stringify({ tag_name: "v0.1.12-t4.99", draft: true })),
+            ),
+          );
+        }
+        return Effect.succeed(
+          HttpClientResponse.fromWeb(request, new Response("{}", { status: 404 })),
+        );
+      });
+
+      expect(yield* service.get({ spec: stableVersion })).toEqual({
+        version: stableVersion,
+        databaseMigration: 55,
+      });
+      expect(yield* service.get({ spec: "0.1.12-t4.99" })).toBeNull();
+      expect(yield* service.get({ spec: "9.9.9" })).toBeNull();
+      expect(urls).toEqual([
+        `https://api.github.com/repos/imetn/t4code/releases/tags/v${stableVersion}`,
+        "https://api.github.com/repos/imetn/t4code/releases/tags/v0.1.12-t4.99",
+        "https://api.github.com/repos/imetn/t4code/releases/tags/v9.9.9",
+      ]);
     }),
-  );
+);
 
 it.effect.each([
-  output("not json"),
-  output('{"error":{"code":"E401","detail":"sensitive"}}', 1),
-  output('{"version":"9.9.9"}'),
-  output("[]"),
-  output("", 9009),
-  { ...output(JSON.stringify({ version })), stdoutTruncated: true },
-  { ...output(JSON.stringify({ version })), timedOut: true },
-  "spawn failure",
-] as const)("reports an unavailable lookup rather than an unpublished release: %j", (result) =>
+  new Response("not json"),
+  new Response(JSON.stringify({ tag_name: "v9.9.9" })),
+  new Response('{"message":"sensitive token"}', { status: 500 }),
+  new Response('{"message":"rate limited"}', { status: 403 }),
+])("reports an unavailable lookup without leaking upstream error details", (response) =>
   Effect.gen(function* () {
-    const service = yield* makeService(() =>
-      result === "spawn failure" ? spawnFailure() : Effect.succeed(result),
+    const service = yield* makeService((request) =>
+      Effect.succeed(HttpClientResponse.fromWeb(request, response.clone())),
     );
-    const found = yield* service.get({ spec: version }).pipe(Effect.result);
+    const found = yield* service.get({ spec: stableVersion }).pipe(Effect.result);
     expect(Result.isFailure(found)).toBe(true);
     if (Result.isFailure(found)) {
       expect(found.failure).toBeInstanceOf(ServerNpmReleaseError);
@@ -131,48 +168,30 @@ it.effect.each([
   }),
 );
 
-it.effect("falls back to public npm only when npm is not installed", () =>
+it.effect("times out stalled GitHub release lookups", () =>
   Effect.gen(function* () {
-    const urls: string[] = [];
-    const service = yield* makeService(
-      () => Effect.die("npm is not installed"),
-      HttpClient.make((request) => {
-        urls.push(request.url);
-        const response = request.url.endsWith("/nightly")
-          ? new Response(JSON.stringify({ version, t3code: { databaseMigration: 42 } }))
-          : request.url.endsWith("/latest")
-            ? new Response(new ReadableStream())
-            : new Response("{}", { status: 404 });
-        return Effect.succeed(HttpClientResponse.fromWeb(request, response));
-      }),
-      false,
+    const service = yield* makeService((request) =>
+      Effect.succeed(HttpClientResponse.fromWeb(request, new Response(new ReadableStream()))),
     );
-    expect(yield* service.get({ spec: "nightly" })).toEqual({ version, databaseMigration: 42 });
-    expect(yield* service.get({ spec: "9.9.9" })).toBeNull();
     const stalled = yield* service.get({ spec: "latest" }).pipe(Effect.result, Effect.forkChild);
     yield* TestClock.adjust("15 seconds");
     expect(Result.isFailure(yield* Fiber.join(stalled))).toBe(true);
-    expect(urls).toEqual([
-      "https://registry.npmjs.org/t3/nightly",
-      "https://registry.npmjs.org/t3/9.9.9",
-      "https://registry.npmjs.org/t3/latest",
-    ]);
   }),
 );
 
-it.effect("runs at most two npm lookups at once", () =>
+it.effect("runs at most two release lookups at once", () =>
   Effect.gen(function* () {
     const started = yield* Queue.unbounded<void>();
     const release = yield* Deferred.make<void>();
     let running = 0;
     let peak = 0;
-    const service = yield* makeService(() =>
+    const service = yield* makeService((request) =>
       Effect.gen(function* () {
         peak = Math.max(peak, ++running);
         yield* Queue.offer(started, undefined);
         yield* Deferred.await(release);
         running--;
-        return output('{"error":{"code":"E404"}}', 1);
+        return HttpClientResponse.fromWeb(request, new Response("{}", { status: 404 }));
       }),
     );
     const lookups = yield* Effect.forEach(
@@ -189,10 +208,12 @@ it.effect("runs at most two npm lookups at once", () =>
 );
 
 it.effect.each(["--registry=https://example.com", "../other", "other-package@latest", "*", ""])(
-  "rejects invalid release specs before spawning npm: %s",
+  "rejects invalid release specs before making HTTP requests: %s",
   (spec) =>
     Effect.gen(function* () {
-      const service = yield* makeService(() => Effect.die("invalid specs must not spawn npm"));
+      const service = yield* makeService(() =>
+        Effect.die("invalid specs must not call GitHub releases"),
+      );
       expect(Result.isFailure(yield* service.get({ spec }).pipe(Effect.result))).toBe(true);
     }),
 );

@@ -1491,7 +1491,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "t3-connect",
     localEnvironmentOnly: true,
-    title: msg("T3 Connect"),
+    title: msg("T4 Connect"),
     to: "/settings/access",
     targetId: "connections-environment",
     searchTerms: [msg("managed tunnel cloud other devices remote tunnels limit t3 chat")],

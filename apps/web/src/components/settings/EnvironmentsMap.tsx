@@ -2151,7 +2151,7 @@ const FleetScene = memo(function FleetScene({
               {...focusProps(
                 target,
                 rect,
-                gt("{label}, on your T3 Connect account, not added to this app. {status}", {
+                gt("{label}, on your T4 Connect account, not added to this app. {status}", {
                   label: node.label,
                   status: connectAvailabilityText(node.availability, gt),
                 }),
