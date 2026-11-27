@@ -165,7 +165,11 @@ export function SharedTooltipProvider({ children }: { children: ReactNode }) {
             variant={state.variant ?? "default"}
             className="pointer-events-auto"
             onMouseEnter={() => api.holdOpen()}
-            onMouseLeave={() => api.hide(state.anchor)}
+            onMouseLeave={(event) => {
+              const next = event.relatedTarget;
+              if (next instanceof Node && state.anchor.contains(next)) return;
+              api.hide(state.anchor);
+            }}
           >
             {state.render()}
           </TooltipPopup>

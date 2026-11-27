@@ -36,6 +36,7 @@ import {
   antigravitySubagentLaunches,
   describeAntigravitySubagentLaunches,
   readAntigravityChildrenAtWork,
+  readAntigravityExecutedModel,
   readAntigravityPendingReply,
   readAntigravitySubagentTranscript,
 } from "../../provider/acp/AntigravityChildWork.ts";
@@ -375,6 +376,8 @@ export function makeAntigravityAcpAdapterFlavor(
               profileDirectory,
               sessionId,
             }),
+          executedModel: (sessionId: string) =>
+            readAntigravityExecutedModel({ profileDirectory, sessionId }),
         }),
   };
 }

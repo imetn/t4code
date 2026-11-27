@@ -21,6 +21,7 @@ import { useRightPanelStore } from "../../rightPanelStore";
 import {
   applyDeviceSnapshot,
   floatDeviceSurface,
+  floatPanelSurfaceOnClose,
   followPreviewSessions,
   resetDeviceSessionBaselinesForTests,
   revealServerTabs,
@@ -192,6 +193,36 @@ describe("floatDeviceSurface", () => {
     setup();
     floatDeviceSurface(ref, source, deviceState({ sessions: [] }));
     expect(miniPlayerSource()).toBeUndefined();
+  });
+});
+
+describe("floatPanelSurfaceOnClose", () => {
+  const browser = browserMiniPlayerSource("tab_panel");
+
+  it.each([
+    { name: "floats a browser", source: browser, autoShow: true, before: null, after: browser },
+    {
+      name: "floats no browser with Auto-show off",
+      source: browser,
+      autoShow: false,
+      before: null,
+      after: undefined,
+    },
+    {
+      name: "keeps a float the user opened with Auto-show off",
+      source: browser,
+      autoShow: false,
+      before: browser,
+      after: browser,
+    },
+  ])("$name", ({ source, autoShow, before, after }) => {
+    setup();
+    if (before) usePreviewMiniPlayerStore.getState().open(ref, before);
+    floatPanelSurfaceOnClose(ref, source, {
+      autoShowFloatingPreview: autoShow,
+      deviceState: deviceState({ sessions: [session] }),
+    });
+    expect(miniPlayerSource()).toEqual(after);
   });
 });
 
