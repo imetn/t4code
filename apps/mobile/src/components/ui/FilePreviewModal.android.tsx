@@ -149,6 +149,7 @@ function ImagePreviewPageHeader(header: { readonly imageIndex: number }) {
   const insets = useSafeAreaInsets();
   const mediaActions = useMediaActions(source?.actionsSource, props.onRequestClose, {
     getSaveImageSignal: props.getSaveImageSignal,
+    onQuoted: props.onRequestClose,
   });
   return (
     <View className="bg-black/70" style={{ paddingTop: insets.top }}>

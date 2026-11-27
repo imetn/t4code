@@ -1013,4 +1013,72 @@ describe("DesktopRemoteUpdates", () => {
       }),
     );
   });
+
+  it.effect(
+    "clears the release floor after a same-track target fails so later checks still offer updates",
+    () => {
+      const harness = makeHarness({ beforeSetUpdateChannel: Effect.void });
+
+      return runRemoteUpdatesTest(harness, ({ reports, requests }) =>
+        Effect.gen(function* () {
+          const updates = yield* DesktopUpdates.DesktopUpdates;
+          yield* Queue.offer(requests, {
+            ...request("req-missing-target"),
+            channel: "latest",
+            targetVersion: "1.2.5",
+          });
+          yield* settle;
+          harness.emit("update-available", { version: "1.2.4" });
+          yield* settle;
+
+          assert.deepEqual(
+            terminalReports(reports).map((report) => [report.outcome, report.reason]),
+            [["failed", "The desktop app found no build of 1.2.5."]],
+          );
+          assert.isNull((yield* updates.getState).availableVersion);
+
+          // Subsequent checks (even without clearing via manual check) must not stay blocked by 1.2.5.
+          yield* Queue.offer(requests, request("req-plain-after-failed-floor"));
+          yield* settle;
+          harness.emit("update-available", { version: "1.2.4" });
+          yield* settle;
+          assert.equal((yield* updates.getState).availableVersion, "1.2.4");
+        }),
+      );
+    },
+  );
+
+  it.effect(
+    "rejects an upstream non-t4 target version on a T4 build without poisoning future update checks",
+    () => {
+      const harness = makeHarness({
+        appVersion: "0.1.12-t4.12",
+        beforeSetUpdateChannel: Effect.void,
+      });
+
+      return runRemoteUpdatesTest(harness, ({ reports, requests }) =>
+        Effect.gen(function* () {
+          const updates = yield* DesktopUpdates.DesktopUpdates;
+          yield* Queue.offer(requests, {
+            ...request("req-upstream-0113"),
+            channel: "latest",
+            targetVersion: "0.1.13",
+          });
+          yield* settle;
+
+          assert.deepEqual(
+            terminalReports(reports).map((report) => [report.outcome, report.reason]),
+            [["failed", "This T4 Code build cannot update to upstream release 0.1.13."]],
+          );
+          assert.equal(harness.checkCount(), 0);
+
+          yield* updates.check("manual");
+          yield* settle;
+          harness.emit("update-available", { version: "0.1.12-t4.13" });
+          yield* settle;
+          assert.equal((yield* updates.getState).availableVersion, "0.1.12-t4.13");
+        }),
+      );
+    },
+  );
 });

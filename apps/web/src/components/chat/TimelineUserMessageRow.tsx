@@ -46,6 +46,7 @@ import { Button, InlineButton } from "../ui/button";
 import { FreshSessionRow, ModelSwitchRow } from "./V2LifecycleRow";
 import { useAssetUrlRefresh, useAssetUrls, useAssetUrlState } from "../../assets/assetUrls";
 import { AttachmentImage } from "../media/AttachmentImage";
+import { MediaActions } from "../media/MediaActions";
 import { MediaVideoPlayer } from "../media/MediaVideoPlayer";
 import {
   buildAttachmentVideoAsset,
@@ -780,34 +781,61 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             )}
           >
             {image.previewUrl ? (
-              <button
-                type="button"
-                className="block h-full w-full cursor-zoom-in"
-                aria-label={gt("Preview {label}", { label: image.name })}
-                onClick={() => {
-                  const preview = buildExpandedImagePreview(regularImages, image.id, copySnapshot);
-                  if (!preview) return;
-                  ctx.onImageExpand(preview);
+              <MediaActions
+                showTooltip={false}
+                source={{
+                  kind: "image",
+                  name: image.name,
+                  mimeType: image.mimeType,
+                  src: image.previewUrl,
+                  ...(/^(?:blob|data):/i.test(image.previewUrl)
+                    ? {}
+                    : {
+                        asset: {
+                          environmentId: ctx.activeThreadEnvironmentId,
+                          resource: {
+                            _tag: "attachment",
+                            attachmentId: image.id,
+                            fileName: image.name,
+                            mimeType: image.mimeType,
+                          },
+                        },
+                      }),
                 }}
               >
-                {/* Isolate the thumbnail raster from nearby activity repaints in Chromium. */}
-                <AttachmentImage
-                  name={image.name}
-                  mimeType={image.mimeType}
-                  src={image.previewUrl}
-                  alt={image.name}
-                  decoding="async"
-                  loading="lazy"
-                  className={cn(
-                    "block transform-gpu",
-                    standaloneMedia && image.source?.kind === "snap-shot"
-                      ? "h-auto max-h-48 w-auto min-w-24 max-w-full object-contain"
-                      : loneImage
-                        ? "h-48 w-auto min-w-24 max-w-full object-contain"
-                        : "size-full object-cover",
-                  )}
-                />
-              </button>
+                <button
+                  type="button"
+                  className="block h-full w-full cursor-zoom-in"
+                  aria-label={gt("Preview {label}", { label: image.name })}
+                  onClick={() => {
+                    const preview = buildExpandedImagePreview(
+                      regularImages,
+                      image.id,
+                      copySnapshot,
+                    );
+                    if (!preview) return;
+                    ctx.onImageExpand(preview);
+                  }}
+                >
+                  {/* Isolate the thumbnail raster from nearby activity repaints in Chromium. */}
+                  <AttachmentImage
+                    name={image.name}
+                    mimeType={image.mimeType}
+                    src={image.previewUrl}
+                    alt={image.name}
+                    decoding="async"
+                    loading="lazy"
+                    className={cn(
+                      "block transform-gpu",
+                      standaloneMedia && image.source?.kind === "snap-shot"
+                        ? "h-auto max-h-48 w-auto min-w-24 max-w-full object-contain"
+                        : loneImage
+                          ? "h-48 w-auto min-w-24 max-w-full object-contain"
+                          : "size-full object-cover",
+                    )}
+                  />
+                </button>
+              </MediaActions>
             ) : (
               <div
                 className={cn(

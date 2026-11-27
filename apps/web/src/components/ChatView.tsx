@@ -306,6 +306,7 @@ import { useEnvironmentShellHasSnapshot } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
 import { ExpandedImageDialogHost, openExpandedImagePreview } from "./chat/ExpandedImageDialog";
+import { QuoteMediaContext } from "./media/MediaActions";
 import {
   BranchRestoreConfirmHost,
   DeviceSetupDialogHost,
@@ -700,6 +701,17 @@ export default function ChatView(props: ChatViewProps) {
     return inserted;
   };
   const citeAssistantTextStable = useStableCallback(citeAssistantText);
+  const quoteImageToComposerStable = useStableCallback(async (file: File) => {
+    const accepted = (await composerRef.current?.quoteImage(file)) ?? false;
+    if (!accepted) {
+      toastManager.add({
+        type: "warning",
+        title: gt("The composer is not ready"),
+        description: gt("Try quoting the image after the connection or pending input is resolved."),
+      });
+    }
+    return accepted;
+  });
   const replyToResponseStable = useStableCallback((response: ResponseContextRecord) => {
     const accepted = composerRef.current?.replyToResponse(response) ?? false;
     if (!accepted) {
@@ -4343,7 +4355,9 @@ export default function ChatView(props: ChatViewProps) {
       checkpoints={serverProjection?.checkpoints}
       checkpointScopes={serverProjection?.checkpointScopes}
     >
-      {content}
+      <QuoteMediaContext value={canOperateThread ? quoteImageToComposerStable : null}>
+        {content}
+      </QuoteMediaContext>
     </FileMetadataThreadProvider>
   );
 }

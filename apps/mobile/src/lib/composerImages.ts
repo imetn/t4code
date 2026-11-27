@@ -657,6 +657,7 @@ function isOwnedPastedImageUri(uri: string): boolean {
 /** Leave out existingCount when the draft store caps after its duplicate check. */
 export async function convertPastedImagesToAttachments(input: {
   readonly uris: ReadonlyArray<string>;
+  readonly names?: ReadonlyArray<string | undefined>;
   readonly existingCount?: number;
 }): Promise<{
   readonly attachments: ReadonlyArray<DraftComposerImageAttachment>;
@@ -710,7 +711,13 @@ export async function convertPastedImagesToAttachments(input: {
             : m(msg("Could not read a pasted image."));
         continue;
       }
-      const name = `pasted-image.${mimeType.split("/")[1] ?? "png"}`;
+      const preferredName = input.names?.[index]?.trim();
+      const extension = mimeType.split("/")[1] ?? "png";
+      const name = preferredName
+        ? /\.[a-z0-9]{1,8}$/i.test(preferredName)
+          ? preferredName.replace(/\.[a-z0-9]{1,8}$/i, `.${extension}`)
+          : `${preferredName}.${extension}`
+        : `pasted-image.${extension}`;
       const { CryptoDigestAlgorithm, digestStringAsync } = await import("expo-crypto");
       const contentDigest = await digestStringAsync(CryptoDigestAlgorithm.SHA256, base64);
       const fileUri = await persistComposerAttachmentFile(

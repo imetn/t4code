@@ -333,6 +333,7 @@ export interface ChatComposerHandle {
     citation: AssistantCitation,
     sourceAnchor: AssistantCitationSourceAnchor,
   ) => boolean;
+  quoteImage: (file: File) => Promise<boolean>;
   replyToResponse: (response: ResponseContextRecord) => boolean;
   openModelPicker: () => void;
   stepReasoningEffort: (direction: 1 | -1) => void;
@@ -3393,6 +3394,22 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           "cursor",
           { ensureLeadingBoundary: true, citationCommentAnchor: sourceAnchor },
         ),
+      quoteImage: async (file) => {
+        if (
+          !activeThreadId ||
+          isRevertingCheckpointRef.current ||
+          projectSelectionRequired ||
+          (pendingUserInputs.length > 0 &&
+            (!supportsQuestionAttachments ||
+              activePendingProgress?.activeQuestion?.allowCustomAnswer === false ||
+              activePendingIsResponding))
+        ) {
+          return false;
+        }
+        const inserted = await addComposerAttachments([file], { forceImageInlineChip: true });
+        if (!inserted) focusComposer();
+        return true;
+      },
       replyToResponse: (response) => {
         // An open question owns the composer, and its answer would not carry the reply.
         if (pendingUserInputs.length > 0 || projectSelectionRequired) return false;

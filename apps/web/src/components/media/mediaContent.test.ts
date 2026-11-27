@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vite-plus/test";
 
-import { readMediaPng } from "./mediaContent";
+import { readMediaImageFile, readMediaPng } from "./mediaContent";
 
 const PNG_BYTES = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
@@ -73,4 +73,24 @@ it("reads media the renderer cannot fetch through the desktop main process", asy
   } finally {
     vi.unstubAllGlobals();
   }
+});
+
+it("builds a supported image File directly with inferred extension and mimeType", async () => {
+  const src = `data:image/jpeg;base64,${btoa("jpg-bytes")}`;
+  const file = await readMediaImageFile(src, "CleanShot");
+
+  expect(file.name).toBe("CleanShot.jpg");
+  expect(file.type).toBe("image/jpeg");
+  expect(await file.text()).toBe("jpg-bytes");
+});
+
+it("falls back to filename extension when blob reports application/octet-stream", async () => {
+  const blob = new Blob([new Uint8Array(PNG_BYTES)], { type: "application/octet-stream" });
+  using fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(blob));
+
+  const file = await readMediaImageFile("https://example.com/shot.webp", "shot.webp");
+
+  expect(fetch).toHaveBeenCalledOnce();
+  expect(file.name).toBe("shot.webp");
+  expect(file.type).toBe("image/webp");
 });

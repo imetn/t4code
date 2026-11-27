@@ -108,18 +108,25 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
   const source: MediaActionSource = item?.actionsSource ?? {
     kind: item?.type === "video" ? "video" : "image",
     name: item?.name ?? gt("Media"),
+    mimeType: item ? itemMimeType(item) : undefined,
     src: item?.src ?? null,
   };
   const openFile = source.onOpenFile;
-  const actionsSource: MediaActionSource = openFile
-    ? {
-        ...source,
-        onOpenFile: () => {
-          openFile();
-          close();
-        },
-      }
-    : source;
+  const actionsSource: MediaActionSource = {
+    ...source,
+    ...(openFile
+      ? {
+          onOpenFile: () => {
+            openFile();
+            close();
+          },
+        }
+      : {}),
+    onQuoted: () => {
+      source.onQuoted?.();
+      close();
+    },
+  };
 
   const navigateImage = (direction: -1 | 1) => {
     setImageOffset((current) => current + direction);

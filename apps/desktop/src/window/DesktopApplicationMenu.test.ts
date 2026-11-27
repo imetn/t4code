@@ -86,6 +86,7 @@ const layerDesktopUpdates = ({ checkResult }: MenuServices) =>
     disabledReason: Effect.succeedNone,
     configure: Effect.void,
     setChannel: () => Effect.die("unexpected setChannel"),
+    clearReleaseFloor: () => Effect.void,
     check: () => (checkResult ? Effect.succeed(checkResult) : Effect.die("unexpected check")),
     download: Effect.die("unexpected download"),
     install: Effect.die("unexpected install"),

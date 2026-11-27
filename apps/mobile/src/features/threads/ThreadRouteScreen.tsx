@@ -1140,6 +1140,7 @@ function ThreadRouteContent(
           onPickDraftFiles={composer.onPickDraftFiles}
           onNativePasteImages={composer.onNativePasteImages}
           onNativePasteText={composer.onNativePasteText}
+          onQuoteImage={composer.onQuoteImage}
           onRemoveDraftImage={composer.onRemoveDraftImage}
           serverConfig={serverConfig}
           onStopThread={awaitingBootstrapTurn ? handleCancelWorktreeSetup : handleStopThread}

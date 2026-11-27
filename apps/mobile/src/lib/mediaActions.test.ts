@@ -17,9 +17,15 @@ const state = vi.hoisted(() => ({
   shareDraft: vi.fn(),
   navigate: vi.fn(),
   copy: vi.fn(),
+  quoteImage: vi.fn(),
+  quoteContext: null as
+    | ((input: { readonly uri: string; readonly name: string }) => Promise<boolean>)
+    | null,
 }));
 
 vi.mock("react", () => ({
+  createContext: <A>(value: A) => value,
+  useContext: () => state.quoteContext,
   useEffect: () => {},
   useRef: <A>(current: A) => ({ current }),
   useState: <A>(initial: A) => [initial, () => {}],
@@ -111,6 +117,8 @@ beforeEach(() => {
   state.shareDraft.mockReset().mockResolvedValue(undefined);
   state.navigate.mockReset();
   state.copy.mockReset();
+  state.quoteImage.mockReset().mockResolvedValue(true);
+  state.quoteContext = null;
 });
 
 it.each(["workspace-file", "media-file"] as const)(
@@ -214,4 +222,43 @@ it("saves a host image from its downloaded file, then removes the file", async (
     expect.objectContaining({ url: "https://host.test/image.png" }),
   );
   expect(state.saveImage).toHaveBeenCalledWith("file:///cache/image.png", "image/png", "image.png");
+});
+
+it("quotes an image into the composer when QuoteMediaContext is active and disposes the temp file", async () => {
+  state.sessions.set(environmentId, granted);
+  state.quoteContext = state.quoteImage;
+  const disposed = Promise.withResolvers<void>();
+  const onQuoted = vi.fn();
+  state.downloadPreview.mockResolvedValue({
+    uri: "file:///cache/image.png",
+    dispose: disposed.resolve,
+  });
+
+  const media = useMediaActions(hostSource(), undefined, { onQuoted });
+  expect(media.actions[0]?.id).toBe("quote-image");
+  media.actions[0]!.run();
+  await disposed.promise;
+  await Promise.resolve();
+
+  expect(state.quoteImage).toHaveBeenCalledWith({
+    uri: "file:///cache/image.png",
+    name: "image.png",
+  });
+  expect(onQuoted).toHaveBeenCalledOnce();
+});
+
+it("omits Quote image for non-images or quotable: false sources", () => {
+  state.sessions.set(environmentId, granted);
+  state.quoteContext = state.quoteImage;
+
+  expect(
+    useMediaActions({ ...hostSource(), mimeType: "video/mp4", name: "clip.mp4" }).actions.some(
+      ({ id }) => id === "quote-image",
+    ),
+  ).toBe(false);
+  expect(
+    useMediaActions({ ...hostSource(), quotable: false }).actions.some(
+      ({ id }) => id === "quote-image",
+    ),
+  ).toBe(false);
 });

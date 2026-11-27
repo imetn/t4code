@@ -30,6 +30,10 @@ const { logInfo, logError } = DesktopObservability.makeComponentLogger("desktop-
 const ACTION_RETRY_DELAY = Duration.millis(250);
 const PREPARED_UPDATE_TTL = Duration.minutes(5);
 
+function isT4BuildVersion(version: string): boolean {
+  return /-t4\./i.test(version);
+}
+
 interface PreparedUpdate {
   readonly requestId: string;
   readonly channel: DesktopTelemetryRequestDesktopUpdate["channel"];
@@ -105,13 +109,20 @@ export const listen: Effect.Effect<
         prepared.value.requestId !== requestId ||
         prepared.value.status === "failed"
       ) {
-        return [false, prepared] as const;
+        return [Option.none<string | undefined>(), prepared] as const;
       }
       return [
-        true,
+        Option.some(prepared.value.targetVersion),
         Option.some({ ...prepared.value, status: "failed" as const, failureReason: reason }),
       ] as const;
-    });
+    }).pipe(
+      Effect.flatMap((recorded) => {
+        if (Option.isNone(recorded)) return Effect.succeed(false);
+        return (
+          recorded.value !== undefined ? updates.clearReleaseFloor(recorded.value) : Effect.void
+        ).pipe(Effect.as(true));
+      }),
+    );
 
   const clearActiveRequest = (requestId: string) =>
     Ref.update(activeRequestIdRef, (active) =>
@@ -141,8 +152,10 @@ export const listen: Effect.Effect<
     }),
   ).pipe(Effect.forkScoped);
 
-  const handleRequest = (request: DesktopTelemetryRequestDesktopUpdate): Effect.Effect<void> =>
-    Effect.scoped(
+  const handleRequest = (request: DesktopTelemetryRequestDesktopUpdate): Effect.Effect<void> => {
+    let appliedFloor: string | undefined;
+    let preparedRequest = false;
+    return Effect.scoped(
       Effect.gen(function* () {
         const cancellation = yield* Deferred.make<void>();
         const shouldStart = yield* Ref.modify(requestControlRef, (control) => {
@@ -168,13 +181,19 @@ export const listen: Effect.Effect<
         if (!shouldStart) return;
 
         const now = yield* Clock.currentTimeMillis;
-        const prepared = yield* Ref.modify(preparedUpdateRef, (current) =>
+        const [expiredFloor, prepared] = yield* Ref.modify(preparedUpdateRef, (current) =>
           Option.isSome(current) &&
           current.value.status === "prepared" &&
           current.value.expiresAt <= now
-            ? ([Option.none<typeof current.value>(), Option.none()] as const)
-            : ([current, current] as const),
+            ? ([
+                [current.value.targetVersion, Option.none<typeof current.value>()] as const,
+                Option.none(),
+              ] as const)
+            : ([[undefined, current] as const, current] as const),
         );
+        if (expiredFloor !== undefined) {
+          yield* updates.clearReleaseFloor(expiredFloor);
+        }
         if (Option.isSome(prepared) && prepared.value.status !== "failed") {
           const state = yield* updates.getState;
           if (
@@ -195,6 +214,22 @@ export const listen: Effect.Effect<
             {
               outcome: "failed",
               reason: "A prepared desktop update is already in progress.",
+            },
+            request.requestId,
+          );
+          return;
+        }
+        const initialState = yield* updates.getState;
+        if (
+          request.targetVersion !== undefined &&
+          isT4BuildVersion(initialState.currentVersion) &&
+          !isT4BuildVersion(request.targetVersion)
+        ) {
+          yield* publishReport(
+            initialState,
+            {
+              outcome: "failed",
+              reason: `This T4 Code build cannot update to upstream release ${request.targetVersion}.`,
             },
             request.requestId,
           );
@@ -227,6 +262,7 @@ export const listen: Effect.Effect<
             );
             return;
           }
+          appliedFloor = request.targetVersion;
           const switched = yield* Effect.raceFirst(
             updates.setChannel(request.channel, { minimumVersion: request.targetVersion }).pipe(
               Effect.as(true),
@@ -332,6 +368,7 @@ export const listen: Effect.Effect<
                     (yield* Clock.currentTimeMillis) + Duration.toMillis(PREPARED_UPDATE_TTL),
                 }),
               );
+              preparedRequest = true;
               yield* publishReport(state, { outcome: "ready-to-install" }, request.requestId);
               yield* logInfo("remote update prepared", { requestId: request.requestId });
               return true;
@@ -384,6 +421,11 @@ export const listen: Effect.Effect<
         Effect.all(
           [
             clearActiveRequest(request.requestId),
+            Effect.suspend(() =>
+              appliedFloor !== undefined && !preparedRequest
+                ? updates.clearReleaseFloor(appliedFloor)
+                : Effect.void,
+            ),
             Ref.update(requestControlRef, (control) => ({
               ...control,
               active:
@@ -403,6 +445,7 @@ export const listen: Effect.Effect<
         }),
       ),
     );
+  };
 
   yield* Stream.runForEach(publisher.updateRequests, handleRequest).pipe(Effect.forkScoped);
 
@@ -431,13 +474,21 @@ export const listen: Effect.Effect<
       if (Option.isSome(activeSignal)) {
         yield* Deferred.succeed(activeSignal.value, undefined);
       }
-      const matchedPrepared = yield* Ref.modify(preparedUpdateRef, (prepared) => {
+      const cancelledPrepared = yield* Ref.modify(preparedUpdateRef, (prepared) => {
         if (Option.isNone(prepared) || prepared.value.requestId !== cancellation.requestId) {
-          return [false, prepared] as const;
+          return [Option.none<string | undefined>(), prepared] as const;
         }
-        return [true, prepared.value.status === "prepared" ? Option.none() : prepared] as const;
+        return [
+          Option.some(
+            prepared.value.status === "prepared" ? prepared.value.targetVersion : undefined,
+          ),
+          prepared.value.status === "prepared" ? Option.none() : prepared,
+        ] as const;
       });
-      if (matchedPrepared) {
+      if (Option.isSome(cancelledPrepared)) {
+        if (cancelledPrepared.value !== undefined) {
+          yield* updates.clearReleaseFloor(cancelledPrepared.value);
+        }
         yield* Ref.update(requestControlRef, (control) => {
           return {
             ...control,

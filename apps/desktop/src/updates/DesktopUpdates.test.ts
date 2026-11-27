@@ -1536,4 +1536,28 @@ describe("DesktopUpdates under a managed policy", () => {
       }),
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });
+
+  it.effect("clears a stale same-track release floor on a plain manual update check", () => {
+    const harness = makeHarness({
+      appVersion: "0.1.12-t4.9",
+      beforeSetUpdateChannel: Effect.void,
+    });
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+        yield* updates.setChannel("latest", { minimumVersion: "0.1.13" });
+
+        harness.emit("update-available", { version: "0.1.12-t4.12" });
+        yield* flushCallbacks;
+        assert.isNull((yield* updates.getState).availableVersion);
+
+        yield* updates.check("manual");
+        harness.emit("update-available", { version: "0.1.12-t4.12" });
+        yield* flushCallbacks;
+        assert.equal((yield* updates.getState).availableVersion, "0.1.12-t4.12");
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
 });

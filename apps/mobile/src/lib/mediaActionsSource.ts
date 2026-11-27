@@ -7,6 +7,7 @@ export type MediaActionsSource = {
   readonly name: string;
   readonly mimeType: string;
   readonly sourceIdentifier?: string;
+  readonly quotable?: boolean;
 } & (
   | { readonly uri: string }
   | { readonly attachment: FileBackedComposerAttachment }

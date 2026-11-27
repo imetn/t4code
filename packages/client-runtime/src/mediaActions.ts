@@ -6,6 +6,7 @@ export function formatFilePathForClipboard(path: string, hostPath = path): strin
 }
 
 export type MediaActionId =
+  | "quote-image"
   | "copy-full-path"
   | "copy-relative-path"
   | "copy-url"

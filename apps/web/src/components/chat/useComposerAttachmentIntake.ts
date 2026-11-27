@@ -129,6 +129,7 @@ export function useComposerAttachmentIntake(input: {
       readonly source?: ChatFileAttachment["source"];
       readonly selection?: { start: number; end: number };
       readonly skipImageInlineChip?: boolean;
+      readonly forceImageInlineChip?: boolean;
     },
   ): Promise<boolean> => {
     if (!activeThreadId || files.length === 0 || isRevertingCheckpointRef.current) return false;
@@ -150,7 +151,8 @@ export function useComposerAttachmentIntake(input: {
     const threadId = activeThreadId;
     const imageAttachmentsGetChips =
       !options?.skipImageInlineChip &&
-      (options?.selection !== undefined ||
+      (options?.forceImageInlineChip === true ||
+        options?.selection !== undefined ||
         pendingUserInputs.length > 0 ||
         projectSelectionRequired ||
         stripInlineContextReferences(promptRef.current).trim().length > 0);

@@ -21,7 +21,7 @@ import {
 } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { msg } from "gt-react";
-import { useRef, useState, type ReactElement } from "react";
+import { createContext, useContext, useRef, useState, type ReactElement } from "react";
 
 import { writeTextToClipboard } from "../../hooks/useCopyToClipboard";
 import { readLocalApi } from "../../localApi";
@@ -33,15 +33,22 @@ import { m } from "../../i18n/messages";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { downloadMedia, readMediaPng } from "./mediaContent";
+import { downloadMedia, readMediaImageFile, readMediaPng } from "./mediaContent";
+
+export type QuoteMediaHandler = (file: File) => boolean | Promise<boolean>;
+
+export const QuoteMediaContext = createContext<QuoteMediaHandler | null>(null);
 
 export interface MediaActionSource {
   readonly kind: "image" | "video";
   readonly name: string;
+  readonly mimeType?: string | undefined;
   readonly src: string | null;
   readonly reference?: MediaReference;
   readonly asset?: { readonly environmentId: EnvironmentId; readonly resource: AssetResource };
   readonly onOpenFile?: () => void;
+  readonly onQuoteImage?: QuoteMediaHandler | undefined;
+  readonly onQuoted?: (() => void) | undefined;
 }
 
 function mediaFileName(source: MediaActionSource): string {
@@ -114,7 +121,9 @@ export function useMediaActions(source: MediaActionSource) {
       new ClipboardItem({ "image/png": actionUrl().then(readMediaPng) }),
     ]);
   };
-  return { save, copyImage, canReadMedia, assertCanReadMedia };
+  const readImageFile = async () =>
+    readMediaImageFile(await actionUrl(), mediaFileName(source), source.mimeType);
+  return { save, copyImage, readImageFile, canReadMedia, assertCanReadMedia };
 }
 
 export function MediaActions({
@@ -126,7 +135,10 @@ export function MediaActions({
   children: ReactElement;
   showTooltip?: boolean;
 }) {
-  const { save, copyImage, canReadMedia, assertCanReadMedia } = useMediaActions(source);
+  const { save, copyImage, readImageFile, canReadMedia, assertCanReadMedia } =
+    useMediaActions(source);
+  const contextQuoteImage = useContext(QuoteMediaContext);
+  const quoteHandler = source.onQuoteImage ?? contextQuoteImage;
   const [tooltipOpen, setTooltipOpen] = useState(false);
   const menuOpen = useRef(false);
   const reference = source.reference;
@@ -147,6 +159,17 @@ export function MediaActions({
         Boolean(navigator.clipboard?.write) &&
         typeof ClipboardItem !== "undefined";
       const items: ContextMenuItem<MediaActionId>[] = [];
+      if (isImage && quoteHandler !== null) {
+        items.push({
+          id: "quote-image",
+          label: m(
+            msg("Quote image", {
+              $context: "verb, context menu item that quotes an image in the composer",
+            }),
+          ),
+          disabled: unavailable,
+        });
+      }
       if (reference?.kind === "file") {
         items.push({ id: "copy-full-path", label: m(msg("Copy full path")) });
         if (reference.relativePath)
@@ -176,21 +199,23 @@ export function MediaActions({
       const action = await api.contextMenu.show(items, position, menuSource);
       if (!action) return;
       failureTitle =
-        action === "copy-full-path"
-          ? m(msg("Could not copy full path"))
-          : action === "copy-relative-path"
-            ? m(msg("Could not copy relative path"))
-            : action === "copy-url"
-              ? m(msg("Could not copy url"))
-              : action === "open-file"
-                ? m(msg("Could not open in file viewer"))
-                : action === "save"
-                  ? isImage
-                    ? m(msg("Could not save image"))
-                    : m(msg("Could not save video"))
-                  : action === "copy-image"
-                    ? m(msg("Could not copy image"))
-                    : m(msg("Could not complete media action"));
+        action === "quote-image"
+          ? m(msg("Could not quote image"))
+          : action === "copy-full-path"
+            ? m(msg("Could not copy full path"))
+            : action === "copy-relative-path"
+              ? m(msg("Could not copy relative path"))
+              : action === "copy-url"
+                ? m(msg("Could not copy url"))
+                : action === "open-file"
+                  ? m(msg("Could not open in file viewer"))
+                  : action === "save"
+                    ? isImage
+                      ? m(msg("Could not save image"))
+                      : m(msg("Could not save video"))
+                    : action === "copy-image"
+                      ? m(msg("Could not copy image"))
+                      : m(msg("Could not complete media action"));
       const text =
         action === "copy-full-path" && reference?.kind === "file"
           ? reference.path
@@ -219,6 +244,15 @@ export function MediaActions({
       } else if (action === "open-file") {
         assertCanReadMedia();
         source.onOpenFile?.();
+      } else if (action === "quote-image" && quoteHandler !== null) {
+        progressToast = toastManager.add({
+          type: "loading",
+          title: m(msg("Quoting image…")),
+        });
+        const file = await readImageFile();
+        const accepted = await quoteHandler(file);
+        toastManager.close(progressToast);
+        if (accepted) source.onQuoted?.();
       } else if (action === "save" || action === "copy-image") {
         progressToast = toastManager.add({
           type: "loading",

@@ -343,6 +343,8 @@ import {
   ThreadMarkdownImageUnavailable,
   ThreadMarkdownImageView,
 } from "./ThreadMarkdownImage";
+import { MediaActionsMenu } from "../../components/MediaActionsMenu";
+import { useMediaActions } from "../../state/mediaActions";
 import { ZoomableImagePressable } from "./ZoomableImagePressable";
 import { openSettings } from "../settings/settings-navigation";
 import { loopbackUrlForDevice } from "../browser/browserTabs";
@@ -642,6 +644,7 @@ function MessageAttachmentImage(props: {
   const previewSource = remoteAttachmentImageSource(props.environmentId, props.attachmentId, props);
   const { resource } = previewSource;
   const sourceIdentifier = filePreviewSourceIdentifier(previewSource);
+  const mediaActions = useMediaActions({ ...previewSource.actionsSource, sourceIdentifier });
   const uri = useAssetUrl(props.environmentId, resource);
   const refreshAssetUrl = useRefreshAssetUrl(props.environmentId, resource);
   const retriedImage = useRef(false);
@@ -672,26 +675,28 @@ function MessageAttachmentImage(props: {
 
   return (
     <PresentationSource identifier={sourceIdentifier}>
-      <MessageImage
-        key={props.attachmentId}
-        source={source}
-        className={props.className}
-        maxWidth={props.maxWidth}
-        height={props.height}
-        accessibilityLabel={gt("Open {name}", { name: props.name })}
-        {...handoffProps(handoff)}
-        onPress={() => props.onPressPreview(withGallery({ ...previewSource, sourceIdentifier }))}
-        onLoad={(size) => {
-          retriedImage.current = false;
-          if (handoff)
-            props.onImageLoad?.({ uri: handoff.uri, aspectRatio: size.width / size.height });
-        }}
-        onError={() => {
-          if (retriedImage.current) return;
-          retriedImage.current = true;
-          void refreshAssetUrl();
-        }}
-      />
+      <MediaActionsMenu media={mediaActions}>
+        <MessageImage
+          key={props.attachmentId}
+          source={source}
+          className={props.className}
+          maxWidth={props.maxWidth}
+          height={props.height}
+          accessibilityLabel={gt("Open {name}", { name: props.name })}
+          {...handoffProps(handoff)}
+          onPress={() => props.onPressPreview(withGallery({ ...previewSource, sourceIdentifier }))}
+          onLoad={(size) => {
+            retriedImage.current = false;
+            if (handoff)
+              props.onImageLoad?.({ uri: handoff.uri, aspectRatio: size.width / size.height });
+          }}
+          onError={() => {
+            if (retriedImage.current) return;
+            retriedImage.current = true;
+            void refreshAssetUrl();
+          }}
+        />
+      </MediaActionsMenu>
     </PresentationSource>
   );
 }
@@ -1077,23 +1082,32 @@ function PendingMessageImage(props: {
   // The composer already showed this image; reuse its pixels and shape instead of a blank box.
   const uri =
     handoff?.uri ?? (fileBacked ? preview.uri : (attachment.dataUrl ?? attachment.previewUri));
+  const mediaActions = useMediaActions(
+    fileBacked
+      ? { name: attachment.name, mimeType: attachment.mimeType, attachment }
+      : uri
+        ? { name: attachment.name, mimeType: attachment.mimeType, uri }
+        : undefined,
+  );
   return (
-    <MessageImage
-      key={attachment.id}
-      source={uri == null ? undefined : { uri }}
-      className={props.className}
-      maxWidth={props.maxWidth}
-      height={props.height}
-      accessibilityLabel={gt("Open {name}", { name: attachment.name })}
-      {...handoffProps(handoff)}
-      onLoad={(size) => {
-        if (uri) props.onImageLoad?.({ uri, aspectRatio: size.width / size.height });
-      }}
-      onPress={() => {
-        const source = composerImageGallery([attachment])[0];
-        if (source) props.onPressPreview(withGallery(source));
-      }}
-    />
+    <MediaActionsMenu media={mediaActions}>
+      <MessageImage
+        key={attachment.id}
+        source={uri == null ? undefined : { uri }}
+        className={props.className}
+        maxWidth={props.maxWidth}
+        height={props.height}
+        accessibilityLabel={gt("Open {name}", { name: attachment.name })}
+        {...handoffProps(handoff)}
+        onLoad={(size) => {
+          if (uri) props.onImageLoad?.({ uri, aspectRatio: size.width / size.height });
+        }}
+        onPress={() => {
+          const source = composerImageGallery([attachment])[0];
+          if (source) props.onPressPreview(withGallery(source));
+        }}
+      />
+    </MediaActionsMenu>
   );
 }
 

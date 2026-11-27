@@ -161,5 +161,34 @@ export function useComposerAttachmentActions(props: {
       }
     });
   };
-  return { onPickDraftMedia, onPickDraftFiles, onNativePasteImages, onNativePasteText };
+  const onQuoteImage = async (input: { readonly uri: string; readonly name: string }) => {
+    const key = props.draftKey;
+    if (!key || props.locked || !input.uri) return false;
+    const insertion = captureComposerDraftInsertion(key);
+    return withDraftOperation(key, async (signal) => {
+      try {
+        const result = await convertPastedImagesToAttachments({
+          uris: [input.uri],
+          names: [input.name],
+        });
+        const rejected = await append(key, signal, result.attachments, insertion);
+        report(m(msg("Could not quote image")), result.error, rejected);
+        if (signal.aborted || result.error || rejected > 0) return false;
+        return result.attachments.length > 0;
+      } catch (error) {
+        Dialog.alert(
+          m(msg("Could not quote image")),
+          errorDisplayMessage(error, m) ?? m(msg("Try again.")),
+        );
+        return false;
+      }
+    });
+  };
+  return {
+    onPickDraftMedia,
+    onPickDraftFiles,
+    onNativePasteImages,
+    onNativePasteText,
+    onQuoteImage,
+  };
 }

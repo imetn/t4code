@@ -15,10 +15,11 @@ import {
   sessionGrantsScope,
   type SessionGrantInput,
 } from "@t3tools/contracts";
+import { imageMimeType } from "@t3tools/shared/image";
 import { normalizeNativeMarkdownUrl } from "../lib/markdownLinks";
 import { AsyncResult } from "effect/reactivity";
 import * as Haptics from "expo-haptics";
-import { useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 
 import { useRefreshAssetUrl } from "./assets";
 import { appAtomRegistry } from "./atom-registry";
@@ -43,13 +44,24 @@ function canReadHostMedia(environmentId: EnvironmentId | null): boolean {
   return result._tag !== "Failure" && allowsHostMedia(AsyncResult.getOrElse(result, () => null));
 }
 
+export type QuoteMediaHandler = (input: {
+  readonly uri: string;
+  readonly name: string;
+}) => Promise<boolean>;
+
+export const QuoteMediaContext = createContext<QuoteMediaHandler | null>(null);
+
 export function useMediaActions(
   source: MediaActionsSource | undefined,
   onOpenFile?: () => void,
-  options?: { readonly getSaveImageSignal: () => AbortSignal },
+  options?: {
+    readonly getSaveImageSignal?: () => AbortSignal;
+    readonly onQuoted?: () => void;
+  },
 ) {
   const navigation = useNavigation();
   const gt = useGT();
+  const onQuoteImage = useContext(QuoteMediaContext);
   const hostEnvironmentId =
     source &&
     "resource" in source &&
@@ -67,24 +79,31 @@ export function useMediaActions(
     source && "resource" in source ? source.resource : null,
   );
   const controller = useRef<AbortController | null>(null);
-  const [busy, setBusy] = useState<"share" | "save-image" | null>(null);
+  const [busy, setBusy] = useState<"share" | "save-image" | "quote-image" | null>(null);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- cancels page-owned work and stops updating busy state on unmount
   useEffect(() => () => controller.current?.abort(), []);
 
   const run = (
-    kind: "share" | "save-image",
+    kind: "share" | "save-image" | "quote-image",
     task: (source: MediaActionsSource, signal: AbortSignal) => Promise<void>,
   ) => {
     if (!source || controller.current || !canReadHostMedia(hostEnvironmentId)) return;
     const request = new AbortController();
     controller.current = request;
     setBusy(kind);
-    const signal = kind === "save-image" && options ? options.getSaveImageSignal() : request.signal;
+    const signal =
+      kind === "save-image" && options?.getSaveImageSignal
+        ? options.getSaveImageSignal()
+        : request.signal;
     return task(source, signal)
       .catch((error: unknown) => {
         if (!signal.aborted) {
           Dialog.alert(
-            kind === "share" ? m(msg("Could not share file")) : m(msg("Could not save image")),
+            kind === "share"
+              ? m(msg("Could not share file"))
+              : kind === "quote-image"
+                ? m(msg("Could not quote image"))
+                : m(msg("Could not save image")),
             errorDisplayMessage(error, m) ?? m(msg("Try again.")),
           );
         }
@@ -152,12 +171,49 @@ export function useMediaActions(
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     });
 
+  const quoteImage = () =>
+    run("quote-image", async (source, signal) => {
+      if (!onQuoteImage) return;
+      const file = await localImageFile(source, signal);
+      if (!file) return;
+      const quoted = signal.aborted
+        ? null
+        : await settlePromise(() => onQuoteImage({ uri: file.uri, name: source.name }));
+      file.dispose();
+      if (quoted === null) return;
+      if (AsyncResult.isFailure(quoted)) throw squashAtomCommandFailure(quoted);
+      if (quoted.value) {
+        options?.onQuoted?.();
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      }
+    });
+
+  const isQuotableImage =
+    source !== undefined &&
+    source.quotable !== false &&
+    onQuoteImage !== null &&
+    (source.mimeType.startsWith("image/") || imageMimeType(source) !== null);
   const reference = source?.reference;
   const relativePath = reference?.kind === "file" ? reference.relativePath : undefined;
   const threadId = source && "threadId" in source ? source.threadId : undefined;
   const actions: { id: MediaActionId; title: string; run: () => void; disabled?: boolean }[] =
     source
       ? [
+          ...(isQuotableImage
+            ? [
+                {
+                  id: "quote-image" as const,
+                  title:
+                    busy === "quote-image"
+                      ? gt("Quoting image…")
+                      : gt("Quote image", {
+                          $context: "verb, context menu item that quotes an image in the composer",
+                        }),
+                  run: quoteImage,
+                  disabled: busy !== null || !canReadMedia,
+                },
+              ]
+            : []),
           ...(reference?.kind === "file"
             ? [
                 {

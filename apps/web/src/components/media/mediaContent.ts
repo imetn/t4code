@@ -1,3 +1,5 @@
+import { isProviderSendTurnSupportedImageMimeType } from "@t3tools/contracts";
+import { mediaMimeTypeFromExtension } from "@t3tools/shared/mediaPreview";
 import { msg } from "gt-react";
 
 import { m } from "~/i18n/messages";
@@ -133,4 +135,52 @@ export async function readMediaPng(src: string): Promise<Blob> {
   } finally {
     URL.revokeObjectURL(url);
   }
+}
+
+const IMAGE_EXTENSION_BY_MIME: Readonly<Record<string, string>> = {
+  "image/png": ".png",
+  "image/jpeg": ".jpg",
+  "image/webp": ".webp",
+  "image/gif": ".gif",
+  "image/heic": ".heic",
+  "image/heif": ".heif",
+};
+
+function imageFileNameWithExtension(
+  name: string,
+  mimeType: string,
+  replaceExisting: boolean,
+): string {
+  const trimmed = name.trim() || "image";
+  const extension = IMAGE_EXTENSION_BY_MIME[mimeType] ?? ".png";
+  const hasExtension = /\.[a-z0-9]{1,8}$/i.test(trimmed);
+  if (hasExtension) {
+    return replaceExisting ? trimmed.replace(/\.[a-z0-9]{1,8}$/i, extension) : trimmed;
+  }
+  return `${trimmed}${extension}`;
+}
+
+export async function readMediaImageFile(
+  src: string,
+  name: string,
+  fallbackMimeType?: string,
+): Promise<File> {
+  const blob = await readMediaBlob(src);
+  const blobMime = blob.type.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+  const inferredMime =
+    (blobMime && blobMime !== "application/octet-stream" ? blobMime : undefined) ??
+    fallbackMimeType?.split(";", 1)[0]?.trim().toLowerCase() ??
+    (() => {
+      const dot = name.lastIndexOf(".");
+      return dot >= 0 ? (mediaMimeTypeFromExtension(name.slice(dot)) ?? undefined) : undefined;
+    })();
+  if (inferredMime && isProviderSendTurnSupportedImageMimeType(inferredMime)) {
+    return new File([blob], imageFileNameWithExtension(name, inferredMime, false), {
+      type: inferredMime,
+    });
+  }
+  const png = await readMediaPng(src);
+  return new File([png], imageFileNameWithExtension(name, "image/png", true), {
+    type: "image/png",
+  });
 }

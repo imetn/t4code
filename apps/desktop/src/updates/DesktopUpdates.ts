@@ -213,6 +213,7 @@ export class DesktopUpdates extends Context.Service<
       channel: DesktopUpdateChannel,
       options?: { readonly minimumVersion?: string | undefined },
     ) => Effect.Effect<DesktopUpdateState, DesktopUpdateSetChannelError>;
+    readonly clearReleaseFloor: (expectedFloor?: string) => Effect.Effect<void>;
     /** `allowDowngrade` is for a guarded track switch, which checked that older release. */
     readonly check: (
       reason: string,
@@ -1470,6 +1471,15 @@ export const make = Effect.gen(function* () {
         return yield* Ref.get(updateStateRef);
       }).pipe(Effect.ensuring(finishUpdateAction("channel")));
     }),
+    clearReleaseFloor: Effect.fn("desktop.updates.clearReleaseFloor")(function* (
+      expectedFloor?: string,
+    ) {
+      yield* Ref.update(releaseFloorRef, (current) =>
+        expectedFloor === undefined || (Option.isSome(current) && current.value === expectedFloor)
+          ? Option.none()
+          : current,
+      );
+    }),
     check: Effect.fn("desktop.updates.check")(function* (
       reason: string,
       options?: { readonly allowDowngrade?: boolean },
@@ -1480,6 +1490,16 @@ export const make = Effect.gen(function* () {
           checked: false,
           state: yield* Ref.get(updateStateRef),
         };
+      }
+      if (
+        reason !== "remote-update" &&
+        reason !== "channel-change" &&
+        options?.allowDowngrade !== true
+      ) {
+        const currentState = yield* Ref.get(updateStateRef);
+        if (desktopUpdateChannelOf(environment.appVersion) === currentState.channel) {
+          yield* Ref.set(releaseFloorRef, Option.none());
+        }
       }
       const checked = yield* checkForUpdates(reason, "acquire", options?.allowDowngrade === true);
       return {
