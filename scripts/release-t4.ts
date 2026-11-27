@@ -137,72 +137,82 @@ const spawnAndCollect = Effect.fn("release-t4.spawnAndCollect")(function* (
 const verifySignedMacDmg = Effect.fn("release-t4.verifySignedMacDmg")(function* (dmgPath: string) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const mountDir = yield* fs.makeTempDirectoryScoped({ prefix: "t4-release-verify-" });
+  yield* Effect.scoped(
+    Effect.gen(function* () {
+      const mountDir = yield* Effect.acquireRelease(
+        fs.makeTempDirectory({ prefix: "t4-release-verify-" }),
+        (dir) => fs.remove(dir, { recursive: true, force: true }).pipe(Effect.ignore),
+      );
 
-  yield* Effect.acquireRelease(
-    spawnAndCollect(
-      ChildProcess.make("hdiutil", [
-        "attach",
-        "-readonly",
-        "-nobrowse",
-        "-mountpoint",
-        mountDir,
-        dmgPath,
-      ]),
-    ).pipe(
-      Effect.flatMap((result) =>
-        result.exitCode === 0
-          ? Effect.void
-          : Effect.fail(
-              new ReleaseVerificationError({
-                check: "hdiutil attach",
-                detail: `${result.stdout}\n${result.stderr}`.trim(),
-              }),
-            ),
-      ),
-    ),
-    () =>
-      spawnAndCollect(ChildProcess.make("hdiutil", ["detach", mountDir, "-force"])).pipe(
-        Effect.ignore,
-      ),
+      yield* Effect.acquireRelease(
+        spawnAndCollect(
+          ChildProcess.make("hdiutil", [
+            "attach",
+            "-readonly",
+            "-nobrowse",
+            "-mountpoint",
+            mountDir,
+            dmgPath,
+          ]),
+        ).pipe(
+          Effect.flatMap((result) =>
+            result.exitCode === 0
+              ? Effect.void
+              : Effect.fail(
+                  new ReleaseVerificationError({
+                    check: "hdiutil attach",
+                    detail: `${result.stdout}\n${result.stderr}`.trim(),
+                  }),
+                ),
+          ),
+        ),
+        () =>
+          spawnAndCollect(ChildProcess.make("hdiutil", ["detach", mountDir, "-force"])).pipe(
+            Effect.ignore,
+          ),
+      );
+
+      const appPath = path.join(mountDir, "T4 Code.app");
+      if (!(yield* fs.exists(appPath))) {
+        return yield* new ReleaseVerificationError({
+          check: "app bundle",
+          detail: `Expected 'T4 Code.app' inside mounted DMG at ${mountDir}.`,
+        });
+      }
+
+      const codesign = yield* spawnAndCollect(
+        ChildProcess.make("codesign", ["-dv", "--verbose=2", appPath]),
+      );
+      const codesignOutput = `${codesign.stdout}\n${codesign.stderr}`.trim();
+      if (
+        codesign.exitCode !== 0 ||
+        !codesignOutput.includes("Authority=Developer ID Application:")
+      ) {
+        return yield* new ReleaseVerificationError({
+          check: "codesign Developer ID Application",
+          detail: codesignOutput || `codesign exited with code ${codesign.exitCode}`,
+        });
+      }
+
+      const stapler = yield* spawnAndCollect(
+        ChildProcess.make("xcrun", ["stapler", "validate", appPath]),
+      );
+      if (stapler.exitCode !== 0) {
+        return yield* new ReleaseVerificationError({
+          check: "xcrun stapler validate",
+          detail: `${stapler.stdout}\n${stapler.stderr}`.trim(),
+        });
+      }
+
+      const spctl = yield* spawnAndCollect(ChildProcess.make("spctl", ["-a", "-vvv", appPath]));
+      if (spctl.exitCode !== 0) {
+        return yield* new ReleaseVerificationError({
+          check: "spctl assessment",
+          detail: `${spctl.stdout}\n${spctl.stderr}`.trim(),
+        });
+      }
+    }),
   );
-
-  const appPath = path.join(mountDir, "T4 Code.app");
-  if (!(yield* fs.exists(appPath))) {
-    return yield* new ReleaseVerificationError({
-      check: "app bundle",
-      detail: `Expected 'T4 Code.app' inside mounted DMG at ${mountDir}.`,
-    });
-  }
-
-  const codesign = yield* spawnAndCollect(
-    ChildProcess.make("codesign", ["-dv", "--verbose=2", appPath]),
-  );
-  const codesignOutput = `${codesign.stdout}\n${codesign.stderr}`.trim();
-  if (codesign.exitCode !== 0 || !codesignOutput.includes("Authority=Developer ID Application:")) {
-    return yield* new ReleaseVerificationError({
-      check: "codesign Developer ID Application",
-      detail: codesignOutput || `codesign exited with code ${codesign.exitCode}`,
-    });
-  }
-
-  const stapler = yield* spawnAndCollect(
-    ChildProcess.make("xcrun", ["stapler", "validate", appPath]),
-  );
-  if (stapler.exitCode !== 0) {
-    return yield* new ReleaseVerificationError({
-      check: "xcrun stapler validate",
-      detail: `${stapler.stdout}\n${stapler.stderr}`.trim(),
-    });
-  }
-
-  const spctl = yield* spawnAndCollect(ChildProcess.make("spctl", ["-a", "-vvv", appPath]));
-  if (spctl.exitCode !== 0) {
-    return yield* new ReleaseVerificationError({
-      check: "spctl assessment",
-      detail: `${spctl.stdout}\n${spctl.stderr}`.trim(),
-    });
-  }
 
   yield* Effect.log(
     `[release-t4] Verified Developer ID signature, Apple notarization staple, and Gatekeeper assessment for ${path.basename(dmgPath)}.`,
