@@ -18,6 +18,9 @@ const state = vi.hoisted(() => ({
   optimistic: null as ProjectReadFileResult | null,
   writeFile: vi.fn(),
   assetUrl: { _tag: "Loading" } as import("~/assets/assetUrls").AssetUrlState,
+  assetUrlForRevision: null as
+    | ((revision: string | null | undefined) => import("~/assets/assetUrls").AssetUrlState)
+    | null,
   assetResources: [] as Array<import("@t3tools/contracts").AssetResource>,
   mintUrl: vi.fn<() => Promise<string | null>>(),
   browserAssetMints: 0,
@@ -71,9 +74,10 @@ vi.mock(import("~/assets/assetUrls"), async (original) => ({
   useAssetUrlState: (
     _environmentId: unknown,
     resource: import("@t3tools/contracts").AssetResource | null,
+    revision?: string | null,
   ) => {
     if (resource) state.assetResources.push(resource);
-    return state.assetUrl;
+    return state.assetUrlForRevision ? state.assetUrlForRevision(revision) : state.assetUrl;
   },
 }));
 vi.mock(import("~/browser/previewRuntime"), async (original) => ({
@@ -132,8 +136,13 @@ vi.mock(import("./OfficeFilePreview"), () => ({
 }));
 vi.mock(import("./FileBreadcrumbs"), () => ({ FileBreadcrumbs: () => <></> }));
 vi.mock(import("./FileBrowserPanel"), () => ({
-  default: () => (
+  default: ({ onRefreshSelectedFile }: { onRefreshSelectedFile?: () => void }) => (
     <div role="tree">
+      {onRefreshSelectedFile ? (
+        <button type="button" onClick={onRefreshSelectedFile}>
+          Refresh workspace files
+        </button>
+      ) : null}
       <button type="button" role="treeitem" data-item-path="src/">
         src
       </button>
@@ -187,6 +196,7 @@ function setup() {
   state.file = null;
   state.optimistic = null;
   state.assetUrl = { _tag: "Loading" };
+  state.assetUrlForRevision = null;
   state.assetResources = [];
   state.openedBrowserUrls = [];
   state.diffWorkersReady = true;
@@ -767,6 +777,64 @@ describe("open file in preview browser", () => {
   });
 });
 
+describe("workspace HTML preview refresh", () => {
+  it.each([
+    {
+      label: "reloads a rendered HTML preview on refresh when fileRevision advances",
+      workspaceMutationId: null as string | null,
+      withFileRevision: true,
+    },
+    {
+      label: "reloads a rendered HTML preview on refresh without a server fileRevision",
+      workspaceMutationId: "mutation-1" as string | null,
+      withFileRevision: false,
+    },
+  ])("$label", async ({ workspaceMutationId, withFileRevision }) => {
+    using _settings = setup();
+    localStorage.setItem("t3code.fileExplorerOpen", "true");
+    state.file = {
+      relativePath: "page.html",
+      contents: "<h1>v1</h1>",
+      byteLength: 11,
+      truncated: false,
+    };
+    const seenRevisions: Array<string | null | undefined> = [];
+    state.assetUrlForRevision = (revision) => {
+      seenRevisions.push(revision);
+      const refreshed = revision !== workspaceMutationId;
+      return {
+        _tag: "Success",
+        url: refreshed ? "data:text/html,v2" : "data:text/html,v1",
+        expiresAt: Number.MAX_SAFE_INTEGER,
+        ...(withFileRevision ? { fileRevision: refreshed ? "rev-2" : "rev-1" } : {}),
+      };
+    };
+
+    await using screen = await render(filePreview("page.html", workspaceMutationId));
+    const shownIframeSrc = () =>
+      screen.container.querySelector('iframe:not([aria-hidden="true"])')?.getAttribute("src");
+    await vi.waitFor(() => expect(shownIframeSrc()).toMatch(/^data:text\/html,v1/));
+
+    await userEvent.click(screen.getByRole("button", { name: "Refresh workspace files" }));
+
+    await vi.waitFor(() => expect(shownIframeSrc()).toMatch(/^data:text\/html,v2/));
+    expect(seenRevisions.at(-1)).not.toBe(workspaceMutationId);
+  });
+});
+
+describe("save file", () => {
+  it("offers one Save file, whether the toolbar or the preview provides it", async () => {
+    using _settings = setup();
+    state.file = { relativePath: "notes.txt", contents: "notes", byteLength: 5, truncated: false };
+    await using screen = await render(filePreview("notes.txt"));
+    await expect.element(screen.getByRole("button", { name: "Save file" })).toBeVisible();
+
+    await screen.rerender(documentPreview("mutation-1", "revision-1"));
+    await expect.element(screen.getByTestId("office-preview")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Save file" }).elements()).toHaveLength(1);
+  });
+});
+
 describe("rendered Markdown select all", () => {
   it("selects only the rendered file, including after a task toggle", async () => {
     using _settings = setup();
@@ -791,7 +859,61 @@ describe("rendered Markdown select all", () => {
     await userEvent.click(screen.getByRole("checkbox"));
     await expectFileOnlySelection();
   });
+
+  it("selects and copies the whole file in a large rendered Markdown preview", async () => {
+    using _settings = setup();
+    using _style = withAppCss();
+    const block = `## Section\n\n${"Paragraph body text. ".repeat(4)}\n\n`;
+    const contents = `Loaded opening body.\n\n${block.repeat(400)}Trailing sentinel.`;
+    state.assetUrl = {
+      _tag: "Success",
+      url: "/assets/large.md",
+      expiresAt: Number.MAX_SAFE_INTEGER,
+    };
+    const realFetch = globalThis.fetch;
+    using _fetch = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation((input, init) =>
+        new URL(String(input), location.href).pathname === "/assets/large.md"
+          ? Promise.resolve(new Response(contents))
+          : realFetch(input, init),
+      );
+    await using screen = await render(
+      <>
+        <p>Transcript text from the chat thread.</p>
+        <div style={{ height: 600, display: "flex", flexDirection: "column" }}>
+          {markdownPreview(true, `Initial preview.\n\n${block.repeat(40)}`, "large.md")}
+        </div>
+      </>,
+    );
+    await expect.element(screen.getByText("Loaded opening body.")).toBeVisible();
+    expect(screen.container.textContent).not.toContain("Trailing sentinel.");
+
+    await userEvent.click(screen.getByText("Loaded opening body."));
+    await userEvent.keyboard(
+      isMacPlatform(navigator.platform) ? "{Meta>}a{/Meta}" : "{Control>}a{/Control}",
+    );
+    const selection = window.getSelection()?.toString() ?? "";
+    expect(selection).toContain("Loaded opening body.");
+    expect(selection).not.toContain("Transcript text from the chat thread.");
+
+    let copied: string | undefined;
+    const read = (event: ClipboardEvent) => {
+      copied = event.clipboardData?.getData("text/plain");
+    };
+    window.addEventListener("copy", read);
+    using _listener = { [Symbol.dispose]: () => window.removeEventListener("copy", read) };
+    document.execCommand("copy");
+    expect(copied).toBe(contents);
+  });
 });
+
+function withAppCss() {
+  const style = document.createElement("style");
+  style.textContent = appCss;
+  document.head.append(style);
+  return { [Symbol.dispose]: () => style.remove() };
+}
 
 describe("rendered Markdown relative images", () => {
   it.each([

@@ -1242,3 +1242,43 @@ it("opening Settings without a page event closes the composer model picker and p
   await expect.element(page.getByRole("dialog", { name: "Settings" })).toBeVisible();
   await expect.element(permissions).not.toBeInTheDocument();
 });
+
+it("picking /clear while editing a queued message does not arm a fresh session", async () => {
+  const name = "clear-queued-edit";
+  const history = threadWithHistory(name, 2);
+  const thread = {
+    ...history,
+    runs: [
+      { ...history.runs[0]!, status: "running" as const, completedAt: null },
+      { ...history.runs[1]!, status: "queued" as const, startedAt: null, completedAt: null },
+    ],
+    items: history.items.filter((item) => item.id !== `${name}-assistant-1`),
+  };
+  using _environment = installFakeEnvironment([thread], { acceptCommands: true });
+  __setClientSettingsForTests({
+    ...DEFAULT_CLIENT_SETTINGS,
+    onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
+  });
+  const router = getRouter(
+    createMemoryHistory({ initialEntries: [`/${ENVIRONMENT_ID}/${thread.id}`] }),
+  );
+  await router.load();
+  await using _app = await render(<AppRoot router={router} />, {
+    // AppRoot brings its own router.
+    router: false,
+  });
+  await page.getByRole("button", { name: "Edit queued message" }).click();
+  await expect.element(page.getByText("Editing in the composer")).toBeVisible();
+  const editor = page.getByTestId("composer-editor");
+  await userEvent.click(editor);
+  await userEvent.keyboard("{ControlOrMeta>}a{/ControlOrMeta}");
+  await insertText("/");
+  await expect.element(page.getByRole("option", { name: /^\/model/ })).toBeVisible();
+
+  // The queued edit owns the composer, as on mobile, so /clear must not arm the next send.
+  expect(page.getByRole("option", { name: /^\/clear/ }).query()).toBeNull();
+  await expect.element(page.getByText("Editing in the composer")).toBeVisible();
+  await expect
+    .element(page.getByText("Your next message starts a fresh session"))
+    .not.toBeInTheDocument();
+});

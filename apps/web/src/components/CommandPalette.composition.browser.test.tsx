@@ -2,10 +2,19 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
-import { AuthOrchestrationOperateScope, AuthSourceControlWriteScope } from "@t3tools/contracts";
+import {
+  AuthOrchestrationOperateScope,
+  AuthSourceControlWriteScope,
+  EnvironmentId,
+  ProjectId,
+} from "@t3tools/contracts";
+import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { act, render } from "../../test/render";
 import { CommandPalette } from "./CommandPalette";
 import { openCommandPalette } from "../commandPaletteBus";
+import { DraftId, useComposerDraftStore } from "../composerDraftStore";
+import { moveDraftToProject } from "../lib/moveDraftToProject";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { sourceControlEnvironment } from "../state/sourceControl";
 import { AsyncResult } from "effect/reactivity";
@@ -14,10 +23,19 @@ const scopes = vi.hoisted(() => ({
   denied: undefined as string | undefined,
   sourceControl: undefined as unknown,
   lookupRepository: vi.fn(),
+  openDraft: vi.fn<() => Promise<void>>(),
+  addProject: vi.fn<() => Promise<{ _tag: "Success"; value: { projectId: string } }>>(),
+  waitForProject: vi.fn<() => Promise<EnvironmentProject | undefined>>(),
 }));
 const setup = (deniedScope?: string, sourceControl?: unknown) => {
   scopes.denied = deniedScope;
   scopes.sourceControl = sourceControl;
+  scopes.openDraft.mockReset().mockResolvedValue(undefined);
+  scopes.addProject.mockReset().mockResolvedValue({
+    _tag: "Success",
+    value: { projectId: "project-cloned" },
+  });
+  scopes.waitForProject.mockReset().mockResolvedValue(undefined);
 };
 const githubAvailable = {
   versionControlSystems: [],
@@ -64,7 +82,7 @@ vi.mock("../hooks/useHandleNewThread", () => ({
     activeDraftThread: null,
     activeThread: null,
     defaultProjectRef: null,
-    handleNewThread: async () => undefined,
+    handleNewThread: scopes.openDraft,
   }),
   useNewThreadHandler: () => async () => undefined,
 }));
@@ -72,7 +90,7 @@ vi.mock("../hooks/useOpenPanelPullRequestUrl", () => ({ useOpenPanelPullRequestU
 vi.mock("../connection/useDesktopLocalBootstraps", () => ({ useDesktopLocalBootstraps: () => [] }));
 vi.mock("../state/use-atom-command", () => ({
   // The add-project destination step starts a clone and follows its project id.
-  useAtomCommand: () => async () => ({ _tag: "Success", value: { projectId: "project-cloned" } }),
+  useAtomCommand: () => scopes.addProject,
 }));
 vi.mock("../state/use-atom-query-runner", () => ({
   // Doubles as the add-project folder scan, which finds nothing to track.
@@ -110,7 +128,7 @@ vi.mock("../state/entities", async (original) => ({
   useAnyEnvironmentHiding: () => false,
   useEnvironmentThreadRefs: () => [],
   useServerConfigs: () => new Map(),
-  waitForProject: async () => undefined,
+  waitForProject: scopes.waitForProject,
 }));
 vi.mock("../state/queries", async (original) => ({
   ...(await original<typeof import("../state/queries")>()),
@@ -277,4 +295,130 @@ it("keeps the source list visible after a dismissed repository lookup succeeds",
     await lookup.promise;
   });
   expect(sources.element()).toBeVisible();
+});
+
+async function submitProjectAdd(source: string, input: string, draftId?: DraftId) {
+  await act(() => openCommandPalette({ open: "add-project", ...(draftId && { draftId }) }));
+  await page.getByText(source, { exact: true }).click();
+  await page.getByRole("combobox").fill(input);
+  await userEvent.keyboard("{Enter}");
+}
+
+async function startLateProjectAdd(source: string, input: string, draftId?: DraftId) {
+  const finished = Promise.withResolvers<void>();
+  scopes.addProject.mockImplementationOnce(async () => {
+    await finished.promise;
+    return { _tag: "Success", value: { projectId: "project-added" } };
+  });
+  await submitProjectAdd(source, input, draftId);
+  return async () => {
+    await act(async () => {
+      finished.resolve();
+      await finished.promise;
+    });
+  };
+}
+
+it.each(["/", "/?panel=files"])(
+  "opens the added folder after navigation to the same page (%s)",
+  async (to) => {
+    setup();
+    await using screen = await render(<CommandPalette>{null}</CommandPalette>);
+    const finish = await startLateProjectAdd("Local folder", "/workspace/next");
+
+    await act(() => screen.router!.navigate({ to }));
+    await finish();
+
+    expect(scopes.openDraft).toHaveBeenCalledOnce();
+  },
+);
+
+const environmentId = EnvironmentId.make("local");
+const project = (name: string): EnvironmentProject => ({
+  id: ProjectId.make(name),
+  environmentId,
+  title: name,
+  workspaceRoot: `/workspace/${name}`,
+  repositoryIdentity: null,
+  defaultModelSelection: null,
+  createdAt: "2026-03-01T00:00:00.000Z",
+  updatedAt: "2026-03-01T00:00:00.000Z",
+  scripts: [],
+});
+
+it.each([
+  { selection: [], expected: "added" },
+  { selection: ["other"], expected: "other" },
+  { selection: ["other", "original"], expected: "original" },
+])("keeps the draft's project selection after switching threads (%j)", async (row) => {
+  setup();
+  const draftId = DraftId.make("draft-adding-project");
+  const store = useComposerDraftStore.getState();
+  store.setProjectDraftThreadId(
+    scopeProjectRef(environmentId, ProjectId.make("original")),
+    draftId,
+  );
+  store.setPrompt(draftId, "Keep this draft");
+  scopes.waitForProject.mockResolvedValue(project("added"));
+  try {
+    await using screen = await render(<CommandPalette>{null}</CommandPalette>);
+    const finish = await startLateProjectAdd("Local folder", "/workspace/added", draftId);
+    await userEvent.keyboard("{Escape}");
+    await expect.element(page.getByRole("combobox")).not.toBeInTheDocument();
+    await act(() => {
+      for (const name of row.selection) moveDraftToProject(draftId, project(name));
+    });
+    await act(() =>
+      screen.router!.navigate({
+        to: "/$environmentId/$threadId",
+        params: { environmentId, threadId: "another-thread" },
+      }),
+    );
+    await finish();
+
+    expect(screen.router!.state.location.pathname).toBe("/local/another-thread");
+    expect(scopes.openDraft).not.toHaveBeenCalled();
+    expect(store.getDraftSession(draftId)?.projectId).toBe(row.expected);
+  } finally {
+    store.clearDraftThread(draftId);
+  }
+});
+
+it.each([
+  { replyOrder: ["older", "newer"], assignments: ["original", "newer"] },
+  { replyOrder: ["newer", "older"], assignments: ["newer", "newer"] },
+] as const)("uses the newer folder selection when replies arrive %j", async (row) => {
+  setup();
+  const draftId = DraftId.make("draft-adding-two-projects");
+  const store = useComposerDraftStore.getState();
+  store.setProjectDraftThreadId(
+    scopeProjectRef(environmentId, ProjectId.make("original")),
+    draftId,
+  );
+  store.setPrompt(draftId, "Keep this draft");
+  const pending = {
+    older: Promise.withResolvers<{ _tag: "Success"; value: { projectId: string } }>(),
+    newer: Promise.withResolvers<{ _tag: "Success"; value: { projectId: string } }>(),
+  };
+  scopes.addProject
+    .mockReturnValueOnce(pending.older.promise)
+    .mockReturnValueOnce(pending.newer.promise);
+  try {
+    await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
+    for (const name of ["older", "newer"]) {
+      await submitProjectAdd("Local folder", `/workspace/${name}`, draftId);
+      await userEvent.keyboard("{Escape}");
+      await expect.element(page.getByRole("combobox")).not.toBeInTheDocument();
+    }
+    for (const [index, name] of row.replyOrder.entries()) {
+      scopes.waitForProject.mockResolvedValue(project(name));
+      await act(async () => {
+        pending[name].resolve({ _tag: "Success", value: { projectId: name } });
+        await pending[name].promise;
+      });
+      expect(store.getDraftSession(draftId)?.projectId).toBe(row.assignments[index]);
+    }
+  } finally {
+    store.clearDraftThread(draftId);
+  }
 });

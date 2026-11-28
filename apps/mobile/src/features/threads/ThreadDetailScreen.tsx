@@ -21,6 +21,7 @@ import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import {
   effectiveSnoozed,
   threadWokeAt,
+  isIndefiniteSnooze,
   isThreadWokeUnseen,
   snoozeWakeLabel,
   canSnooze,
@@ -802,6 +803,7 @@ function ThreadDetailBody(
     const wake =
       lifecycleSnoozed &&
       snoozedUntil !== null &&
+      !isIndefiniteSnooze(snoozedUntil) &&
       Date.parse(snoozedUntil) > Date.parse(lifecycleNow)
         ? snoozeWakeLabel(snoozedUntil, { now: lifecycleNow }, messages)
         : null;

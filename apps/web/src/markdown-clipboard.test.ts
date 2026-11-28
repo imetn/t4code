@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import {
   serializeCodeBlockToMarkdown,
   serializeRenderedMarkdownFragment,
+  serializeTableElementForChat,
   serializeTableElementToCsv,
   serializeTableElementToHtml,
   serializeTableElementToMarkdown,
@@ -778,6 +779,155 @@ describe("copying a table as CSV", () => {
 
     expect(serializeTableElementToCsv(table as unknown as Element)).toBe(
       'Col A,Col B\nline 1 line 2,para 1 para 2\nvisible,"a, b"',
+    );
+  });
+
+  it("aligns columns with spaces inside a code fence for chat apps", () => {
+    const table = new FakeElement("TABLE").append(
+      new FakeElement("THEAD").append(
+        row(
+          new FakeElement("TH").append(new FakeText("Name")),
+          new FakeElement("TH", [], { align: "right" }).append(new FakeText("Amount")),
+        ),
+      ),
+      new FakeElement("TBODY").append(
+        row(td(new FakeText("Ada")), td(new FakeText("1,200"))),
+        row(td(new FakeText("東京")), td(new FakeText("5"))),
+        row(td(new FakeText("```"))),
+      ),
+    );
+
+    const { text, html } = serializeTableElementForChat(table as unknown as Element);
+    const aligned = ["Name  Amount", "----  ------", "Ada    1,200", "東京       5", "```"].join(
+      "\n",
+    );
+    expect(text).toBe(`\`\`\`\`\n${aligned}\n\`\`\`\``);
+    expect(html).toBe(`<meta charset="utf-8"><pre>${aligned}</pre>`);
+  });
+
+  it("bounds rowspans by their row group and keeps empty rows while placing spans", () => {
+    const cell = (tag: string, text: string, attributes: Record<string, string> = {}) =>
+      new FakeElement(tag, [], attributes).append(new FakeText(text));
+    const table = new FakeElement("TABLE").append(
+      new FakeElement("THEAD").append(row(cell("TH", "A", { rowspan: "0" }), cell("TH", "B"))),
+      new FakeElement("TBODY").append(
+        row(cell("TD", "X", { rowspan: "2" }), cell("TD", "P", { rowspan: "2" })),
+        new FakeElement("TR"),
+        row(cell("TD", "Y"), cell("TD", "Z")),
+      ),
+    );
+
+    const { text } = serializeTableElementForChat(table as unknown as Element);
+    expect(text).toBe(["```", "A  B", "-  -", "X  P", "Y  Z", "```"].join("\n"));
+  });
+
+  it("orders header, loose and footer rows as the table renders them", () => {
+    const table = new FakeElement("TABLE").append(
+      new FakeElement("THEAD").append(
+        row(
+          new FakeElement("TH").append(new FakeText("A")),
+          new FakeElement("TH", [], { align: "right" }).append(new FakeText("B")),
+        ),
+      ),
+      new FakeElement("TFOOT").append(row(td(new FakeText("t")), td(new FakeText("9")))),
+      row(td(new FakeText("x")), td(new FakeText("yy"))),
+    );
+
+    const { text } = serializeTableElementForChat(table as unknown as Element);
+    expect(text).toBe(["```", "A   B", "-  --", "x  yy", "t   9", "```"].join("\n"));
+  });
+
+  it("counts emoji and CJK as two columns, and digits and combining marks as one", () => {
+    const table = new FakeElement("TABLE").append(
+      new FakeElement("THEAD").append(
+        row(new FakeElement("TH").append(new FakeText("ID")), td(new FakeText("Value"))),
+      ),
+      new FakeElement("TBODY").append(
+        row(td(new FakeText("🇺🇸")), td(new FakeText("x"))),
+        row(td(new FakeText("1️⃣")), td(new FakeText("y"))),
+        row(td(new FakeText("1")), td(new FakeText("z"))),
+        row(td(new FakeText("𠮷")), td(new FakeText("w"))),
+        row(td(new FakeText("𛀀")), td(new FakeText("v"))),
+        row(td(new FakeText("A\u3099")), td(new FakeText("u"))),
+      ),
+    );
+
+    const { text } = serializeTableElementForChat(table as unknown as Element);
+    expect(text).toBe(
+      [
+        "```",
+        "ID  Value",
+        "--  -----",
+        "🇺🇸  x",
+        "1️⃣  y",
+        "1   z",
+        "𠮷  w",
+        "𛀀  v",
+        "A\u3099   u",
+        "```",
+      ].join("\n"),
+    );
+  });
+
+  it("counts text-style symbols such as ™, © and ↔ as one column unless shown as emoji", () => {
+    const table = new FakeElement("TABLE").append(
+      new FakeElement("THEAD").append(
+        row(new FakeElement("TH").append(new FakeText("Name")), td(new FakeText("Note"))),
+      ),
+      new FakeElement("TBODY").append(
+        row(td(new FakeText("Acme™")), td(new FakeText("a"))),
+        row(td(new FakeText("©2026")), td(new FakeText("b"))),
+        row(td(new FakeText("A↔B")), td(new FakeText("c"))),
+        row(td(new FakeText("❤️")), td(new FakeText("d"))),
+      ),
+    );
+
+    const { text } = serializeTableElementForChat(table as unknown as Element);
+    expect(text).toBe(
+      [
+        "```",
+        "Name   Note",
+        "-----  ----",
+        "Acme™  a",
+        "©2026  b",
+        "A↔B    c",
+        "❤️     d",
+        "```",
+      ].join("\n"),
+    );
+  });
+
+  it("keeps values under their headers across spans, and copies footer rows", () => {
+    const span = (attributes: Record<string, string>, text: string) =>
+      new FakeElement("TD", [], attributes).append(new FakeText(text));
+    const table = new FakeElement("TABLE").append(
+      new FakeElement("THEAD").append(
+        row(
+          new FakeElement("TH").append(new FakeText("A")),
+          new FakeElement("TH").append(new FakeText("B")),
+          new FakeElement("TH").append(new FakeText("C")),
+        ),
+      ),
+      new FakeElement("TBODY").append(
+        row(span({ rowspan: "2" }, "tall"), span({ colspan: "2" }, "wide")),
+        row(td(new FakeText("b2")), td(new FakeText("c2"))),
+      ),
+      new FakeElement("TFOOT").append(
+        row(td(new FakeText("total")), td(new FakeText("")), td(new FakeText("9"))),
+      ),
+    );
+
+    const { text } = serializeTableElementForChat(table as unknown as Element);
+    expect(text).toBe(
+      [
+        "```",
+        "A      B     C",
+        "-----  ----  --",
+        "tall   wide",
+        "       b2    c2",
+        "total        9",
+        "```",
+      ].join("\n"),
     );
   });
 });

@@ -1,8 +1,9 @@
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
-import { useRef, type KeyboardEventHandler } from "react";
+import { useRef, type KeyboardEvent as ReactKeyboardEvent } from "react";
 
 import { Spinner } from "~/components/ui/spinner";
+import { isMacPlatform } from "~/lib/utils";
 import { FileMarkdownPreview } from "./FileMarkdownPreview";
 import {
   LARGE_MARKDOWN_CHUNK_MAX_CHARS,
@@ -22,6 +23,25 @@ interface ChunkItem {
   readonly chunk: MarkdownChunk;
 }
 
+function selectRenderedContentOnSelectAll(event: ReactKeyboardEvent<HTMLElement>) {
+  const mac = isMacPlatform(navigator.platform);
+  const selectAll =
+    event.key.toLowerCase() === "a" &&
+    (mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey) &&
+    !event.shiftKey &&
+    !event.altKey;
+  // React bubbles keys from portaled children (the image dialog) through this surface.
+  if (
+    !selectAll ||
+    !(event.target instanceof Node) ||
+    !event.currentTarget.contains(event.target)
+  ) {
+    return;
+  }
+  event.preventDefault();
+  window.getSelection()?.selectAllChildren(event.currentTarget);
+}
+
 /** Renders Markdown pieces in a virtualized list; task offsets are file offsets. */
 export function ChunkedMarkdown(props: {
   readonly chunks: readonly MarkdownChunk[];
@@ -33,7 +53,6 @@ export function ChunkedMarkdown(props: {
   readonly relativePath: string;
   readonly threadRef: ScopedThreadRef;
   readonly workspaceMutationId: string | null;
-  readonly onKeyDown?: KeyboardEventHandler<HTMLDivElement>;
   readonly onTaskListChange?:
     | ((input: { readonly markerOffset: number; readonly checked: boolean }) => void)
     | undefined;
@@ -68,12 +87,25 @@ export function ChunkedMarkdown(props: {
       // Clicking the text focuses the preview, so Select All stays inside it.
       tabIndex={-1}
       className="flex min-h-0 flex-1 flex-col outline-none"
-      onKeyDown={props.onKeyDown}
+      onKeyDown={selectRenderedContentOnSelectAll}
       onCopy={(event) => {
         // Select All only reaches rendered pieces; copying all of it copies the whole file.
         const list = event.currentTarget.firstElementChild;
-        if (!list || !window.getSelection()?.containsNode(list)) return;
+        const selection = window.getSelection();
+        if (!list || !selection?.rangeCount) return;
+        // Chromium's containsNode says false for a list selected through its parent's children.
+        const range = selection.getRangeAt(0);
+        const listRange = document.createRange();
+        listRange.selectNode(list);
+        if (
+          range.compareBoundaryPoints(Range.START_TO_START, listRange) > 0 ||
+          range.compareBoundaryPoints(Range.END_TO_END, listRange) < 0
+        ) {
+          return;
+        }
         event.preventDefault();
+        // A rendered piece's own handler already wrote just its part.
+        event.clipboardData.clearData();
         event.clipboardData.setData("text/plain", chunks.map((chunk) => chunk.text).join("\n"));
       }}
     >

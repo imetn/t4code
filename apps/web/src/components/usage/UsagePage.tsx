@@ -269,7 +269,9 @@ export function UsagePage() {
               () =>
                 refreshProviders({
                   environmentId,
-                  input: automatic ? {} : { refreshUsageLimits: true },
+                  input: automatic
+                    ? { limitsOnly: true }
+                    : { limitsOnly: true, refreshUsageLimits: true },
                 }),
               automatic,
             );

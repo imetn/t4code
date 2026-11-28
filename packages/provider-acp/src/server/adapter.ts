@@ -36,6 +36,7 @@ import {
   isRuntimeModeAbove,
   type TurnTokenUsage,
 } from "@t3tools/contracts";
+import { imageMimeTypeFromBytes } from "@t3tools/shared/image";
 import { AgentScope, AgentScopeThreadId } from "@t3tools/shared/AgentScope";
 import { parseGrepOutput } from "@t3tools/shared/grepOutput";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -10371,7 +10372,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             blocks.push({
               type: "image",
               data: Buffer.from(bytes).toString("base64"),
-              mimeType: attachment.mimeType,
+              mimeType: imageMimeTypeFromBytes(bytes) ?? attachment.mimeType,
             });
           }
           return blocks;

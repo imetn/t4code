@@ -2814,6 +2814,39 @@ export const layerWsRpc = (
               yield* providerRegistry.refreshModelCatalog;
               return { providers: [] };
             }
+            if (input.limitsOnly === true) {
+              const refreshHumanUsageLimits =
+                input.refreshUsageLimits === true &&
+                currentSession.scopes.includes(AuthProvidersManageScope)
+                  ? Effect.gen(function* () {
+                      const instances = yield* providerInstances.listInstances;
+                      const eligible = instances.filter(
+                        (instance) =>
+                          instance.enabled &&
+                          instance.refreshUsageLimits !== undefined &&
+                          (input.instanceId === undefined ||
+                            input.instanceId === instance.instanceId),
+                      );
+                      if (eligible.length > 0) {
+                        yield* Effect.forEach(
+                          eligible,
+                          (instance) =>
+                            instance.refreshUsageLimits!().pipe(Effect.ignoreCause({ log: true })),
+                          { concurrency: 4, discard: true },
+                        );
+                      }
+                    })
+                  : Effect.void;
+              yield* Effect.all(
+                [
+                  input.instanceId === undefined ? usageLimitSources.refresh : Effect.void,
+                  providerRegistry.refreshUsageLimits(input.instanceId),
+                  refreshHumanUsageLimits,
+                ],
+                { concurrency: "unbounded", discard: true },
+              );
+              return { providers: [] };
+            }
             if (input.refreshModels) {
               yield* providerRegistry.invalidateModelCaches({
                 instanceId: input.instanceId,
