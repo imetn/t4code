@@ -67,6 +67,15 @@ export function routeEntry(
   return entryWithRoutes(entry, [route]);
 }
 
+/** Focuses `route` as the primary target while preserving sibling routes (e.g. a Connect relay). */
+export function routeEntryWithSiblings(
+  entry: ConnectionCatalogEntry,
+  route: ConnectionRoute,
+): ConnectionCatalogEntry {
+  const siblings = connectionRoutes(entry).filter((candidate) => candidate !== route);
+  return entryWithRoutes(entry, [route, ...siblings]);
+}
+
 export function routeHttpBaseUrl(route: ConnectionRoute): string | null {
   if (route.target._tag === "PrimaryConnectionTarget") return route.target.httpBaseUrl;
   const profile = Option.getOrNull(route.profile);

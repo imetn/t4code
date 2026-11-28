@@ -25,7 +25,7 @@ import {
   connectionRouteId,
   connectionRouteKind,
   connectionRoutes,
-  routeEntry,
+  routeEntryWithSiblings,
   routeHttpBaseUrl,
   routeKeepsItsHost,
   sendsTokenInClear,
@@ -277,7 +277,7 @@ export const make = Effect.gen(function* () {
       (route) => checkRoute(entry, route),
       Effect.fnUntraced(function* (route) {
         yield* reportProgress({ stage: "preparing" });
-        const prepared = yield* resolver.prepare(routeEntry(entry, route));
+        const prepared = yield* resolver.prepare(routeEntryWithSiblings(entry, route));
         yield* reportProgress({ stage: "opening", prepared });
         const session = yield* sessions.connect(prepared);
         yield* reportProgress({ stage: "synchronizing", prepared });
@@ -313,7 +313,7 @@ export const make = Effect.gen(function* () {
       sendsTokenInClear(connectionRoutes(entry), route) || unusedWithTailnetSignIn(entry, route)
         ? Effect.succeed("silent" as const)
         : checkRoute(entry, route),
-      resolver.prepare(routeEntry(entry, route)),
+      resolver.prepare(routeEntryWithSiblings(entry, route)),
     ).pipe(Effect.withSpan("ConnectionDriver.preflight"));
 
   return ConnectionDriver.of({ connect, preflight, checkHost });

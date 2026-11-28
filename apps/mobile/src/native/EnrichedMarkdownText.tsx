@@ -6,6 +6,7 @@ import {
 } from "@t3tools/shared/composerContextReferences";
 import {
   markdownForNativeRendering,
+  markdownWithEscapedSingleTildes,
   markdownWithFileEmbeds,
   markdownForNativeParsing,
   markdownWithInlineFileLinks,
@@ -273,7 +274,9 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
     if (!fileEmbedLabel) {
       return {
         markdown: markdownWithTextDirection(
-          markdownForNativeRendering(props.markdown, ENRICHED_INLINE_FILE_LINK_REGEX),
+          markdownWithEscapedSingleTildes(
+            markdownForNativeRendering(props.markdown, ENRICHED_INLINE_FILE_LINK_REGEX),
+          ),
         ),
         fileHrefs: new Set<string>(),
       };
@@ -285,7 +288,9 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
     const files = markdownWithFileEmbeds(content, fileEmbedLabel);
     return {
       ...files,
-      markdown: markdownWithTextDirection(markdownWithTableBreaks(files.markdown)),
+      markdown: markdownWithTextDirection(
+        markdownWithEscapedSingleTildes(markdownWithTableBreaks(files.markdown)),
+      ),
     };
   }, [props.markdown, fileEmbedLabel]);
   const [parsedLinkUrls, setParsedLinkUrls] = useState<ReadonlyArray<string>>([]);

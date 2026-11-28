@@ -51,7 +51,7 @@ import {
   appendOrchestrationProtocol,
   orchestrationProtocolCompatibilityError,
 } from "./compatibility.ts";
-import { connectionRouteKind, credentialConnectionId } from "./routes.ts";
+import { connectionRouteKind, credentialConnectionId, hasRelayRoute } from "./routes.ts";
 import { supportsTailnetSignIn } from "./tailnet.ts";
 import { fetchRemoteEnvironmentDescriptor } from "../environment/descriptor.ts";
 
@@ -136,15 +136,53 @@ const makeBearerBroker = Effect.fn("clientRuntime.connection.broker.makeBearer")
 
   // An upgrade saves its profile before it connects, so a connect that fails
   // after it leaves the caller holding the old profile.
-  const savedTailnetProfile = Effect.fnUntraced(function* (profile: BearerConnectionProfile) {
+  const savedUpgradedProfile = Effect.fnUntraced(function* (profile: BearerConnectionProfile) {
     if (profile.authorization !== undefined) return profile;
     const stored = Option.getOrNull(yield* profiles.get(profile.connectionId));
     return stored !== null &&
       isBearerProfile(stored) &&
-      stored.authorization === "tailnet" &&
+      (stored.authorization === "tailnet" || stored.authorization === "t3-connect") &&
       stored.httpBaseUrl === profile.httpBaseUrl
       ? stored
       : profile;
+  });
+
+  /**
+   * When a direct/Tailscale route's legacy bearer login has expired on an environment
+   * that also has a Connect relay route, switch it to the Connect DPoP token instead
+   * of resending the expired bearer token indefinitely.
+   */
+  const upgradeToConnect = Effect.fn("clientRuntime.connection.broker.upgradeToConnect")(function* (
+    entry: ConnectionCatalogEntry,
+    target: BearerConnectionTarget,
+    profile: BearerConnectionProfile,
+    ended: ConnectionAttemptError,
+  ) {
+    const canUpgrade =
+      ended._tag === "ConnectionBlockedError" &&
+      ended.reason === "authentication" &&
+      profile.authorization === undefined &&
+      hasRelayRoute(entry);
+    if (!canUpgrade) return yield* ended;
+    const authorized = yield* remote
+      .authorizeDpop({
+        expectedEnvironmentId: target.environmentId,
+        directEndpoint: { httpBaseUrl: profile.httpBaseUrl, wsBaseUrl: profile.wsBaseUrl },
+      })
+      .pipe(Effect.mapError(() => ended));
+    yield* profiles.put(
+      new BearerConnectionProfile({
+        connectionId: profile.connectionId,
+        environmentId: profile.environmentId,
+        label: profile.label,
+        httpBaseUrl: profile.httpBaseUrl,
+        wsBaseUrl: profile.wsBaseUrl,
+        ...(profile.learned === undefined ? {} : { learned: profile.learned }),
+        ...(profile.network === undefined ? {} : { network: profile.network }),
+        authorization: "t3-connect",
+      }),
+    );
+    return authorized;
   });
 
   /**
@@ -229,10 +267,14 @@ const makeBearerBroker = Effect.fn("clientRuntime.connection.broker.makeBearer")
         actual: profile.environmentId,
       });
     }
-    if (profile.authorization === "t3-connect") {
+    const effectiveProfile = yield* savedUpgradedProfile(profile);
+    if (effectiveProfile.authorization === "t3-connect") {
       const authorized = yield* remote.authorizeDpop({
         expectedEnvironmentId: target.environmentId,
-        directEndpoint: { httpBaseUrl: profile.httpBaseUrl, wsBaseUrl: profile.wsBaseUrl },
+        directEndpoint: {
+          httpBaseUrl: effectiveProfile.httpBaseUrl,
+          wsBaseUrl: effectiveProfile.wsBaseUrl,
+        },
       });
       return { ...authorized, target } satisfies PreparedConnection;
     }
@@ -249,13 +291,13 @@ const makeBearerBroker = Effect.fn("clientRuntime.connection.broker.makeBearer")
       const authorized = yield* remote.authorizeDirectDpop({
         expectedEnvironmentId: target.environmentId,
         connectionId: credentialId,
-        httpBaseUrl: profile.httpBaseUrl,
-        wsBaseUrl: profile.wsBaseUrl,
+        httpBaseUrl: effectiveProfile.httpBaseUrl,
+        wsBaseUrl: effectiveProfile.wsBaseUrl,
       });
       return { ...authorized, target } satisfies PreparedConnection;
     }
     if (isTailnetCredential(credential)) {
-      const tailnetProfile = yield* savedTailnetProfile(profile);
+      const tailnetProfile = effectiveProfile;
       // A Tailscale session goes only to the host's tailnet and Serve routes.
       if (connectionRouteKind({ target, profile: Option.some(tailnetProfile) }) !== "tailnet") {
         return yield* new ConnectionBlockedError({
@@ -277,12 +319,20 @@ const makeBearerBroker = Effect.fn("clientRuntime.connection.broker.makeBearer")
     const authorized = yield* remote
       .authorizeBearer({
         expectedEnvironmentId: target.environmentId,
-        httpBaseUrl: profile.httpBaseUrl,
-        wsBaseUrl: profile.wsBaseUrl,
+        httpBaseUrl: effectiveProfile.httpBaseUrl,
+        wsBaseUrl: effectiveProfile.wsBaseUrl,
         bearerToken: credential.token,
         connectionMethod: "direct",
       })
-      .pipe(Effect.catch((ended) => upgradeToTailnet(target, profile, ended)));
+      .pipe(
+        Effect.catch((ended) =>
+          upgradeToTailnet(target, effectiveProfile, ended).pipe(
+            Effect.catch((tailnetEnded) =>
+              upgradeToConnect(entry, target, effectiveProfile, tailnetEnded),
+            ),
+          ),
+        ),
+      );
     return {
       ...authorized,
       target,

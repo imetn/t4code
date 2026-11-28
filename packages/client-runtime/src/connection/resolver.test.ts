@@ -27,6 +27,7 @@ import {
   ConnectionBlockedError,
   ConnectionTransientError,
   PrimaryConnectionTarget,
+  RelayConnectionTarget,
   SshConnectionTarget,
   type ConnectionTarget,
 } from "./model.ts";
@@ -232,7 +233,7 @@ describe("ConnectionResolver", () => {
       const error = yield* Effect.flip(broker.prepare(catalogEntry(target)));
 
       expect(error).toMatchObject({ reason: "unsupported" });
-      expect(error.message).toContain("Update T3 Code on Compatible environment");
+      expect(error.message).toContain("Update T4 Code on Compatible environment");
     }),
   );
 
@@ -613,5 +614,86 @@ describe("ConnectionResolver", () => {
         ["serve", "https://studio.tail1234.ts.net/"],
       ]);
     }),
+  );
+
+  it.effect(
+    "switches an expired direct/Tailscale bearer route to T3 Connect DPoP when the environment has a relay route",
+    () =>
+      Effect.gen(function* () {
+        const ended = new ConnectionBlockedError({
+          reason: "authentication",
+          detail: "The environment credential is invalid.",
+          hop: "server",
+        });
+        const bearerAttempts = yield* Ref.make(0);
+        const dpopCalls = yield* Ref.make<ReadonlyArray<string>>([]);
+        const serve = bearerRoute("serve-connect", "https://studio.tail1234.ts.net/", {
+          network: "tailscale",
+        });
+        const relayRoute = {
+          target: new RelayConnectionTarget({
+            environmentId: ENVIRONMENT_ID,
+            label: "Studio",
+          }),
+          profile: Option.none(),
+        };
+        const entryWithRelay: ConnectionCatalogEntry = {
+          ...serve.entry,
+          alternateRoutes: [relayRoute],
+        };
+        const layer = yield* makeDependencies({
+          credentials: [["serve-connect", new BearerConnectionCredential({ token: "expired" })]],
+          surface: "desktop",
+          authorizeBearer: () =>
+            Ref.update(bearerAttempts, (n) => n + 1).pipe(Effect.andThen(Effect.fail(ended))),
+          authorizeDpop: (input) =>
+            Ref.update(dpopCalls, (calls) => [
+              ...calls,
+              input.directEndpoint?.httpBaseUrl ?? "relay",
+            ]).pipe(
+              Effect.as({
+                environmentId: input.expectedEnvironmentId,
+                label: "Studio",
+                httpBaseUrl: input.directEndpoint!.httpBaseUrl,
+                socketUrl: "wss://studio.tail1234.ts.net/ws",
+                httpAuthorization: {
+                  _tag: "Dpop" as const,
+                  accessToken: "connect-token",
+                  expiresAtEpochMs: TAILNET_SESSION.expiresAtEpochMs,
+                },
+              }),
+            ),
+        });
+
+        const { prepared, profile } = yield* Effect.gen(function* () {
+          const broker = yield* ConnectionResolver.ConnectionResolver;
+          // Without a relay route on the entry, the expired bearer error stands.
+          expect(yield* Effect.flip(broker.prepare(serve.entry))).toBe(ended);
+          // With a Connect relay route, it falls back to Connect DPoP and persists the upgrade.
+          const first = yield* broker.prepare(entryWithRelay);
+          // A second connect with the stale catalog entry immediately uses the saved upgrade.
+          const second = yield* broker.prepare(entryWithRelay);
+          const profiles = yield* ConnectionProfileStore.ConnectionProfileStore;
+          return {
+            prepared: second ?? first,
+            profile: yield* profiles.get("serve-connect"),
+          };
+        }).pipe(Effect.provide(layer));
+
+        expect(prepared.httpAuthorization).toMatchObject({
+          _tag: "Dpop",
+          accessToken: "connect-token",
+        });
+        expect(yield* Ref.get(bearerAttempts)).toBe(2);
+        expect(yield* Ref.get(dpopCalls)).toEqual([
+          "https://studio.tail1234.ts.net/",
+          "https://studio.tail1234.ts.net/",
+        ]);
+        expect(Option.getOrThrow(profile)).toMatchObject({
+          httpBaseUrl: "https://studio.tail1234.ts.net/",
+          authorization: "t3-connect",
+          network: "tailscale",
+        });
+      }),
   );
 });

@@ -11,7 +11,10 @@ import {
 import { isWindowsAbsolutePath } from "@t3tools/shared/path";
 import { hasRightToLeftLetter, textDirection } from "@t3tools/shared/textDirection";
 
-const parser = unified().use(remarkParse).use(remarkGfm).use(remarkKeepWindowsProsePaths);
+const parser = unified()
+  .use(remarkParse)
+  .use(remarkGfm, { singleTilde: false })
+  .use(remarkKeepWindowsProsePaths);
 export type MarkdownNode = Root | RootContent;
 
 interface MarkdownEdit {
@@ -488,7 +491,7 @@ function markdownWithWindowsPathDestinations(markdown: string): string {
   }
   unified()
     .use(remarkParse)
-    .use(remarkGfm)
+    .use(remarkGfm, { singleTilde: false })
     .use(function (this: Processor) {
       (this.data().fromMarkdownExtensions ??= []).push({
         exit: { resourceDestinationString: record, definitionDestinationString: record },
@@ -561,6 +564,64 @@ export function parseMarkdownDocument(markdown: string): Root {
 
 export function markdownForNativeRendering(markdown: string, fileLink: RegExp): string {
   return transformNativeMarkdown(markdownForNativeParsing(markdown), fileLink, true);
+}
+
+const MATH_SPAN_IN_TEXT = /\$\$[\s\S]*?\$\$|(?<!\\)\$(?!\s)(?:\\.|[^$\\\n])+(?<!\s)\$/g;
+
+function hasOddPrecedingBackslashes(source: string, index: number): boolean {
+  let count = 0;
+  for (let i = index - 1; i >= 0 && source[i] === "\\"; i -= 1) count += 1;
+  return count % 2 === 1;
+}
+
+/**
+ * md4c renders paired single tildes (`~a~`) as strikethrough, corrupting numeric ranges
+ * (`10~20ms`), CJK prose, and paths (`com~apple~CloudDocs`, `~/a`). Escape standalone single
+ * tildes in prose text outside code, links, math, and GFM `~~strikethrough~~` spans.
+ */
+export function markdownWithEscapedSingleTildes(markdown: string): string {
+  if (!markdown.includes("~")) return markdown;
+  const edits: MarkdownEdit[] = [];
+  const visit = (node: MarkdownNode) => {
+    if (node.type === "text") {
+      const start = node.position?.start.offset;
+      const end = node.position?.end.offset;
+      if (start === undefined || end === undefined) return;
+      const raw = markdown.slice(start, end);
+      if (!raw.includes("~")) return;
+      const mathRanges: Array<readonly [number, number]> = [];
+      if (raw.includes("$")) {
+        for (const match of raw.matchAll(MATH_SPAN_IN_TEXT)) {
+          if (match.index !== undefined) {
+            mathRanges.push([match.index, match.index + match[0].length]);
+          }
+        }
+      }
+      for (let i = 0; i < raw.length; i += 1) {
+        if (raw[i] !== "~") continue;
+        if (raw[i - 1] === "~" || raw[i + 1] === "~") continue;
+        if (hasOddPrecedingBackslashes(raw, i)) continue;
+        if (mathRanges.some(([from, to]) => i >= from && i < to)) continue;
+        edits.push({ start: start + i, end: start + i + 1, content: "\\~" });
+      }
+      return;
+    }
+    if (
+      node.type === "code" ||
+      node.type === "inlineCode" ||
+      node.type === "html" ||
+      node.type === "link" ||
+      node.type === "linkReference" ||
+      node.type === "image" ||
+      node.type === "imageReference" ||
+      node.type === "definition"
+    ) {
+      return;
+    }
+    if ("children" in node) node.children.forEach(visit);
+  };
+  visit(parser.parse(markdown));
+  return applyMarkdownEdits(markdown, edits);
 }
 
 /** Native media slots only cover standalone images; nested file embeds must become links. */
