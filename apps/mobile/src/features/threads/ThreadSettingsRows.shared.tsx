@@ -48,13 +48,14 @@ export function ModelRowContent(
   return (
     <View
       style={[
+        { borderRadius: 16, borderCurve: "continuous" },
         props.minimumHeight === undefined ? undefined : { minHeight: props.minimumHeight },
         props.selected && props.selectedBackgroundColor
           ? { backgroundColor: props.selectedBackgroundColor }
           : undefined,
       ]}
       className={cn(
-        "mx-1.5 my-0.5 min-h-[44px] flex-row items-center gap-2 rounded-[14px] px-3 android:min-h-[48px]",
+        "mx-2 my-0.5 min-h-[44px] flex-row items-center gap-2 px-3 android:min-h-[48px]",
         props.selected
           ? props.selectedBackgroundColor
             ? undefined

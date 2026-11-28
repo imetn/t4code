@@ -52,7 +52,6 @@ import {
   type TextInputInstance,
   View,
 } from "react-native";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { withUniwind } from "uniwind";
 import { READABLE_WIDTH_STYLE, ROW_MIN_HEIGHT } from "../../components/ui/listMetrics";
 import { RefreshControl } from "../../components/ui/RefreshControl";
@@ -60,10 +59,7 @@ import Animated, {
   FadeIn,
   FadeOut,
   LinearTransition,
-  useAnimatedStyle,
   useReducedMotion,
-  useSharedValue,
-  withSpring,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
@@ -647,7 +643,7 @@ type ThreadSettingsCatalogItem =
     }
   | {
       readonly kind: "empty";
-      readonly key: "empty";
+      readonly key: string;
     };
 
 const modelItems = (models: ReadonlyArray<ModelOption>, showProviderIcon: boolean) =>
@@ -709,13 +705,14 @@ function subProviderCatalogItems(
   ];
 }
 
-function buildThreadSettingsCatalogItems(
+function buildCatalogItemsForTab(
   session: ThreadSettingsSessionValue,
+  tab: ActiveTab,
   resolve: MessageResolver,
   locale: string,
 ): ReadonlyArray<ThreadSettingsCatalogItem> {
   const isSearching = session.searchQuery.trim().length > 0;
-  const isFavorites = !isSearching && session.activeTab === "favorites";
+  const isFavorites = !isSearching && tab === "favorites";
 
   if (isSearching || isFavorites) {
     const models = session.providerGroups.flatMap((group) =>
@@ -732,7 +729,7 @@ function buildThreadSettingsCatalogItems(
     return modelItems(models, true);
   }
 
-  const group = session.providerGroups.find((entry) => entry.providerKey === session.activeTab);
+  const group = session.providerGroups.find((entry) => entry.providerKey === tab);
   if (!group) return [];
 
   const visibleModels = visibleCatalogModels({
@@ -766,32 +763,36 @@ const SheetGlass = withUniwind(GlassView, {
   style: { fromClassName: "className" },
 });
 
+// Outer iOS 26 formSheet uses ~38pt continuous corners; with 12pt side/bottom inset,
+// 26pt continuous squircle cards stay concentric at both top and bottom edges.
+const SHEET_CARD_RADIUS = 26;
+
 function modelSheetSurface(isDarkMode: boolean, useNativeGlass = NATIVE_LIQUID_GLASS_SUPPORTED) {
   if (useNativeGlass) {
     return isDarkMode
       ? {
           canvas: "transparent",
-          card: "rgba(28,28,32,0.58)",
-          cardBorder: "rgba(255,255,255,0.12)",
+          card: "rgba(30,30,36,0.48)",
+          cardBorder: "rgba(255,255,255,0.14)",
           activeTab: "rgba(255,255,255,0.14)",
           activeTabBorder: "rgba(255,255,255,0.18)",
           actionBtn: "rgba(255,255,255,0.10)",
           selectedRow: "rgba(255,255,255,0.13)",
-          divider: "rgba(255,255,255,0.10)",
+          divider: "rgba(255,255,255,0.11)",
           pill: "rgba(255,255,255,0.11)",
           speedActive: "rgba(255,255,255,0.22)",
         }
       : {
           canvas: "transparent",
-          card: "rgba(255,255,255,0.68)",
-          cardBorder: "rgba(255,255,255,0.82)",
-          activeTab: "rgba(255,255,255,0.86)",
+          card: "rgba(255,255,255,0.56)",
+          cardBorder: "rgba(255,255,255,0.78)",
+          activeTab: "rgba(255,255,255,0.82)",
           activeTabBorder: "rgba(255,255,255,0.92)",
-          actionBtn: "rgba(255,255,255,0.60)",
+          actionBtn: "rgba(255,255,255,0.56)",
           selectedRow: "rgba(24,24,27,0.075)",
           divider: "rgba(0,0,0,0.08)",
           pill: "rgba(24,24,27,0.065)",
-          speedActive: "rgba(255,255,255,0.94)",
+          speedActive: "rgba(255,255,255,0.92)",
         };
   }
   return isDarkMode
@@ -1430,21 +1431,28 @@ function ThreadSettingsThumbDeck() {
   const surface = modelSheetSurface(isDarkMode);
   const hasTopControls = Boolean(heading || (reasoning && reasoningChoices.length > 0));
 
+  const bottomInset =
+    Platform.OS === "ios"
+      ? Math.max(12, Math.min(insets.bottom > 16 ? insets.bottom - 14 : insets.bottom, 18))
+      : Math.max(insets.bottom, 12);
+
   return (
     <View
       className="px-3 pt-2.5"
       style={{
         backgroundColor: surface.canvas,
-        paddingBottom: Math.max(insets.bottom, 12),
+        paddingBottom: bottomInset,
       }}
     >
       <View
-        className="rounded-[20px] px-3.5 py-3"
+        className="px-3.5 py-3"
         style={{
+          borderRadius: SHEET_CARD_RADIUS,
+          borderCurve: "continuous",
           backgroundColor: surface.card,
           borderWidth: 0.5,
           borderColor: surface.cardBorder,
-          ...(isDarkMode
+          ...(isDarkMode || NATIVE_LIQUID_GLASS_SUPPORTED
             ? undefined
             : {
                 shadowColor: "#000000",
@@ -1771,46 +1779,38 @@ function ThreadSettingsSheetBody(props: { readonly onClose: () => void }) {
   const reduceMotionEnabled = useReduceMotionEnabled();
   const animationsReady = listLoaded && !reducedMotion && !reduceMotionEnabled;
 
-  const catalogItems = buildThreadSettingsCatalogItems(session, m, locale);
-  const listItems: ReadonlyArray<ThreadSettingsCatalogItem> =
-    catalogItems.length === 0 ? [{ kind: "empty", key: "empty" }] : catalogItems;
-
   const isSearching = session.searchQuery.trim().length > 0;
   const tabKeys: readonly ActiveTab[] = [
     "favorites",
     ...session.providerGroups.map((group) => group.providerKey),
   ];
-  const swipeTranslateX = useSharedValue(0);
-  const stepTab = useEffectEvent((delta: -1 | 1) => {
-    if (isSearching || tabKeys.length <= 1) return;
-    const currentIndex = tabKeys.indexOf(session.activeTab);
-    if (currentIndex < 0) return;
-    const nextTab = tabKeys[currentIndex + delta];
-    if (!nextTab) return;
-    void Haptics.selectionAsync();
-    session.setActiveTab(nextTab);
-  });
-  const [swipeGesture] = useState(() =>
-    Gesture.Pan()
-      .activeOffsetX([-24, 24])
-      .failOffsetY([-14, 14])
-      .onUpdate((event) => {
-        const clamped = Math.max(-28, Math.min(28, event.translationX * 0.25));
-        swipeTranslateX.value = clamped;
-      })
-      .onEnd((event) => {
-        if (Math.abs(event.translationX) >= 36 || Math.abs(event.velocityX) >= 360) {
-          stepTab(event.translationX < 0 ? 1 : -1);
-        }
-      })
-      .onFinalize(() => {
-        swipeTranslateX.value = withSpring(0, { damping: 24, stiffness: 320 });
-      })
-      .runOnJS(true),
-  );
-  const swipeCardStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: swipeTranslateX.value }],
-  }));
+  const activeTabIndex = Math.max(0, tabKeys.indexOf(session.activeTab));
+  const pagerRef = useRef<ScrollViewInstance>(null);
+  const [pagerWidth, setPagerWidth] = useState(0);
+  const lastScrolledTabRef = useRef<ActiveTab>(session.activeTab);
+  const didInitialScrollRef = useRef(false);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the native paging ScrollView aligned when the user taps a top provider tab or rotates the screen
+  useEffect(() => {
+    if (isSearching || pagerWidth <= 0) return;
+    const targetIndex = Math.max(0, tabKeys.indexOf(session.activeTab));
+    const animated =
+      didInitialScrollRef.current && lastScrolledTabRef.current !== session.activeTab;
+    didInitialScrollRef.current = true;
+    lastScrolledTabRef.current = session.activeTab;
+    pagerRef.current?.scrollTo({ x: targetIndex * pagerWidth, animated });
+  }, [isSearching, pagerWidth, session.activeTab, tabKeys]);
+
+  const handlePagerSettled = (offsetX: number) => {
+    if (pagerWidth <= 0) return;
+    const nextIndex = Math.max(0, Math.min(tabKeys.length - 1, Math.round(offsetX / pagerWidth)));
+    const nextTab = tabKeys[nextIndex];
+    if (nextTab && nextTab !== session.activeTab) {
+      lastScrolledTabRef.current = nextTab;
+      void Haptics.selectionAsync();
+      session.setActiveTab(nextTab);
+    }
+  };
 
   const renderCatalogItem = (itemProps: LegendListRenderItemProps<ThreadSettingsCatalogItem>) => {
     const item = itemProps.item;
@@ -1843,7 +1843,7 @@ function ThreadSettingsSheetBody(props: { readonly onClose: () => void }) {
       content = (
         <View className="items-center px-8 py-14">
           <Text className="text-center text-sm text-foreground-muted">
-            {!isSearching && session.activeTab === "favorites"
+            {!isSearching && item.key === "empty:favorites"
               ? gt("No favorite models")
               : isSearching
                 ? gt("No matching models")
@@ -1864,6 +1864,83 @@ function ThreadSettingsSheetBody(props: { readonly onClose: () => void }) {
     );
   };
 
+  const cardSurfaceStyle = {
+    borderRadius: SHEET_CARD_RADIUS,
+    borderCurve: "continuous" as const,
+    backgroundColor: surface.card,
+    borderWidth: 0.5,
+    borderColor: surface.cardBorder,
+    ...(isDarkMode || NATIVE_LIQUID_GLASS_SUPPORTED
+      ? undefined
+      : {
+          shadowColor: "#000000",
+          shadowOffset: { width: 0, height: 1 },
+          shadowOpacity: 0.04,
+          shadowRadius: 2,
+          elevation: 1,
+        }),
+  };
+
+  const renderCardList = (tab: ActiveTab) => {
+    const items = buildCatalogItemsForTab(session, tab, m, locale);
+    const data: ReadonlyArray<ThreadSettingsCatalogItem> =
+      items.length === 0 ? [{ kind: "empty", key: `empty:${tab}` }] : items;
+    return (
+      <View className="relative min-h-0 flex-1 overflow-hidden" style={cardSurfaceStyle}>
+        {/* oxlint-disable-next-line t3code/require-registered-list-scroll -- Sheet content; sits above the sticky thumb deck. */}
+        <AnimatedLegendList
+          alwaysBounceVertical
+          nestedScrollEnabled
+          className="flex-1"
+          style={[READABLE_WIDTH_STYLE, { backgroundColor: "transparent" }]}
+          contentContainerStyle={{ paddingTop: 6, paddingBottom: 22 }}
+          data={data}
+          estimatedItemSize={ROW_MIN_HEIGHT.item}
+          extraData={[
+            animationsReady,
+            tab,
+            session.displayedModelSelection?.model,
+            session.favoriteKeys.size,
+            isDarkMode,
+          ]}
+          getItemType={(item) => item.kind}
+          itemLayoutAnimation={THREAD_SETTINGS_CATALOG_LAYOUT_TRANSITION}
+          keyExtractor={(item) => item.key}
+          keyboardDismissMode="on-drag"
+          keyboardShouldPersistTaps="handled"
+          maintainVisibleContentPosition={THREAD_SETTINGS_MAINTAIN_VISIBLE_CONTENT_POSITION}
+          recycleItems
+          refreshControl={
+            session.environmentId ? (
+              <RefreshControl refreshing={isRefreshingProviders} onRefresh={refreshProviders} />
+            ) : undefined
+          }
+          onLoad={() => setListLoaded(true)}
+          renderItem={renderCatalogItem}
+          showsVerticalScrollIndicator={false}
+        />
+
+        {!NATIVE_LIQUID_GLASS_SUPPORTED ? (
+          <View
+            pointerEvents="none"
+            style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 24 }}
+          >
+            <Svg width="100%" height={24}>
+              <Defs>
+                <LinearGradient id={fadeGradientId} x1="0" y1="0" x2="0" y2="1">
+                  <Stop offset="0%" stopColor={surface.card} stopOpacity={0} />
+                  <Stop offset="70%" stopColor={surface.card} stopOpacity={0.85} />
+                  <Stop offset="100%" stopColor={surface.card} stopOpacity={1} />
+                </LinearGradient>
+              </Defs>
+              <Rect x={0} y={0} width="100%" height={24} fill={`url(#${fadeGradientId})`} />
+            </Svg>
+          </View>
+        ) : null}
+      </View>
+    );
+  };
+
   return (
     <View className="flex-1" style={{ backgroundColor: surface.canvas }}>
       <ThreadSettingsTopBar
@@ -1874,77 +1951,42 @@ function ThreadSettingsSheetBody(props: { readonly onClose: () => void }) {
         onClose={props.onClose}
       />
 
-      {/* Elevated grouped model list card with horizontal tab swipe */}
-      <GestureDetector gesture={swipeGesture}>
+      {isSearching ? (
+        <View className="mx-3 min-h-0 flex-1">{renderCardList(session.activeTab)}</View>
+      ) : (
         <View
-          className="relative mx-3 min-h-0 flex-1 overflow-hidden rounded-[20px]"
-          style={{
-            backgroundColor: surface.card,
-            borderWidth: 0.5,
-            borderColor: surface.cardBorder,
-            ...(isDarkMode || NATIVE_LIQUID_GLASS_SUPPORTED
-              ? undefined
-              : {
-                  shadowColor: "#000000",
-                  shadowOffset: { width: 0, height: 1 },
-                  shadowOpacity: 0.04,
-                  shadowRadius: 2,
-                  elevation: 1,
-                }),
+          className="min-h-0 flex-1"
+          onLayout={(event) => {
+            const nextWidth = Math.round(event.nativeEvent.layout.width);
+            if (nextWidth > 0 && nextWidth !== pagerWidth) {
+              setPagerWidth(nextWidth);
+            }
           }}
         >
-          <Animated.View style={[{ flex: 1 }, swipeCardStyle]}>
-            {/* oxlint-disable-next-line t3code/require-registered-list-scroll -- Sheet content; sits above the sticky thumb deck. */}
-            <AnimatedLegendList
-              alwaysBounceVertical
-              className="flex-1"
-              style={[READABLE_WIDTH_STYLE, { backgroundColor: "transparent" }]}
-              contentContainerStyle={{ paddingTop: 5, paddingBottom: 22 }}
-              data={listItems}
-              estimatedItemSize={ROW_MIN_HEIGHT.item}
-              extraData={[
-                animationsReady,
-                session.activeTab,
-                session.displayedModelSelection?.model,
-                isDarkMode,
-              ]}
-              getItemType={(item) => item.kind}
-              itemLayoutAnimation={THREAD_SETTINGS_CATALOG_LAYOUT_TRANSITION}
-              keyExtractor={(item) => item.key}
-              keyboardDismissMode="on-drag"
+          {pagerWidth > 0 ? (
+            <ScrollView
+              ref={pagerRef}
+              horizontal
+              pagingEnabled
+              directionalLockEnabled
+              decelerationRate="fast"
+              showsHorizontalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
-              maintainVisibleContentPosition={THREAD_SETTINGS_MAINTAIN_VISIBLE_CONTENT_POSITION}
-              recycleItems
-              refreshControl={
-                session.environmentId ? (
-                  <RefreshControl refreshing={isRefreshingProviders} onRefresh={refreshProviders} />
-                ) : undefined
-              }
-              onLoad={() => setListLoaded(true)}
-              renderItem={renderCatalogItem}
-              showsVerticalScrollIndicator={false}
-            />
-          </Animated.View>
-
-          {!NATIVE_LIQUID_GLASS_SUPPORTED ? (
-            <View
-              pointerEvents="none"
-              style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 24 }}
+              contentOffset={{ x: activeTabIndex * pagerWidth, y: 0 }}
+              onMomentumScrollEnd={(event) => handlePagerSettled(event.nativeEvent.contentOffset.x)}
+              className="flex-1"
             >
-              <Svg width="100%" height={24}>
-                <Defs>
-                  <LinearGradient id={fadeGradientId} x1="0" y1="0" x2="0" y2="1">
-                    <Stop offset="0%" stopColor={surface.card} stopOpacity={0} />
-                    <Stop offset="70%" stopColor={surface.card} stopOpacity={0.85} />
-                    <Stop offset="100%" stopColor={surface.card} stopOpacity={1} />
-                  </LinearGradient>
-                </Defs>
-                <Rect x={0} y={0} width="100%" height={24} fill={`url(#${fadeGradientId})`} />
-              </Svg>
-            </View>
-          ) : null}
+              {tabKeys.map((tab) => (
+                <View key={tab} className="h-full px-3" style={{ width: pagerWidth }}>
+                  {renderCardList(tab)}
+                </View>
+              ))}
+            </ScrollView>
+          ) : (
+            <View className="mx-3 min-h-0 flex-1">{renderCardList(session.activeTab)}</View>
+          )}
         </View>
-      </GestureDetector>
+      )}
 
       {/* Permanently pinned thumb-zone bottom deck */}
       <ThreadSettingsThumbDeck />

@@ -153,8 +153,17 @@ export function V5CardStackView(
       });
     }
   };
+  const rootRouteKey = props.state.routes[0]?.key;
+  const rootDescriptor = rootRouteKey
+    ? (props.descriptors[rootRouteKey] ?? screens.descriptors[rootRouteKey])
+    : undefined;
+  const rootBackgroundColor = rootDescriptor
+    ? StyleSheet.flatten(rootDescriptor.options.contentStyle)?.backgroundColor
+    : undefined;
+  const transparentEnvelope = rootBackgroundColor === "transparent";
+
   return (
-    <View className="flex-1 bg-screen">
+    <View className={transparentEnvelope ? "flex-1 bg-transparent" : "flex-1 bg-screen"}>
       <Stack.Host>
         {screens.routes.map((route, index) => {
           const descriptor = props.descriptors[route.key] ?? screens.descriptors[route.key];
