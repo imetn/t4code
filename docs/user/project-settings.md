@@ -106,6 +106,8 @@ a new thread on each run survive deletion of their previous threads.
 An archived thread refuses messages, so a task that posts into one stays on and fails
 each run until you unarchive the thread or pick another destination. To set a task's thread
 aside without breaking it, settle the thread; see [Settle or archive](thread-sidebar.md#settle-or-archive).
+While a target thread waits for its account's usage limit to reset, recurring runs are skipped
+until the reset or until you switch the thread to another account.
 
 You can edit, pause, resume, run immediately, or delete a task from the list.
 Webhook tasks only run when their URL is called, so they can't be run
