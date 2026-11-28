@@ -55,10 +55,7 @@ export function ProjectTodosPage() {
   const activeProjects = projects.filter(
     (project) =>
       project.archivedAt === null &&
-      !isScratchProject(
-        project,
-        serverConfigs.get(project.environmentId)?.scratchWorkspaceRoot,
-      ) &&
+      !isScratchProject(project, serverConfigs.get(project.environmentId)?.scratchWorkspaceRoot) &&
       capableEnvIds.has(project.environmentId) &&
       (selectedEnvironmentId === null || project.environmentId === selectedEnvironmentId),
   );

@@ -116,9 +116,7 @@ function extractWebSyncedAttachments(
   return result;
 }
 
-function attachmentsFingerprint(
-  attachments: ReadonlyArray<SyncedComposerDraftAttachment>,
-): string {
+function attachmentsFingerprint(attachments: ReadonlyArray<SyncedComposerDraftAttachment>): string {
   return syncedDraftFingerprint("", attachments);
 }
 

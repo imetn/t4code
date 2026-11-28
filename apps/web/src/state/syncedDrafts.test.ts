@@ -82,7 +82,11 @@ describe("createWebSyncedDraftBridge", () => {
       expect(flushed).toHaveLength(1);
 
       // Once upload finishes, it syncs immediately without waiting for typing debounce.
-      seedReadyAttachmentUpload("img-1", ENV_ID, "pending-11111111-1111-4111-8111-111111111111.png");
+      seedReadyAttachmentUpload(
+        "img-1",
+        ENV_ID,
+        "pending-11111111-1111-4111-8111-111111111111.png",
+      );
       expect(flushed).toHaveLength(2);
       expect(flushed[1]?.payload.attachments).toEqual([
         {
@@ -111,9 +115,7 @@ describe("createWebSyncedDraftBridge", () => {
 
   it("hydrates remote synced images and files without echoing back, and clears on remote clear", async () => {
     const flushed: Array<SyncedDraftPayload> = [];
-    const fetchMock = vi.fn(
-      async () => new Response(new Uint8Array([1, 2, 3]), { status: 200 }),
-    );
+    const fetchMock = vi.fn(async () => new Response(new Uint8Array([1, 2, 3]), { status: 200 }));
     const originalCreateObjectURL = URL.createObjectURL;
     const originalRevokeObjectURL = URL.revokeObjectURL;
     URL.createObjectURL = vi.fn(() => "blob:remote-img-1");

@@ -114,8 +114,7 @@ export class SyncedDraftService extends Context.Service<
 const make = Effect.gen(function* () {
   const t4Sqlite = yield* T4Sqlite.T4Sqlite;
   const serverConfig = yield* Effect.serviceOption(ServerConfig.ServerConfig);
-  const attachmentsDir =
-    serverConfig._tag === "Some" ? serverConfig.value.attachmentsDir : null;
+  const attachmentsDir = serverConfig._tag === "Some" ? serverConfig.value.attachmentsDir : null;
   const eventsPubSub = yield* PubSub.unbounded<SyncedDraftEvent>();
 
   const requireSql = t4Sqlite.getClient.pipe(
