@@ -121,7 +121,7 @@ Each entry uses `<!-- t4-lock: <id> -->` and explicit path prefixes/files so `sc
   - `apps/mobile/src/widgets/subscriptionUsageSnapshot.ts`
   - `apps/mobile/plugins/withWidgetLogoAsset.cjs`
 - **Non-Negotiable Invariants**:
-  - Custom mobile chat list sort/grouping options, collapsible headers for every status group (`Completed`, `Working`, `Other`, `Snoozed`, `Settled`) with persisted state, toggleable PR tab, centered iOS tab dock (`T3SidebarTabBarView.swift`).
+  - Custom mobile chat list sort/grouping options (`Group by status`, collapsible `Group by project` folders with per-project quick `+` button and persisted collapse state, and `No grouping`), collapsible headers for every status group (`Completed`, `Working`, `Other`, `Snoozed`, `Settled`) with persisted state, toggleable PR tab, centered iOS tab dock (`T3SidebarTabBarView.swift`).
   - Nowdex-style multi-provider pace-aware iOS widgets with Claude reset countdown, Antigravity own Gemini weekly quota lock, `100%` non-truncation layout (`521aa66f91`), and inline-slot uniform `2pt` same-color vertical pace marker with soft translucent same-color deficit segments when burning ahead of pace.
 
 ### 6. Compact 2-Column Usage Limits, Pace Curve, Provider Order & Apple HIG T4 Tray

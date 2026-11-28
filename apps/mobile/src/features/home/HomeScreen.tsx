@@ -74,6 +74,7 @@ import type { PendingNewTask } from "../../state/use-pending-new-tasks";
 import { useQueuedThreadKeys } from "../../state/use-thread-outbox";
 import {
   ThreadListV2PendingRow,
+  ThreadListV2ProjectFolderHeader,
   ThreadListV2Row,
   ThreadListV2SettledShelfHeader,
   ThreadListV2ShowMoreRow,
@@ -85,6 +86,7 @@ import { useThreadRowProviderInstanceResolver } from "../threads/thread-provider
 import { useOpenThreadPullRequests } from "../threads/use-open-thread-pull-requests";
 import type { ThreadPrPresentation } from "../../state/thread-pr-presentation";
 import {
+  groupThreadListV2ItemsByProject,
   threadListV2ListItemsAreEqual,
   THREAD_LIST_V2_SETTLED_INITIAL_COUNT,
   THREAD_LIST_V2_SETTLED_PAGE_COUNT,
@@ -353,14 +355,14 @@ export function HomeScreen(props: HomeScreenProps) {
     pickableProjectGroups(projectScopes),
     v2ProjectScopeKey,
   );
-  const pickableProjects = pickableProjectGroups(
-    sortHomeProjectScopes({
-      scopes: projectScopes,
-      threads: props.threads,
-      pendingTasks: [],
-      projectSortOrder: "updated_at",
-    }),
-  );
+  const sortedProjectScopes = sortHomeProjectScopes({
+    scopes: projectScopes,
+    threads: props.threads,
+    pendingTasks: [],
+    projectSortOrder: "updated_at",
+  });
+  const pickableProjects = pickableProjectGroups(sortedProjectScopes);
+  const projectScopeByKey = new Map(sortedProjectScopes.map((scope) => [scope.key, scope]));
   const projectMenuIcons = useAtomValue(
     projectFilterMenuIconsAtom(Platform.OS === "ios" && workspace ? pickableProjects : []),
   );
@@ -407,6 +409,8 @@ export function HomeScreen(props: HomeScreenProps) {
     setSettledVisibleCount((count) => count + THREAD_LIST_V2_SETTLED_PAGE_COUNT);
   const {
     loaded: shelfPreferencesLoaded,
+    groupingMode,
+    collapsedProjectGroupKeys,
     settledShelfExpanded,
     snoozedShelfExpanded,
     workingShelfEnabled,
@@ -415,6 +419,7 @@ export function HomeScreen(props: HomeScreenProps) {
     idleShelfExpanded,
     sortOrder,
     sectionOrder,
+    toggleProjectGroup,
     toggleSettledShelf,
     toggleSnoozedShelf,
     toggleWorkingShelf,
@@ -472,6 +477,19 @@ export function HomeScreen(props: HomeScreenProps) {
     settledShelfExpanded,
     selectedThreadKey,
   });
+  const displayedThreadListV2Items =
+    groupingMode === "project" && sortOrder !== "manual" && !hasSearchQuery
+      ? groupThreadListV2ItemsByProject({
+          items: threadListV2Items,
+          projectScopes: sortedProjectScopes,
+          collapsedProjectGroupKeys,
+          selectedThreadKey,
+          disabled: !shelfPreferencesLoaded,
+          fallbackProjectTitle: (environmentId, projectId) =>
+            projectByKey.get(scopedProjectKey(environmentId, projectId))?.title ??
+            String(projectId),
+        })
+      : threadListV2Items;
   // Called as `props.onSelectThread(...)`, the compiler would cache this handler on the whole
   // props object, which is new on every render of Home's parent.
   const { onSelectThread } = props;
@@ -487,11 +505,11 @@ export function HomeScreen(props: HomeScreenProps) {
     }
     onSelectThread(thread);
   };
-  useThreadJumpShortcuts(threadListV2Items, selectThread, props.onSelectPendingTask);
+  useThreadJumpShortcuts(displayedThreadListV2Items, selectThread, props.onSelectPendingTask);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reads the list's visible range after commit to enable swipe gestures on those rows
   useEffect(() => {
-    if (swipeEnabled) activateVisibleRows(threadListV2Items);
-  }, [activateVisibleRows, swipeEnabled, threadListV2Items]);
+    if (swipeEnabled) activateVisibleRows(displayedThreadListV2Items);
+  }, [activateVisibleRows, displayedThreadListV2Items, swipeEnabled]);
 
   const renderV2Item = ({ item }: { readonly item: ThreadListV2ListItem }) => {
     if (item.type === "v2-pending") {
@@ -547,6 +565,22 @@ export function HomeScreen(props: HomeScreenProps) {
           disabled={item.disabled}
           expanded={item.expanded}
           onToggle={item.section === "completed" ? toggleCompletedShelf : toggleIdleShelf}
+        />
+      );
+    }
+    if (item.type === "v2-project-folder") {
+      const scope = projectScopeByKey.get(item.projectScopeKey) ?? null;
+      return (
+        <ThreadListV2ProjectFolderHeader
+          title={item.title}
+          count={item.count}
+          expanded={item.expanded}
+          disabled={item.disabled}
+          pane={sidebarSurface ? "sidebar" : "screen"}
+          representativeProject={scope?.representative ?? null}
+          fallbackProjects={scope?.projects}
+          onToggle={() => toggleProjectGroup(item.projectScopeKey)}
+          onNewThread={scope ? () => props.onNewThreadInProject(scope.representative) : undefined}
         />
       );
     }
@@ -658,6 +692,8 @@ export function HomeScreen(props: HomeScreenProps) {
     searchQuery: props.searchQuery,
     selectedThreadKey,
     threadSearchMatchByKey,
+    groupingMode,
+    collapsedProjectGroupKeys,
     workingShelfEnabled,
     sortOrder,
     sectionOrder,
@@ -668,7 +704,7 @@ export function HomeScreen(props: HomeScreenProps) {
     props.pendingTasks.length > 0 ||
     threadListV2Layout.settledCount > 0;
   // A hidden list gets no layout, so it never reports its rows as laid out.
-  const hasRowsToLayOut = props.visible && hasAnyThreads && threadListV2Items.length > 0;
+  const hasRowsToLayOut = props.visible && hasAnyThreads && displayedThreadListV2Items.length > 0;
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- holds the native launch splash, which is outside React, until the rows are gone or this list unmounts; a layout effect runs before the splash hides in this commit
   useLayoutEffect(() => {
     return hasRowsToLayOut ? holdLaunchSplashForHomeRows() : undefined;
@@ -802,7 +838,7 @@ export function HomeScreen(props: HomeScreenProps) {
       />
     );
 
-  if (Platform.OS === "android" && threadListV2Items.length === 0) {
+  if (Platform.OS === "android" && displayedThreadListV2Items.length === 0) {
     return (
       <ScreenContent surface="screen">
         <View
@@ -826,13 +862,13 @@ export function HomeScreen(props: HomeScreenProps) {
                 ref={listRef}
                 onLoad={() => {
                   settleLaunchSplashHomeRows();
-                  activateVisibleRows(threadListV2Items);
+                  activateVisibleRows(displayedThreadListV2Items);
                 }}
                 onTouchStart={(event) => trackListTouches(event, true)}
                 onTouchEnd={(event) => trackListTouches(event, false)}
                 onTouchCancel={(event) => trackListTouches(event, false)}
                 renderScrollComponent={Platform.OS === "ios" ? renderHomeScrollView : undefined}
-                data={threadListV2Items}
+                data={displayedThreadListV2Items}
                 renderItem={renderV2Item}
                 keyExtractor={v2KeyExtractor}
                 getItemType={(item) => item.type}

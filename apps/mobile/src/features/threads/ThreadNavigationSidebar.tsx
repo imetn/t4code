@@ -63,6 +63,7 @@ import { WorkspaceListHeader } from "../layout/workspace/WorkspaceListHeader";
 import { WorkspaceSidebarColumn } from "../layout/workspace/WorkspaceSidebarColumn";
 import {
   ThreadListV2PendingRow,
+  ThreadListV2ProjectFolderHeader,
   ThreadListV2Row,
   ThreadListV2SettledShelfHeader,
   ThreadListV2ShowMoreRow,
@@ -74,6 +75,7 @@ import { useThreadRowProviderInstanceResolver } from "./thread-provider-instance
 import type { ThreadPrPresentation } from "../../state/thread-pr-presentation";
 import { ThreadPrDemandProvider } from "../../state/thread-pr-demand";
 import {
+  groupThreadListV2ItemsByProject,
   isThreadListV2ListItem,
   threadListV2ListItemsAreEqual,
   THREAD_LIST_V2_SETTLED_INITIAL_COUNT,
@@ -190,14 +192,14 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
       ),
     [projects, options.selectedEnvironmentId, options.projectGroupingMode, messages],
   );
-  const projectFilterOptions = pickableProjectGroups(
-    sortHomeProjectScopes({
-      scopes: projectScopes,
-      threads,
-      pendingTasks: [],
-      projectSortOrder: "updated_at",
-    }),
-  ).map((scope) => ({
+  const sortedProjectScopes = sortHomeProjectScopes({
+    scopes: projectScopes,
+    threads,
+    pendingTasks: [],
+    projectSortOrder: "updated_at",
+  });
+  const projectScopeByKey = new Map(sortedProjectScopes.map((scope) => [scope.key, scope]));
+  const projectFilterOptions = pickableProjectGroups(sortedProjectScopes).map((scope) => ({
     key: scope.key,
     label: scope.title,
   }));
@@ -249,6 +251,8 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
     setSettledVisibleCount((count) => count + THREAD_LIST_V2_SETTLED_PAGE_COUNT);
   const {
     loaded: shelfPreferencesLoaded,
+    groupingMode,
+    collapsedProjectGroupKeys,
     settledShelfExpanded,
     snoozedShelfExpanded,
     workingShelfEnabled,
@@ -257,6 +261,7 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
     idleShelfExpanded,
     sortOrder,
     sectionOrder,
+    toggleProjectGroup,
     toggleSettledShelf,
     toggleSnoozedShelf,
     toggleWorkingShelf,
@@ -314,10 +319,24 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
     settledShelfExpanded,
     selectedThreadKey,
   });
+  const hasSearchQuery = props.searchQuery.trim().length > 0;
+  const displayedThreadListV2Items =
+    groupingMode === "project" && sortOrder !== "manual" && !hasSearchQuery
+      ? groupThreadListV2ItemsByProject({
+          items: threadListV2Items,
+          projectScopes: sortedProjectScopes,
+          collapsedProjectGroupKeys,
+          selectedThreadKey,
+          disabled: !shelfPreferencesLoaded,
+          fallbackProjectTitle: (environmentId, projectId) =>
+            projectByKey.get(scopedProjectKey(environmentId, projectId))?.title ??
+            String(projectId),
+        })
+      : threadListV2Items;
   const listItems: readonly SidebarListItem[] =
     settledShelfExpanded && threadListV2Layout.hiddenSettledCount > 0
       ? [
-          ...threadListV2Items,
+          ...displayedThreadListV2Items,
           {
             type: "v2-show-more",
             key: "v2-show-more",
@@ -329,7 +348,7 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
                 : {}),
           },
         ]
-      : threadListV2Items;
+      : displayedThreadListV2Items;
 
   const handleSwipeableWillOpen = (methods: SwipeableMethods) => {
     if (openSwipeableRef.current !== methods) {
@@ -381,6 +400,8 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
     savedConnectionsById,
     listEnvironments,
     threadSearchMatchByKey,
+    groupingMode,
+    collapsedProjectGroupKeys,
     workingShelfEnabled,
     sortOrder,
     sectionOrder,
@@ -534,6 +555,22 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
             pane="sidebar"
           />
         );
+      case "v2-project-folder": {
+        const scope = projectScopeByKey.get(item.projectScopeKey) ?? null;
+        return (
+          <ThreadListV2ProjectFolderHeader
+            title={item.title}
+            count={item.count}
+            expanded={item.expanded}
+            disabled={item.disabled}
+            pane="sidebar"
+            representativeProject={scope?.representative ?? null}
+            fallbackProjects={scope?.projects}
+            onToggle={() => toggleProjectGroup(item.projectScopeKey)}
+            onNewThread={scope ? () => props.onNewThreadInProject(scope.representative) : undefined}
+          />
+        );
+      }
       case "v2-snoozed-shelf":
         return (
           <ThreadListV2SnoozedShelfHeader

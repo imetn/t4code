@@ -30,9 +30,11 @@ import {
   THREAD_LIST_SECTION_META,
   THREAD_LIST_SORT_OPTIONS,
   moveThreadListSection,
+  resolveThreadListGroupingMode,
   resolveThreadListSectionOrder,
   resolveThreadListSortOrder,
   sameThreadListSectionOrder,
+  type ThreadListGroupingMode,
   type ThreadListSection,
 } from "../threads/threadListSort";
 import { SettingsSection } from "./components/SettingsSection";
@@ -245,21 +247,49 @@ const SECTION_ICONS: Readonly<Record<ThreadListSection, AppSymbolName>> = {
   idle: "text.bubble",
 };
 
+const CHAT_LIST_GROUPING_OPTIONS: ReadonlyArray<{
+  readonly mode: ThreadListGroupingMode;
+  readonly label: string;
+  readonly description: string;
+}> = [
+  {
+    mode: "status",
+    label: msg("Group by status"),
+    description: msg(
+      "Group completed, in-progress, and other active threads into separate sections.",
+    ),
+  },
+  {
+    mode: "project",
+    label: msg("Group by project"),
+    description: msg("Group active threads into collapsible folders by project."),
+  },
+  {
+    mode: "none",
+    label: msg("No grouping"),
+    description: msg("Show active threads in a single flat list."),
+  },
+];
+
 export function WorkingSectionSettings() {
   const gt = useGT();
   const m = useMessages();
   const savePreferences = useAtomCommand(saveMobilePreferences);
   const preferences = useAtomValue(mobilePreferencesAtom);
   const ready = AsyncResult.isSuccess(preferences) && !preferences.waiting;
-  const workingShelfEnabled =
-    AsyncResult.isSuccess(preferences) && preferences.value.workingShelfEnabled !== false;
+  const groupingMode: ThreadListGroupingMode | null = AsyncResult.isSuccess(preferences)
+    ? resolveThreadListGroupingMode(
+        preferences.value.threadListGroupingMode,
+        preferences.value.workingShelfEnabled,
+      )
+    : null;
   const sortOrder = AsyncResult.isSuccess(preferences)
     ? resolveThreadListSortOrder(preferences.value.threadListSortOrder)
     : null;
   const sectionOrder = AsyncResult.isSuccess(preferences)
     ? resolveThreadListSectionOrder(preferences.value.threadListSectionOrder)
     : DEFAULT_THREAD_LIST_SECTION_ORDER;
-  const groupOrderingActive = workingShelfEnabled && sortOrder !== "manual";
+  const groupOrderingActive = groupingMode === "status" && sortOrder !== "manual";
   const groupOrderCustomized = !sameThreadListSectionOrder(
     sectionOrder,
     DEFAULT_THREAD_LIST_SECTION_ORDER,
@@ -283,18 +313,22 @@ export function WorkingSectionSettings() {
         ))}
       </SettingsSection>
       <SettingsSection title={gt("Chat list groups")}>
-        <SettingsSwitchRow
-          icon="bolt.circle"
-          label={gt("Group by status")}
-          subtitle={gt(
-            "Group completed, in-progress, and other active threads into separate sections.",
-          )}
-          value={workingShelfEnabled}
-          disabled={!ready || sortOrder === "manual"}
-          onValueChange={(value) => {
-            void savePreferences({ workingShelfEnabled: value });
-          }}
-        />
+        {CHAT_LIST_GROUPING_OPTIONS.map((option, index) => (
+          <SettingsChoiceRow
+            key={option.mode}
+            label={m(option.label)}
+            description={m(option.description)}
+            selected={groupingMode === option.mode}
+            separated={index > 0}
+            disabled={!ready || (sortOrder === "manual" && option.mode !== "none")}
+            onPress={() => {
+              void savePreferences({
+                threadListGroupingMode: option.mode,
+                workingShelfEnabled: option.mode === "status",
+              });
+            }}
+          />
+        ))}
       </SettingsSection>
       {groupOrderingActive ? (
         <>

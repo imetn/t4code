@@ -9,6 +9,22 @@ export type ThreadListSection = (typeof THREAD_LIST_SECTION_ORDER)[number];
 export const DEFAULT_THREAD_LIST_SECTION_ORDER: readonly ThreadListSection[] =
   THREAD_LIST_SECTION_ORDER;
 
+export const THREAD_LIST_GROUPING_MODES = ["status", "project", "none"] as const;
+export type ThreadListGroupingMode = (typeof THREAD_LIST_GROUPING_MODES)[number];
+export const DEFAULT_THREAD_LIST_GROUPING_MODE: ThreadListGroupingMode = "status";
+
+export function isThreadListGroupingMode(value: unknown): value is ThreadListGroupingMode {
+  return THREAD_LIST_GROUPING_MODES.some((mode) => mode === value);
+}
+
+export function resolveThreadListGroupingMode(
+  mode: unknown,
+  legacyWorkingShelfEnabled?: boolean,
+): ThreadListGroupingMode {
+  if (isThreadListGroupingMode(mode)) return mode;
+  return legacyWorkingShelfEnabled === false ? "none" : DEFAULT_THREAD_LIST_GROUPING_MODE;
+}
+
 export function isThreadListSortOrder(value: unknown): value is ThreadListSortOrder {
   return THREAD_LIST_SORT_ORDERS.some((order) => order === value);
 }

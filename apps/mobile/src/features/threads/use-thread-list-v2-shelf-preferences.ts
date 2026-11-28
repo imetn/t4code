@@ -1,17 +1,23 @@
+import { useMemo } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
 
 import { mobilePreferencesAtom, saveMobilePreferences } from "../../state/preferences";
 import { useAtomCommand } from "../../state/use-atom-command";
 import {
+  DEFAULT_THREAD_LIST_GROUPING_MODE,
   DEFAULT_THREAD_LIST_SECTION_ORDER,
   DEFAULT_THREAD_LIST_SORT_ORDER,
   isWorkingSectionPromoted,
+  resolveThreadListGroupingMode,
   resolveThreadListSectionOrder,
   resolveThreadListSortOrder,
+  type ThreadListGroupingMode,
   type ThreadListSection,
   type ThreadListSortOrder,
 } from "./threadListSort";
+
+const EMPTY_COLLAPSED_PROJECTS: ReadonlySet<string> = new Set();
 
 export function useThreadListV2ShelfPreferences() {
   const preferencesResult = useAtomValue(mobilePreferencesAtom);
@@ -21,7 +27,18 @@ export function useThreadListV2ShelfPreferences() {
     loaded && preferencesResult.value.threadListSnoozedShelfExpanded === true;
   const settledShelfExpanded =
     loaded && preferencesResult.value.threadListSettledShelfExpanded === true;
-  const workingShelfEnabled = loaded && preferencesResult.value.workingShelfEnabled !== false;
+  const groupingMode: ThreadListGroupingMode = loaded
+    ? resolveThreadListGroupingMode(
+        preferencesResult.value.threadListGroupingMode,
+        preferencesResult.value.workingShelfEnabled,
+      )
+    : DEFAULT_THREAD_LIST_GROUPING_MODE;
+  const workingShelfEnabled = loaded && groupingMode === "status";
+  const collapsedKeysRaw = loaded ? preferencesResult.value.collapsedProjectGroupKeys : undefined;
+  const collapsedProjectGroupKeys = useMemo(
+    () => (collapsedKeysRaw?.length ? new Set(collapsedKeysRaw) : EMPTY_COLLAPSED_PROJECTS),
+    [collapsedKeysRaw],
+  );
   const sortOrder = loaded
     ? resolveThreadListSortOrder(preferencesResult.value.threadListSortOrder)
     : DEFAULT_THREAD_LIST_SORT_ORDER;
@@ -85,6 +102,25 @@ export function useThreadListV2ShelfPreferences() {
       }),
     });
   };
+  const setGroupingMode = (next: ThreadListGroupingMode) => {
+    if (!loaded) return;
+    void savePreferences({
+      threadListGroupingMode: next,
+      workingShelfEnabled: next === "status",
+    });
+  };
+  const toggleProjectGroup = (projectScopeKey: string) => {
+    if (!loaded) return;
+    void savePreferences({
+      transform: (current) => {
+        const next = new Set(current.collapsedProjectGroupKeys ?? []);
+        if (!next.delete(projectScopeKey)) {
+          next.add(projectScopeKey);
+        }
+        return { collapsedProjectGroupKeys: [...next] };
+      },
+    });
+  };
   const setSortOrder = (next: ThreadListSortOrder) => {
     if (!loaded) return;
     void savePreferences({ threadListSortOrder: next });
@@ -98,10 +134,12 @@ export function useThreadListV2ShelfPreferences() {
     loaded,
     settledShelfExpanded,
     snoozedShelfExpanded,
+    groupingMode,
     workingShelfEnabled,
     workingShelfExpanded,
     completedShelfExpanded,
     idleShelfExpanded,
+    collapsedProjectGroupKeys,
     sortOrder,
     sectionOrder,
     toggleSettledShelf,
@@ -109,6 +147,8 @@ export function useThreadListV2ShelfPreferences() {
     toggleWorkingShelf,
     toggleCompletedShelf,
     toggleIdleShelf,
+    setGroupingMode,
+    toggleProjectGroup,
     setSortOrder,
     setSectionOrder,
   } as const;

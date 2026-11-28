@@ -600,11 +600,22 @@ export interface ThreadListV2SectionDividerListItem {
   readonly disabled: boolean;
 }
 
+export interface ThreadListV2ProjectFolderListItem {
+  readonly type: "v2-project-folder";
+  readonly key: string;
+  readonly projectScopeKey: string;
+  readonly title: string;
+  readonly count: number;
+  readonly expanded: boolean;
+  readonly disabled: boolean;
+}
+
 export type ThreadListV2ListItem =
   | ThreadListV2ThreadListItem
   | ThreadListV2PendingListItem
   | ThreadListV2WorkingShelfListItem
   | ThreadListV2SectionDividerListItem
+  | ThreadListV2ProjectFolderListItem
   | ThreadListV2SnoozedShelfListItem
   | ThreadListV2SettledShelfListItem;
 
@@ -616,6 +627,7 @@ export function isThreadListV2ListItem(value: {
     value.type === "v2-pending" ||
     value.type === "v2-working-shelf" ||
     value.type === "v2-section-divider" ||
+    value.type === "v2-project-folder" ||
     value.type === "v2-snoozed-shelf" ||
     value.type === "v2-settled-shelf"
   );
@@ -664,6 +676,15 @@ export function threadListV2ListItemsAreEqual(
       return (
         previous.type === "v2-section-divider" &&
         previous.section === item.section &&
+        previous.count === item.count &&
+        previous.expanded === item.expanded &&
+        previous.disabled === item.disabled
+      );
+    case "v2-project-folder":
+      return (
+        previous.type === "v2-project-folder" &&
+        previous.projectScopeKey === item.projectScopeKey &&
+        previous.title === item.title &&
         previous.count === item.count &&
         previous.expanded === item.expanded &&
         previous.disabled === item.disabled
@@ -859,6 +880,137 @@ export function buildThreadListV2ListItems(input: {
   return result.map((entry, index) => {
     if (entry.type !== "v2-thread" && entry.type !== "v2-pending") return entry;
     const next = result[index + 1];
+    const showTrailingDivider =
+      next?.type === "v2-thread" || (next?.type === "v2-pending" && !next.showPendingDivider);
+    return showTrailingDivider === entry.showTrailingDivider
+      ? entry
+      : { ...entry, showTrailingDivider };
+  });
+}
+
+export interface ProjectFolderGroupScope {
+  readonly key: string;
+  readonly title: string;
+  readonly projectRefs: ReadonlyArray<{
+    readonly environmentId: EnvironmentId;
+    readonly projectId: ProjectId;
+  }>;
+}
+
+/**
+ * Regroups active (non-pinned, non-snoozed, non-settled) thread rows into collapsible
+ * project folders while preserving pending tasks and pinned threads at top and
+ * snoozed/settled shelves at bottom.
+ */
+export function groupThreadListV2ItemsByProject(input: {
+  readonly items: ReadonlyArray<ThreadListV2ListItem>;
+  readonly projectScopes: ReadonlyArray<ProjectFolderGroupScope>;
+  readonly collapsedProjectGroupKeys: ReadonlySet<string>;
+  readonly selectedThreadKey: string | null;
+  readonly disabled: boolean;
+  readonly fallbackProjectTitle?: (environmentId: EnvironmentId, projectId: ProjectId) => string;
+}): ThreadListV2ListItem[] {
+  const scopeByProjectRef = new Map<string, ProjectFolderGroupScope>();
+  for (const scope of input.projectScopes) {
+    for (const ref of scope.projectRefs) {
+      scopeByProjectRef.set(`${ref.environmentId}:${ref.projectId}`, scope);
+    }
+  }
+
+  const head: ThreadListV2ListItem[] = [];
+  const activeThreads: ThreadListV2ThreadListItem[] = [];
+  const tail: ThreadListV2ListItem[] = [];
+  let reachedParked = false;
+
+  for (const entry of input.items) {
+    if (entry.type === "v2-snoozed-shelf" || entry.type === "v2-settled-shelf") {
+      reachedParked = true;
+      tail.push(entry);
+      continue;
+    }
+    if (reachedParked) {
+      tail.push(entry);
+      continue;
+    }
+    if (entry.type === "v2-pending") {
+      head.push(entry);
+      continue;
+    }
+    if (entry.type === "v2-thread" && entry.item.pinned) {
+      head.push(entry);
+      continue;
+    }
+    if (entry.type === "v2-thread" && entry.item.variant === "card") {
+      activeThreads.push(entry);
+    }
+  }
+
+  const threadsByScopeKey = new Map<
+    string,
+    { readonly title: string; readonly rows: ThreadListV2ThreadListItem[] }
+  >();
+  for (const row of activeThreads) {
+    const thread = row.item.thread;
+    const refKey = `${thread.environmentId}:${thread.projectId}`;
+    const scope = scopeByProjectRef.get(refKey);
+    const scopeKey = scope?.key ?? refKey;
+    const existing = threadsByScopeKey.get(scopeKey);
+    if (existing) {
+      existing.rows.push(row);
+    } else {
+      threadsByScopeKey.set(scopeKey, {
+        title:
+          scope?.title ??
+          input.fallbackProjectTitle?.(thread.environmentId, thread.projectId) ??
+          String(thread.projectId),
+        rows: [row],
+      });
+    }
+  }
+
+  const orderedScopeKeys: string[] = [];
+  const seen = new Set<string>();
+  for (const scope of input.projectScopes) {
+    if (threadsByScopeKey.has(scope.key) && !seen.has(scope.key)) {
+      seen.add(scope.key);
+      orderedScopeKeys.push(scope.key);
+    }
+  }
+  for (const scopeKey of threadsByScopeKey.keys()) {
+    if (!seen.has(scopeKey)) {
+      seen.add(scopeKey);
+      orderedScopeKeys.push(scopeKey);
+    }
+  }
+
+  const grouped: ThreadListV2ListItem[] = [...head];
+  for (const scopeKey of orderedScopeKeys) {
+    const bucket = threadsByScopeKey.get(scopeKey)!;
+    const expanded = !input.collapsedProjectGroupKeys.has(scopeKey);
+    grouped.push({
+      type: "v2-project-folder",
+      key: `v2-project-folder:${scopeKey}`,
+      projectScopeKey: scopeKey,
+      title: bucket.title,
+      count: bucket.rows.length,
+      expanded,
+      disabled: input.disabled,
+    });
+    if (expanded) {
+      grouped.push(...bucket.rows);
+    } else if (input.selectedThreadKey !== null) {
+      const selectedRow = bucket.rows.find(
+        (row) =>
+          `${row.item.thread.environmentId}:${row.item.thread.id}` === input.selectedThreadKey,
+      );
+      if (selectedRow) grouped.push(selectedRow);
+    }
+  }
+  grouped.push(...tail);
+
+  return grouped.map((entry, index) => {
+    if (entry.type !== "v2-thread" && entry.type !== "v2-pending") return entry;
+    const next = grouped[index + 1];
     const showTrailingDivider =
       next?.type === "v2-thread" || (next?.type === "v2-pending" && !next.showPendingDivider);
     return showTrailingDivider === entry.showTrailingDivider

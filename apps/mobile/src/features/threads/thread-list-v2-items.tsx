@@ -427,6 +427,106 @@ export const ThreadListV2SettledShelfHeader = memo(function ThreadListV2SettledS
   return <ThreadListV2ShelfHeader {...props} kind="settled" />;
 });
 
+export const ThreadListV2ProjectFolderHeader = memo(
+  function ThreadListV2ProjectFolderHeader(props: {
+    readonly title: string;
+    readonly count: number;
+    readonly expanded: boolean;
+    readonly disabled?: boolean;
+    readonly pane?: "screen" | "sidebar";
+    readonly representativeProject: EnvironmentProject | null;
+    readonly fallbackProjects?: ReadonlyArray<EnvironmentProject>;
+    readonly onToggle: () => void;
+    readonly onNewThread?: () => void;
+  }) {
+    const gt = useGT();
+    const sidebarPane = props.pane === "sidebar";
+    return (
+      <View
+        className={cn("mt-2.5 mb-0.5 flex-row items-center gap-2", sidebarPane ? "px-2.5" : "px-5")}
+      >
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={gt("{project}, {count} threads", {
+            project: props.title,
+            count: props.count,
+          })}
+          accessibilityState={{ expanded: props.expanded, disabled: props.disabled }}
+          disabled={props.disabled}
+          onPress={props.onToggle}
+          className="min-h-[34px] min-w-0 flex-1 flex-row items-center gap-2"
+          style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+        >
+          <SymbolView
+            name="chevron.right"
+            size={10}
+            tintColorClassName={
+              sidebarPane ? "accent-drawer-foreground-muted" : "accent-foreground-muted"
+            }
+            type="monochrome"
+            style={{ transform: [{ rotate: props.expanded ? "90deg" : "0deg" }] }}
+          />
+          {props.representativeProject ? (
+            <ProjectFavicon
+              environmentId={props.representativeProject.environmentId}
+              workspaceRoot={props.representativeProject.workspaceRoot}
+              faviconPath={props.representativeProject.faviconPath}
+              projectIcon={props.representativeProject.projectIcon}
+              projectTitle={props.title}
+              fallbackProjects={props.fallbackProjects}
+              size={18}
+            />
+          ) : (
+            <SymbolView
+              name="folder"
+              size={16}
+              tintColorClassName={
+                sidebarPane ? "accent-drawer-foreground-muted" : "accent-foreground-muted"
+              }
+              type="monochrome"
+            />
+          )}
+          <Text
+            className={cn(
+              "min-w-0 shrink text-sm font-t3-semibold",
+              sidebarPane ? "text-drawer-foreground" : "text-foreground",
+            )}
+            numberOfLines={1}
+          >
+            {props.title}
+          </Text>
+          <Text
+            className={cn(
+              "text-xs font-t3-medium tabular-nums",
+              sidebarPane ? "text-drawer-foreground-muted" : "text-foreground-tertiary",
+            )}
+          >
+            {props.count}
+          </Text>
+        </Pressable>
+        {props.onNewThread ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={gt("New thread in {project}", { project: props.title })}
+            hitSlop={8}
+            onPress={props.onNewThread}
+            className="h-8 w-8 items-center justify-center rounded-full active:opacity-60"
+          >
+            <SymbolView
+              name="plus"
+              size={13}
+              tintColorClassName={
+                sidebarPane ? "accent-drawer-foreground-muted" : "accent-foreground-muted"
+              }
+              type="monochrome"
+            />
+          </Pressable>
+        ) : null}
+      </View>
+    );
+  },
+);
+
 export const ThreadListV2ShowMoreRow = memo(function ThreadListV2ShowMoreRow(props: {
   readonly pane?: "screen" | "sidebar";
   readonly hiddenCount: number;

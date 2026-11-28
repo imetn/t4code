@@ -37,6 +37,7 @@ import {
   buildThreadListV2ListItems,
   getThreadListV2LiveGroupThreads,
   getThreadListV2OrderedSection,
+  groupThreadListV2ItemsByProject,
   layoutThreadListV2RowMenuActions,
   resolveThreadListV2SnoozeMenuSelection,
   resolveThreadListV2SwipeActions,
@@ -49,6 +50,7 @@ import {
   threadHasUnseenCompletion,
   type ThreadListV2ListItem,
 } from "./threadListV2";
+import { resolveThreadListGroupingMode } from "./threadListSort";
 
 const environmentId = EnvironmentId.make("environment-1");
 const decodeThreadShell = Schema.decodeUnknownSync(OrchestrationV2ThreadShell);
@@ -2144,5 +2146,150 @@ describe("queued messages keep a settled thread active", () => {
       ["settled", "slim"],
     ]);
     expect(layout.settledCount).toBe(1);
+  });
+});
+
+describe("groupThreadListV2ItemsByProject", () => {
+  const projectAlpha = ProjectId.make("project-alpha");
+  const projectBeta = ProjectId.make("project-beta");
+  const projectScopes = [
+    {
+      key: "scope:beta",
+      title: "Beta App",
+      projectRefs: [{ environmentId, projectId: projectBeta }],
+    },
+    {
+      key: "scope:alpha",
+      title: "Alpha App",
+      projectRefs: [{ environmentId, projectId: projectAlpha }],
+    },
+  ] as const;
+
+  const baseThreads = [
+    makeThread({
+      id: ThreadId.make("pinned"),
+      projectId: projectAlpha,
+      title: "Pinned",
+      pinnedAt: NOW,
+    }),
+    makeThread({
+      id: ThreadId.make("alpha-1"),
+      projectId: projectAlpha,
+      title: "Alpha 1",
+    }),
+    makeThread({
+      id: ThreadId.make("beta-1"),
+      projectId: projectBeta,
+      title: "Beta 1",
+    }),
+    makeThread({
+      id: ThreadId.make("alpha-2"),
+      projectId: projectAlpha,
+      title: "Alpha 2",
+    }),
+    makeThread({
+      id: ThreadId.make("settled"),
+      projectId: projectBeta,
+      title: "Settled",
+      settledOverride: "settled",
+      settledAt: NOW,
+    }),
+  ];
+
+  it("groups active threads into ordered project folders while keeping pinned on top and settled at bottom", () => {
+    const layout = buildThreadListV2Items({
+      threads: baseThreads,
+      environmentId: null,
+      searchQuery: "",
+      now: NOW,
+      workingShelfEnabled: false,
+      sortOrder: "updated_at",
+    });
+    const flatItems = buildThreadListV2ListItems({
+      items: layout.items,
+      sectionHeaders: layout.sectionHeaders,
+      pendingTasks: [],
+      settledCount: layout.settledCount,
+      settledShelfExpanded: true,
+      settledShelfHeaderIndex: layout.settledShelfHeaderIndex,
+    });
+    const grouped = groupThreadListV2ItemsByProject({
+      items: flatItems,
+      projectScopes,
+      collapsedProjectGroupKeys: new Set(),
+      selectedThreadKey: null,
+      disabled: false,
+    });
+
+    expect(
+      grouped.map((entry) =>
+        entry.type === "v2-project-folder"
+          ? `folder:${entry.title}:${entry.count}:${entry.expanded}`
+          : entry.type === "v2-thread"
+            ? entry.item.thread.id
+            : entry.type,
+      ),
+    ).toEqual([
+      "pinned",
+      "folder:Beta App:1:true",
+      "beta-1",
+      "folder:Alpha App:2:true",
+      "alpha-1",
+      "alpha-2",
+      "v2-settled-shelf",
+      "settled",
+    ]);
+  });
+
+  it("hides children of a collapsed folder except the currently selected thread", () => {
+    const layout = buildThreadListV2Items({
+      threads: baseThreads,
+      environmentId: null,
+      searchQuery: "",
+      now: NOW,
+      workingShelfEnabled: false,
+      settledShelfExpanded: false,
+      sortOrder: "updated_at",
+    });
+    const flatItems = buildThreadListV2ListItems({
+      items: layout.items,
+      sectionHeaders: layout.sectionHeaders,
+      pendingTasks: [],
+      settledCount: layout.settledCount,
+      settledShelfExpanded: false,
+      settledShelfHeaderIndex: layout.settledShelfHeaderIndex,
+    });
+    const grouped = groupThreadListV2ItemsByProject({
+      items: flatItems,
+      projectScopes,
+      collapsedProjectGroupKeys: new Set(["scope:alpha", "scope:beta"]),
+      selectedThreadKey: `${environmentId}:alpha-2`,
+      disabled: false,
+    });
+
+    expect(
+      grouped.map((entry) =>
+        entry.type === "v2-project-folder"
+          ? `folder:${entry.title}:${entry.count}:${entry.expanded}`
+          : entry.type === "v2-thread"
+            ? entry.item.thread.id
+            : entry.type,
+      ),
+    ).toEqual([
+      "pinned",
+      "folder:Beta App:1:false",
+      "folder:Alpha App:2:false",
+      "alpha-2",
+      "v2-settled-shelf",
+    ]);
+  });
+
+  it("resolves grouping mode with backward compatibility for legacy workingShelfEnabled", () => {
+    expect(resolveThreadListGroupingMode("project", true)).toBe("project");
+    expect(resolveThreadListGroupingMode("none", true)).toBe("none");
+    expect(resolveThreadListGroupingMode("status", false)).toBe("status");
+    expect(resolveThreadListGroupingMode(undefined, false)).toBe("none");
+    expect(resolveThreadListGroupingMode(undefined, true)).toBe("status");
+    expect(resolveThreadListGroupingMode(undefined, undefined)).toBe("status");
   });
 });

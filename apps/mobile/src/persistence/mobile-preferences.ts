@@ -24,8 +24,10 @@ import type { AndroidNavigationStyle } from "../lib/androidNavigationStyle";
 import type { ComposerEnterBehavior } from "../lib/composerEnterBehavior";
 import type { FollowUpBehavior } from "../lib/followUpBehavior";
 import {
+  isThreadListGroupingMode,
   isThreadListSection,
   isThreadListSortOrder,
+  type ThreadListGroupingMode,
   type ThreadListSection,
   type ThreadListSortOrder,
 } from "../features/threads/threadListSort";
@@ -205,6 +207,8 @@ export interface Preferences {
   readonly usageLimitsProviderOrder?: readonly string[];
   readonly usageLimitsViewMode?: "compact" | "standard";
   readonly modelPickerLastTab?: string;
+  readonly threadListGroupingMode?: ThreadListGroupingMode;
+  readonly collapsedProjectGroupKeys?: readonly string[];
   readonly hiddenUsageLimitWindows?: readonly string[];
   readonly antigravityIncludeThirdPartyLimits?: boolean;
 }
@@ -305,6 +309,8 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     usageLimitsProviderOrder?: readonly string[];
     usageLimitsViewMode?: "compact" | "standard";
     modelPickerLastTab?: string;
+    threadListGroupingMode?: ThreadListGroupingMode;
+    collapsedProjectGroupKeys?: readonly string[];
     hiddenUsageLimitWindows?: readonly string[];
     antigravityIncludeThirdPartyLimits?: boolean;
   } = {};
@@ -319,6 +325,14 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (typeof parsed.modelPickerLastTab === "string" && parsed.modelPickerLastTab.length > 0) {
     preferences.modelPickerLastTab = parsed.modelPickerLastTab;
+  }
+  if (isThreadListGroupingMode(parsed.threadListGroupingMode)) {
+    preferences.threadListGroupingMode = parsed.threadListGroupingMode;
+  }
+  if (Array.isArray(parsed.collapsedProjectGroupKeys)) {
+    preferences.collapsedProjectGroupKeys = parsed.collapsedProjectGroupKeys.filter(
+      (key): key is string => typeof key === "string" && key.length > 0,
+    );
   }
   if (Array.isArray(parsed.hiddenUsageLimitWindows)) {
     preferences.hiddenUsageLimitWindows = parsed.hiddenUsageLimitWindows.filter(
