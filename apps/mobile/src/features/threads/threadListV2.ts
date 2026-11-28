@@ -54,6 +54,11 @@ import {
   reconcilePendingThreadOrder,
   type PendingThreadOrder,
 } from "./threadOrder";
+import {
+  resolveThreadListSectionOrder,
+  type ThreadListSection,
+  type ThreadListSortOrder,
+} from "./threadListSort";
 
 export const threadListInboxReturns = createInboxReturnTracker();
 
@@ -375,6 +380,26 @@ function sortThreadsForListV2<
   return sortActiveThreadsByOrderKey(threads);
 }
 
+function sortThreadsByCreatedAt<
+  T extends Pick<EnvironmentThreadShell, "id" | "environmentId" | "createdAt">,
+>(threads: readonly T[]): T[] {
+  return [...threads].sort(
+    (left, right) =>
+      parseTimestampMs(right.createdAt) - parseTimestampMs(left.createdAt) ||
+      left.id.localeCompare(right.id) ||
+      left.environmentId.localeCompare(right.environmentId),
+  );
+}
+
+export function isThreadCompletedOrNeedsAttention(
+  thread: EnvironmentThreadShell,
+  options: { readonly now: string },
+): boolean {
+  if (resolveThreadListV2RowStatus(thread) !== "ready") return true;
+  if (threadHasUnseenCompletion(thread)) return true;
+  return resolveThreadListV2WokeAt(thread, options) !== null;
+}
+
 function threadListKey(thread: Pick<EnvironmentThreadShell, "environmentId" | "id">): string {
   return `${thread.environmentId}:${thread.id}`;
 }
@@ -482,16 +507,26 @@ export interface ThreadListV2Item {
   readonly isLast: boolean;
 }
 
-const LIST_SECTIONS = ["pinned", "active", "working", "snoozed", "settled"] as const;
-type ThreadListSection = (typeof LIST_SECTIONS)[number];
+type ThreadListLayoutSection = "pinned" | "completed" | "working" | "idle" | "snoozed" | "settled";
 // A group whose top thread is outside these sections moves to a member in
 // them. The Working shelf folds away like the parked shelves, so a group
-// there must not hide a member that needs you in Active.
-const LIVE_LIST_SECTIONS: ReadonlySet<ThreadListSection> = new Set(["pinned", "active"]);
-type ThreadListBlock = ThreadGroupBlock<EnvironmentThreadShell, ThreadListSection>;
+// there must not hide a member that needs you in Completed or Other active.
+const LIVE_LIST_SECTIONS: ReadonlySet<ThreadListLayoutSection> = new Set([
+  "pinned",
+  "completed",
+  "idle",
+]);
+type ThreadListBlock = ThreadGroupBlock<EnvironmentThreadShell, ThreadListLayoutSection>;
+
+export type ThreadListV2SectionHeaderSlot =
+  | { readonly index: number; readonly kind: "working" }
+  | { readonly index: number; readonly kind: "completed" | "idle" }
+  | { readonly index: number; readonly kind: "snoozed" }
+  | { readonly index: number; readonly kind: "settled" };
 
 export interface ThreadListV2Layout {
   readonly items: ThreadListV2Item[];
+  readonly sectionHeaders: ReadonlyArray<ThreadListV2SectionHeaderSlot>;
   readonly hiddenSettledCount: number;
   /** The settled rows the shelf may list, before its visible limit. */
   readonly listedSettledThreads: ReadonlyArray<EnvironmentThreadShell>;
@@ -554,10 +589,17 @@ export interface ThreadListV2SettledShelfListItem {
   readonly disabled: boolean;
 }
 
+export interface ThreadListV2SectionDividerListItem {
+  readonly type: "v2-section-divider";
+  readonly key: "v2-section-divider:completed" | "v2-section-divider:idle";
+  readonly section: "completed" | "idle";
+}
+
 export type ThreadListV2ListItem =
   | ThreadListV2ThreadListItem
   | ThreadListV2PendingListItem
   | ThreadListV2WorkingShelfListItem
+  | ThreadListV2SectionDividerListItem
   | ThreadListV2SnoozedShelfListItem
   | ThreadListV2SettledShelfListItem;
 
@@ -568,6 +610,7 @@ export function isThreadListV2ListItem(value: {
     value.type === "v2-thread" ||
     value.type === "v2-pending" ||
     value.type === "v2-working-shelf" ||
+    value.type === "v2-section-divider" ||
     value.type === "v2-snoozed-shelf" ||
     value.type === "v2-settled-shelf"
   );
@@ -612,6 +655,8 @@ export function threadListV2ListItemsAreEqual(
         previous.expanded === item.expanded &&
         previous.disabled === item.disabled
       );
+    case "v2-section-divider":
+      return previous.type === "v2-section-divider" && previous.section === item.section;
     case "v2-snoozed-shelf":
       return (
         previous.type === "v2-snoozed-shelf" &&
@@ -667,6 +712,7 @@ function resolveThreadListV2ItemTimeLabel(
 
 export function buildThreadListV2ListItems(input: {
   readonly items: ReadonlyArray<ThreadListV2Item>;
+  readonly sectionHeaders?: ReadonlyArray<ThreadListV2SectionHeaderSlot>;
   readonly pendingTasks: ReadonlyArray<PendingNewTask>;
   readonly workingCount?: number;
   readonly workingShelfExpanded?: boolean;
@@ -725,45 +771,68 @@ export function buildThreadListV2ListItems(input: {
     showTrailingDivider: false,
   }));
   const workingCount = input.workingCount ?? 0;
-  const workingShelfHeaderIndex = input.workingShelfHeaderIndex ?? null;
   const snoozedCount = input.snoozedCount ?? 0;
-  const snoozedShelfHeaderIndex = input.snoozedShelfHeaderIndex ?? null;
   const settledCount = input.settledCount ?? 0;
-  const settledShelfHeaderIndex = input.settledShelfHeaderIndex ?? null;
-  const snoozedEnd = settledShelfHeaderIndex ?? threadItems.length;
-  const workingEnd = snoozedShelfHeaderIndex ?? snoozedEnd;
-  const activeEnd = workingShelfHeaderIndex ?? workingEnd;
-  const result: ThreadListV2ListItem[] = [...pendingItems, ...threadItems.slice(0, activeEnd)];
+  const headers: ReadonlyArray<ThreadListV2SectionHeaderSlot> = input.sectionHeaders ?? [
+    ...(input.workingShelfHeaderIndex != null && workingCount > 0
+      ? [{ index: input.workingShelfHeaderIndex, kind: "working" as const }]
+      : []),
+    ...(input.snoozedShelfHeaderIndex != null && snoozedCount > 0
+      ? [{ index: input.snoozedShelfHeaderIndex, kind: "snoozed" as const }]
+      : []),
+    ...(input.settledShelfHeaderIndex != null && settledCount > 0
+      ? [{ index: input.settledShelfHeaderIndex, kind: "settled" as const }]
+      : []),
+  ];
+  const headersByIndex = new Map<number, ThreadListV2SectionHeaderSlot[]>();
+  for (const header of headers) {
+    const clampedIndex = Math.max(0, Math.min(threadItems.length, header.index));
+    const list = headersByIndex.get(clampedIndex);
+    if (list) list.push(header);
+    else headersByIndex.set(clampedIndex, [header]);
+  }
   const shelfDisabled = input.shelfPreferencesLoading === true;
-  if (workingShelfHeaderIndex !== null && workingCount > 0) {
-    result.push({
-      type: "v2-working-shelf",
-      key: "v2-working-shelf",
-      count: workingCount,
-      expanded: input.workingShelfExpanded === true,
-      disabled: shelfDisabled,
-    });
-    result.push(...threadItems.slice(workingShelfHeaderIndex, workingEnd));
-  }
-  if (snoozedShelfHeaderIndex !== null && snoozedCount > 0) {
-    result.push({
-      type: "v2-snoozed-shelf",
-      key: "v2-snoozed-shelf",
-      count: snoozedCount,
-      expanded: input.snoozedShelfExpanded === true,
-      disabled: shelfDisabled,
-    });
-    result.push(...threadItems.slice(snoozedShelfHeaderIndex, snoozedEnd));
-  }
-  if (settledShelfHeaderIndex !== null && settledCount > 0) {
-    result.push({
-      type: "v2-settled-shelf",
-      key: "v2-settled-shelf",
-      count: settledCount,
-      expanded: input.settledShelfExpanded !== false,
-      disabled: shelfDisabled,
-    });
-    result.push(...threadItems.slice(settledShelfHeaderIndex));
+  const result: ThreadListV2ListItem[] = [...pendingItems];
+  for (let index = 0; index <= threadItems.length; index += 1) {
+    const slotHeaders = headersByIndex.get(index);
+    if (slotHeaders) {
+      for (const header of slotHeaders) {
+        if (header.kind === "working" && workingCount > 0) {
+          result.push({
+            type: "v2-working-shelf",
+            key: "v2-working-shelf",
+            count: workingCount,
+            expanded: input.workingShelfExpanded === true,
+            disabled: shelfDisabled,
+          });
+        } else if (header.kind === "completed" || header.kind === "idle") {
+          result.push({
+            type: "v2-section-divider",
+            key: `v2-section-divider:${header.kind}`,
+            section: header.kind,
+          });
+        } else if (header.kind === "snoozed" && snoozedCount > 0) {
+          result.push({
+            type: "v2-snoozed-shelf",
+            key: "v2-snoozed-shelf",
+            count: snoozedCount,
+            expanded: input.snoozedShelfExpanded === true,
+            disabled: shelfDisabled,
+          });
+        } else if (header.kind === "settled" && settledCount > 0) {
+          result.push({
+            type: "v2-settled-shelf",
+            key: "v2-settled-shelf",
+            count: settledCount,
+            expanded: input.settledShelfExpanded !== false,
+            disabled: shelfDisabled,
+          });
+        }
+      }
+    }
+    if (index < threadItems.length) {
+      result.push(threadItems[index]!);
+    }
   }
   return result.map((entry, index) => {
     if (entry.type !== "v2-thread" && entry.type !== "v2-pending") return entry;
@@ -814,6 +883,8 @@ export function buildThreadListV2Items(input: {
   readonly now: string;
   readonly workingShelfEnabled?: boolean;
   readonly workingShelfExpanded?: boolean;
+  readonly sortOrder?: ThreadListSortOrder;
+  readonly sectionOrder?: readonly ThreadListSection[];
   readonly isWorking?: (thread: EnvironmentThreadShell) => boolean;
   readonly inboxReturnAt?: (thread: EnvironmentThreadShell) => number | undefined;
   readonly snoozedShelfExpanded?: boolean;
@@ -843,8 +914,12 @@ export function buildThreadListV2Items(input: {
     ? new Set(input.projectRefs.map((ref) => `${ref.environmentId}:${ref.projectId}`))
     : null;
 
-  const workingShelfEnabled = input.workingShelfEnabled === true;
+  const sortOrder: ThreadListSortOrder =
+    input.sortOrder ?? (input.workingShelfEnabled === true ? "updated_at" : "manual");
+  const statusGroupingEnabled = input.workingShelfEnabled === true && sortOrder !== "manual";
+  const sectionOrder = resolveThreadListSectionOrder(input.sectionOrder);
   const pinned: EnvironmentThreadShell[] = [];
+  const completed: EnvironmentThreadShell[] = [];
   const active: EnvironmentThreadShell[] = [];
   const working: EnvironmentThreadShell[] = [];
   const settled: EnvironmentThreadShell[] = [];
@@ -901,8 +976,10 @@ export function buildThreadListV2Items(input: {
       settled.push(thread);
     } else if (thread.pinnedAt != null) {
       pinned.push(thread);
-    } else if (workingShelfEnabled && (input.isWorking ?? isThreadWorking)(thread)) {
+    } else if (statusGroupingEnabled && (input.isWorking ?? isThreadWorking)(thread)) {
       working.push(thread);
+    } else if (statusGroupingEnabled && isThreadCompletedOrNeedsAttention(thread, { now })) {
+      completed.push(thread);
     } else {
       active.push(thread);
     }
@@ -936,6 +1013,7 @@ export function buildThreadListV2Items(input: {
         wokeAt: slim.has(thread) ? null : resolveThreadListV2WokeAt(thread, { now }),
         isLast: index === results.length - 1,
       })),
+      sectionHeaders: [],
       hiddenSettledCount: 0,
       listedSettledThreads: [],
       workingCount: 0,
@@ -949,10 +1027,25 @@ export function buildThreadListV2Items(input: {
     };
   }
 
-  const orderedActive = workingShelfEnabled
-    ? sortInboxThreadsByReturn(active, input.inboxReturnAt)
-    : applyPendingThreadOrder(sortThreadsForListV2(active), "active", pending);
-  const orderedWorking = sortWorkingThreadsBySend(working);
+  const activityReturnAt = (thread: EnvironmentThreadShell) => {
+    const observed = input.inboxReturnAt?.(thread);
+    const messageAt = thread.latestUserMessageAt ? parseTimestampMs(thread.latestUserMessageAt) : 0;
+    if (observed === undefined) return messageAt > 0 ? messageAt : undefined;
+    return Math.max(observed, messageAt);
+  };
+  const sortGroup = (group: readonly EnvironmentThreadShell[]) =>
+    sortOrder === "created_at"
+      ? sortThreadsByCreatedAt(group)
+      : sortOrder === "manual"
+        ? applyPendingThreadOrder(sortThreadsForListV2(group), "active", pending)
+        : sortInboxThreadsByReturn(group, activityReturnAt);
+
+  const orderedCompleted = statusGroupingEnabled ? sortGroup(completed) : [];
+  const orderedActive = sortGroup(active);
+  const orderedWorking =
+    sortOrder === "created_at"
+      ? sortThreadsByCreatedAt(working)
+      : sortWorkingThreadsBySend(working);
   const orderedSnoozed = [...snoozed].sort(
     (left, right) =>
       parseTimestampMs(left.snoozedUntil ?? "") - parseTimestampMs(right.snoozedUntil ?? ""),
@@ -962,15 +1055,22 @@ export function buildThreadListV2Items(input: {
 
   // Grouped threads render under their group's top thread, each row keeping
   // its own section look. A collapsed shelf shows only the open thread.
+  const layoutOrder: readonly ThreadListLayoutSection[] = [
+    "pinned",
+    ...sectionOrder,
+    "snoozed",
+    "settled",
+  ];
   const layout = layoutThreadGroups({
     sections: {
       pinned: applyPendingThreadOrder(sortPinnedThreadsByOrderKey(pinned), "pinned", pending),
-      active: orderedActive,
+      completed: orderedCompleted,
       working: orderedWorking,
+      idle: orderedActive,
       snoozed: orderedSnoozed,
       settled: orderedSettled,
     },
-    order: LIST_SECTIONS,
+    order: layoutOrder,
     live: LIVE_LIST_SECTIONS,
     keyOf: threadListKey,
     groupKeyOf: groupListKey,
@@ -1011,6 +1111,7 @@ export function buildThreadListV2Items(input: {
     expanded ? blocks : routeRowOnly(blocks, selectedThreadKey);
 
   const items: ThreadListV2Item[] = [];
+  const sectionHeaders: ThreadListV2SectionHeaderSlot[] = [];
   const pushBlocks = (blocks: readonly ThreadListBlock[]) => {
     for (const block of blocks) {
       block.rows.forEach((row, index) => {
@@ -1033,14 +1134,45 @@ export function buildThreadListV2Items(input: {
     }
   };
   pushBlocks(layout.pinned);
-  pushBlocks(layout.active);
   const workingCount = rowCount(layout.working);
-  const workingShelfHeaderIndex = workingCount > 0 ? items.length : null;
-  pushBlocks(shelf(layout.working, input.workingShelfExpanded === true));
+  let workingShelfHeaderIndex: number | null = null;
+  if (statusGroupingEnabled) {
+    let hasSectionHeaderAbove = false;
+    for (const section of sectionOrder) {
+      if (section === "working") {
+        if (workingCount > 0) {
+          workingShelfHeaderIndex = items.length;
+          sectionHeaders.push({ index: items.length, kind: "working" });
+          hasSectionHeaderAbove = true;
+          pushBlocks(shelf(layout.working, input.workingShelfExpanded === true));
+        }
+      } else if (section === "completed") {
+        if (layout.completed.length > 0) {
+          if (hasSectionHeaderAbove) {
+            sectionHeaders.push({ index: items.length, kind: "completed" });
+          }
+          pushBlocks(layout.completed);
+        }
+      } else if (layout.idle.length > 0) {
+        if (hasSectionHeaderAbove) {
+          sectionHeaders.push({ index: items.length, kind: "idle" });
+        }
+        pushBlocks(layout.idle);
+      }
+    }
+  } else {
+    pushBlocks(layout.idle);
+  }
   const snoozedCount = rowCount(layout.snoozed);
   const snoozedShelfHeaderIndex = snoozedCount > 0 ? items.length : null;
+  if (snoozedShelfHeaderIndex !== null) {
+    sectionHeaders.push({ index: snoozedShelfHeaderIndex, kind: "snoozed" });
+  }
   pushBlocks(shelf(layout.snoozed, input.snoozedShelfExpanded === true));
   const settledShelfHeaderIndex = settledTotal > 0 ? items.length : null;
+  if (settledShelfHeaderIndex !== null) {
+    sectionHeaders.push({ index: settledShelfHeaderIndex, kind: "settled" });
+  }
   pushBlocks(shelf(pagedSettled, input.settledShelfExpanded !== false));
   const last = items.at(-1);
   if (last) {
@@ -1048,6 +1180,7 @@ export function buildThreadListV2Items(input: {
   }
   return {
     items,
+    sectionHeaders,
     hiddenSettledCount: Math.max(0, settledTotal - pagedSettledRows),
     listedSettledThreads: listedSettledBlocks.flatMap((block) =>
       block.rows.map((row) => row.thread),

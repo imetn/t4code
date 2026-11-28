@@ -36,6 +36,15 @@ export interface SubscriptionUsageText {
   tapToConnect: string;
   shortWeekly: string;
   shortSession: string;
+  weeklyLabel: string;
+  sessionLabel: string;
+  weeklyQuotaLabel: string;
+  unitDay: string;
+  unitDayHour: string;
+  paceTitle: string;
+  paceAhead: string;
+  paceOn: string;
+  paceUnder: string;
   providerAccessibility: string;
   windowAccessibility: string;
   moreInApp: Record<string, string>;
@@ -69,6 +78,7 @@ export interface SubscriptionUsageSnapshot {
       remaining: number;
       reset: string;
       shortReset?: string;
+      pace?: "ahead" | "on" | "under";
       paceTimeLeft?: number;
       resetsAt?: number;
       durationMs?: number;
@@ -115,8 +125,9 @@ function widgetProviderColorKind(driver: string): keyof ReturnType<typeof provid
   }
 }
 
-// Snapshots expire after 15 minutes; suspended refresh requires a separate authenticated transport.
-const SNAPSHOT_MAX_AGE = 15 * 60_000;
+// Snapshots expire after 4 hours (or earlier at the next window reset) so 15-minute
+// auto-probes like Antigravity and backgrounded mobile sessions do not blank the widget.
+export const SNAPSHOT_MAX_AGE = 4 * 60 * 60_000;
 export const WIDGET_REFRESH_INTERVAL = 5 * 60_000;
 
 export function createWidgetRefresher<Id>(refresh: (id: Id) => Promise<unknown>) {
@@ -249,6 +260,19 @@ function subscriptionUsageText(
     shortSession: resolve(
       msg("5h", { $context: "ultra-short 5-hour badge in compact widget row" }),
     ),
+    weeklyLabel: resolve(msg("Weekly", { $context: "short widget label for weekly quota" })),
+    sessionLabel: resolve(msg("5-hour", { $context: "short widget label for 5-hour quota" })),
+    weeklyQuotaLabel: resolve(
+      msg("Weekly", { $context: "short widget caption for single weekly quota" }),
+    ),
+    unitDay: resolve(msg("d", { $context: "compact countdown day unit, e.g. 6d" })),
+    unitDayHour: resolve(
+      msg("h", { $context: "compact countdown hour unit after days, e.g. 6d 9h" }),
+    ),
+    paceTitle: resolve(msg("Pace", { $context: "compact widget footer label for usage pace" })),
+    paceAhead: resolve(msg("Fast", { $context: "short usage pace: ahead of pace" })),
+    paceOn: resolve(msg("Steady", { $context: "short usage pace: on pace" })),
+    paceUnder: resolve(msg("Slow", { $context: "short usage pace: under pace" })),
     providerAccessibility: resolve(
       // oxlint-disable-next-line t3code/no-untranslated-copy -- placeholders the widget fills in
       msg("{provider}. {detail}.", { provider: "{provider}", detail: "{detail}" }),
@@ -393,7 +417,12 @@ function subscriptionUsageProps(
                     ? resolve(msg("Next reset {time}", { time: resetTime(firstReset.at) }))
                     : resolve(msg("Reset {time}", { time: resetTime(firstReset.at) }))
                   : resolve(msg("Reset time unavailable")),
-                ...(firstReset && upcoming && { shortReset: clockLabel(firstReset.at, checkedAt) }),
+                ...(firstReset &&
+                  upcoming && {
+                    shortReset: clockLabel(firstReset.at, checkedAt),
+                    resetsAt: firstReset.at,
+                  }),
+                ...(window.pace && { pace: window.pace }),
                 ...pace,
                 accounts: widgetAccounts(window, resolve),
               };

@@ -21,6 +21,7 @@ import {
   WORKSPACE_TAB_LABELS,
   useNavigationTabOrder,
   useHiddenNavigationTabs,
+  useUserHiddenNavigationTabs,
   useEnabledNavigationTabs,
 } from "../layout/workspace/navigation-tabs";
 import { SettingsScreen } from "./components/SettingsScreen";
@@ -34,7 +35,8 @@ export function SettingsNavigationRouteScreen() {
   const order = useNavigationTabOrder();
   const { layout } = useAdaptiveWorkspaceLayout();
   const capacity = Platform.OS === "android" && layout.usesSplitView ? 5 : 4;
-  const hidden = useHiddenNavigationTabs();
+  const userHidden = useUserHiddenNavigationTabs();
+  const effectiveHidden = useHiddenNavigationTabs();
   const enabled = useEnabledNavigationTabs();
   const preferences = useAtomValue(mobilePreferencesAtom);
   const customizable = navigationCustomizationAvailable();
@@ -48,85 +50,90 @@ export function SettingsNavigationRouteScreen() {
         contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
       >
         <Text className="px-2 text-sm text-foreground-muted">
-          {customizable
-            ? gt(
-                "Phones show the first four enabled sections; Android tablet rails show all enabled sections. Remaining sections appear at the top of Settings. Hidden sections appear only here. Settings always stays last. Saved on this device.",
-              )
-            : gt(
-                "Tab customization becomes available when there are six sections, including Settings.",
-              )}
+          {gt(
+            "Choose which sections appear in the navigation bar and their order. Pull requests and issues share one slot when both are shown. Settings always stays last. Saved on this device.",
+          )}
         </Text>
         <SettingsSection title={gt("Tab order")}>
-          {order.map((tab, index) => (
-            <View key={tab} className="flex-row items-center gap-3 px-4 py-3">
-              <SymbolView
-                name={NAVIGATION_TAB_ICONS[tab]}
-                size={22}
-                tintColorClassName="accent-icon"
-              />
-              <View className="flex-1">
-                <Text>{m(WORKSPACE_TAB_LABELS[tab])}</Text>
-                <Text className="text-xs text-foreground-muted">
-                  {hidden.includes(tab)
-                    ? gt("Hidden", { $context: "navigation tab visibility status" })
-                    : enabled.indexOf(tab) < capacity
-                      ? gt("Tab {position}", { position: enabled.indexOf(tab) + 1 })
-                      : gt("In Settings")}
-                </Text>
+          {order.map((tab, index) => {
+            const isHidden = userHidden.includes(tab);
+            const isSharedPartner = !isHidden && effectiveHidden.includes(tab);
+            const sharedPartnerTab = tab === "pullRequests" ? "issues" : "pullRequests";
+            return (
+              <View key={tab} className="flex-row items-center gap-3 px-4 py-3">
+                <SymbolView
+                  name={NAVIGATION_TAB_ICONS[tab]}
+                  size={22}
+                  tintColorClassName="accent-icon"
+                />
+                <View className="flex-1">
+                  <Text>{m(WORKSPACE_TAB_LABELS[tab])}</Text>
+                  <Text className="text-xs text-foreground-muted">
+                    {isHidden
+                      ? gt("Hidden", { $context: "navigation tab visibility status" })
+                      : isSharedPartner
+                        ? gt("Shared with {tab}", {
+                            tab: m(WORKSPACE_TAB_LABELS[sharedPartnerTab]),
+                          })
+                        : enabled.indexOf(tab) < capacity
+                          ? gt("Tab {position}", { position: enabled.indexOf(tab) + 1 })
+                          : gt("In Settings")}
+                  </Text>
+                </View>
+                <IconButton
+                  icon={isHidden ? "eye.slash" : "eye"}
+                  accessibilityLabel={
+                    isHidden
+                      ? gt("Show {tab}", { tab: m(WORKSPACE_TAB_LABELS[tab]) })
+                      : gt("Hide {tab}", { tab: m(WORKSPACE_TAB_LABELS[tab]) })
+                  }
+                  disabled={!ready}
+                  onPress={() => {
+                    void save({
+                      transform: (current) => ({
+                        hiddenNavigationTabs: toggleNavigationTabVisibility(
+                          current.hiddenNavigationTabs,
+                          tab,
+                        ),
+                      }),
+                    });
+                  }}
+                />
+                <IconButton
+                  icon="arrow.up"
+                  accessibilityLabel={gt("Move {tab} up", { tab: m(WORKSPACE_TAB_LABELS[tab]) })}
+                  disabled={!ready || index === 0}
+                  onPress={() => {
+                    void save({
+                      transform: (current) => ({
+                        navigationTabOrder: moveNavigationTab(
+                          resolveWorkspaceTabOrder(current.navigationTabOrder),
+                          tab,
+                          index - 1,
+                        ),
+                      }),
+                    });
+                  }}
+                />
+                <IconButton
+                  icon="arrow.down"
+                  accessibilityLabel={gt("Move {tab} down", { tab: m(WORKSPACE_TAB_LABELS[tab]) })}
+                  disabled={!ready || index === order.length - 1}
+                  onPress={() => {
+                    void save({
+                      transform: (current) => ({
+                        navigationTabOrder: moveNavigationTab(
+                          resolveWorkspaceTabOrder(current.navigationTabOrder),
+                          tab,
+                          index + 1,
+                        ),
+                      }),
+                    });
+                  }}
+                />
               </View>
-              <IconButton
-                icon={hidden.includes(tab) ? "eye.slash" : "eye"}
-                accessibilityLabel={
-                  hidden.includes(tab)
-                    ? gt("Show {tab}", { tab: m(WORKSPACE_TAB_LABELS[tab]) })
-                    : gt("Hide {tab}", { tab: m(WORKSPACE_TAB_LABELS[tab]) })
-                }
-                disabled={!ready}
-                onPress={() => {
-                  void save({
-                    transform: (current) => ({
-                      hiddenNavigationTabs: toggleNavigationTabVisibility(
-                        current.hiddenNavigationTabs,
-                        tab,
-                      ),
-                    }),
-                  });
-                }}
-              />
-              <IconButton
-                icon="arrow.up"
-                accessibilityLabel={gt("Move {tab} up", { tab: m(WORKSPACE_TAB_LABELS[tab]) })}
-                disabled={!ready || index === 0}
-                onPress={() => {
-                  void save({
-                    transform: (current) => ({
-                      navigationTabOrder: moveNavigationTab(
-                        resolveWorkspaceTabOrder(current.navigationTabOrder),
-                        tab,
-                        index - 1,
-                      ),
-                    }),
-                  });
-                }}
-              />
-              <IconButton
-                icon="arrow.down"
-                accessibilityLabel={gt("Move {tab} down", { tab: m(WORKSPACE_TAB_LABELS[tab]) })}
-                disabled={!ready || index === order.length - 1}
-                onPress={() => {
-                  void save({
-                    transform: (current) => ({
-                      navigationTabOrder: moveNavigationTab(
-                        resolveWorkspaceTabOrder(current.navigationTabOrder),
-                        tab,
-                        index + 1,
-                      ),
-                    }),
-                  });
-                }}
-              />
-            </View>
-          ))}
+            );
+          })}
         </SettingsSection>
         <Button
           label={gt("Reset tabs")}

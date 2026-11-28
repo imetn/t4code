@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
   NAVIGATION_TAB_ORDER,
+  effectiveHiddenNavigationTabs,
   navigationCustomizationAvailable,
   moveNavigationTab,
   overflowNavigationTabs,
@@ -14,12 +15,12 @@ import {
 } from "./navigation-tab-order";
 
 describe("navigation tab order", () => {
-  it("enables customization only above four registered sections, excluding Settings", () => {
-    expect(navigationCustomizationAvailable()).toBe(false);
-    expect(navigationCustomizationAvailable(3)).toBe(false);
-    expect(navigationCustomizationAvailable(4)).toBe(false);
-    expect(navigationCustomizationAvailable(5)).toBe(true);
-    expect(navigationCustomizationAvailable(6)).toBe(true);
+  it("enables customization whenever more than one section is registered", () => {
+    expect(navigationCustomizationAvailable()).toBe(true);
+    expect(navigationCustomizationAvailable(0)).toBe(false);
+    expect(navigationCustomizationAvailable(1)).toBe(false);
+    expect(navigationCustomizationAvailable(2)).toBe(true);
+    expect(navigationCustomizationAvailable(4)).toBe(true);
   });
 
   it("fills missing sections and drops removed placeholders, duplicates, and Settings", () => {
@@ -29,11 +30,21 @@ describe("navigation tab order", () => {
     expect(resolveNavigationTabOrder()).toEqual(NAVIGATION_TAB_ORDER);
   });
 
-  it("gives the shared slot to the open list, or else the one opened last", () => {
+  it("gives the shared slot to the open list when both are visible, and drops the absentee when one is hidden", () => {
     expect(sharedSlotAbsentee("issues", "pullRequests")).toBe("pullRequests");
     expect(sharedSlotAbsentee("pullRequests", "issues")).toBe("issues");
     expect(sharedSlotAbsentee("threads", "issues")).toBe("pullRequests");
     expect(sharedSlotAbsentee("usage", undefined)).toBe("issues");
+    expect(sharedSlotAbsentee("threads", undefined, ["pullRequests"])).toBeNull();
+    expect(sharedSlotAbsentee("threads", undefined, ["issues"])).toBeNull();
+    expect(sharedSlotAbsentee("threads", undefined, ["pullRequests", "issues"])).toBeNull();
+    expect(effectiveHiddenNavigationTabs(["pullRequests"], "threads", undefined)).toEqual([
+      "pullRequests",
+    ]);
+    expect(effectiveHiddenNavigationTabs(["pullRequests", "issues"], "threads", undefined)).toEqual(
+      ["pullRequests", "issues"],
+    );
+    expect(effectiveHiddenNavigationTabs([], "threads", undefined)).toEqual(["issues"]);
   });
 
   it("moves a section without changing the relative order of the others", () => {

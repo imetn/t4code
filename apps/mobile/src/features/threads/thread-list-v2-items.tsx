@@ -99,6 +99,7 @@ import { ThreadSearchMatchExcerpt } from "./thread-search-match";
 import { useScaledTextRole } from "../settings/appearance/useScaledTextRole";
 import { PullRequestGlyph } from "../pull-requests/pullRequestGlyphs";
 import { pullRequestStatus } from "../pull-requests/pullRequestStatus";
+import { THREAD_LIST_SECTION_META } from "./threadListSort";
 
 interface StatusLabel {
   // Null when the icon and timer carry the status on their own.
@@ -378,6 +379,21 @@ export const ThreadListV2WorkingShelfHeader = memo(function ThreadListV2WorkingS
 ) {
   return <ThreadListV2ShelfHeader {...props} kind="working" />;
 });
+
+export const ThreadListV2StatusSectionHeader = memo(
+  function ThreadListV2StatusSectionHeader(props: {
+    readonly section: "completed" | "idle";
+    readonly pane?: "screen" | "sidebar";
+  }) {
+    const m = useMessages();
+    return (
+      <ThreadListV2Section
+        label={m(THREAD_LIST_SECTION_META[props.section].dividerLabel)}
+        pane={props.pane}
+      />
+    );
+  },
+);
 
 export const ThreadListV2SnoozedShelfHeader = memo(function ThreadListV2SnoozedShelfHeader(
   props: ThreadListV2ShelfHeaderProps,

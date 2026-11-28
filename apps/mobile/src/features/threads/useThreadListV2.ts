@@ -13,6 +13,12 @@ import {
   threadListInboxReturns,
   threadListV2LayoutTime,
 } from "./threadListV2";
+import {
+  DEFAULT_THREAD_LIST_SECTION_ORDER,
+  DEFAULT_THREAD_LIST_SORT_ORDER,
+  type ThreadListSection,
+  type ThreadListSortOrder,
+} from "./threadListSort";
 import { computeThreadMoveAvailability } from "./threadOrder";
 
 /**
@@ -63,11 +69,17 @@ export function useThreadListV2(input: {
   readonly shelfPreferencesLoaded: boolean;
   readonly workingShelfEnabled: boolean;
   readonly workingShelfExpanded: boolean;
+  readonly sortOrder?: ThreadListSortOrder;
+  readonly sectionOrder?: readonly ThreadListSection[];
   readonly snoozedShelfExpanded: boolean;
   readonly settledShelfExpanded: boolean;
   readonly selectedThreadKey: string | null;
 }) {
   const { threads, workingShelfEnabled } = input;
+  const sortOrder = input.sortOrder ?? DEFAULT_THREAD_LIST_SORT_ORDER;
+  const sectionOrder = input.sectionOrder ?? DEFAULT_THREAD_LIST_SECTION_ORDER;
+  const statusGroupingEnabled = workingShelfEnabled && sortOrder !== "manual";
+  const activeManualReorder = sortOrder === "manual";
   const layoutTime = useMemo(
     () => threadListV2LayoutTime({ threads, now: input.now, searchQuery: input.searchQuery }),
     [threads, input.now, input.searchQuery],
@@ -78,8 +90,8 @@ export function useThreadListV2(input: {
     threadListInboxReturns.getSnapshot,
   );
   const inbox = useMemo(
-    () => observeInbox(workingShelfEnabled ? threads : null, inboxVersion),
-    [threads, workingShelfEnabled, inboxVersion],
+    () => observeInbox(statusGroupingEnabled ? threads : null, inboxVersion),
+    [threads, statusGroupingEnabled, inboxVersion],
   );
   // Compute move availability per section; per-row planning is quadratic.
   const moveAvailability = useMemo(() => {
@@ -102,7 +114,7 @@ export function useThreadListV2(input: {
       });
     return new Map([
       ...sectionAvailability("pinned"),
-      ...(workingShelfEnabled ? [] : sectionAvailability("active")),
+      ...(activeManualReorder ? sectionAvailability("active") : []),
     ]);
   }, [
     threads,
@@ -113,7 +125,7 @@ export function useThreadListV2(input: {
     input.settlementEnvironmentIds,
     input.snoozeEnvironmentIds,
     input.queuedThreadKeys,
-    workingShelfEnabled,
+    activeManualReorder,
   ]);
   // Older settled threads load in pages; the shelf lists them only as far as they are loaded.
   const scopes = useMemo(
@@ -148,6 +160,8 @@ export function useThreadListV2(input: {
         now: layoutTime,
         workingShelfEnabled,
         workingShelfExpanded: input.workingShelfExpanded,
+        sortOrder,
+        sectionOrder,
         inboxReturnAt: inbox.returnedAt,
         isWorking: inbox.isWorking,
         snoozedShelfExpanded: input.snoozedShelfExpanded,
@@ -180,6 +194,8 @@ export function useThreadListV2(input: {
       layoutTime,
       workingShelfEnabled,
       input.workingShelfExpanded,
+      sortOrder,
+      sectionOrder,
       inbox.returnedAt,
       inbox.isWorking,
       input.snoozedShelfExpanded,
@@ -214,6 +230,7 @@ export function useThreadListV2(input: {
     () =>
       buildThreadListV2ListItems({
         items: layout.items,
+        sectionHeaders: layout.sectionHeaders,
         pendingTasks,
         workingCount: layout.workingCount,
         workingShelfExpanded: input.workingShelfExpanded,

@@ -6,6 +6,7 @@ import { AppText as Text } from "../../../components/ui/AppText";
 import { Menu } from "../../../components/ui/Menu";
 import { useAndroidControlSizing } from "../../../components/ui/useAndroidControlSizing";
 import { isSharedSlotTab, type SharedSlotTab } from "./navigation-tab-order";
+import { useUserHiddenNavigationTabs } from "./navigation-tabs";
 import { useSelectWorkspaceTab } from "./useSelectWorkspaceTab";
 
 const TITLES = {
@@ -18,10 +19,28 @@ export function SharedSlotTitle(props: { readonly tab: SharedSlotTab }) {
   const gt = useGT();
   const messages = useMessages();
   const selectTab = useSelectWorkspaceTab();
+  const userHidden = useUserHiddenNavigationTabs();
   const { scale } = useAndroidControlSizing();
+  const visibleEntries = (Object.entries(TITLES) as Array<[SharedSlotTab, string]>).filter(
+    ([id]) => !userHidden.includes(id),
+  );
+  const titleText = (
+    <Text
+      allowFontScaling={Platform.OS === "ios"}
+      maxFontSizeMultiplier={1.4}
+      numberOfLines={1}
+      className="font-t3-bold text-foreground"
+      style={{ fontSize: 20 * scale, letterSpacing: -0.4 * scale }}
+    >
+      {messages(TITLES[props.tab])}
+    </Text>
+  );
+  if (visibleEntries.length <= 1) {
+    return titleText;
+  }
   return (
     <Menu
-      actions={Object.entries(TITLES).map(([id, title]) => ({
+      actions={visibleEntries.map(([id, title]) => ({
         id,
         title: messages(title),
         state: id === props.tab ? ("on" as const) : ("off" as const),
@@ -37,15 +56,7 @@ export function SharedSlotTitle(props: { readonly tab: SharedSlotTab }) {
         hitSlop={8}
         className="flex-row items-center gap-1.5"
       >
-        <Text
-          allowFontScaling={Platform.OS === "ios"}
-          maxFontSizeMultiplier={1.4}
-          numberOfLines={1}
-          className="font-t3-bold text-foreground"
-          style={{ fontSize: 20 * scale, letterSpacing: -0.4 * scale }}
-        >
-          {messages(TITLES[props.tab])}
-        </Text>
+        {titleText}
         <SymbolView
           name="chevron.down"
           size={Math.round(12 * scale)}

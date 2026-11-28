@@ -1,8 +1,7 @@
 import {
-  Capsule,
   Circle,
   HStack,
-  ProgressView,
+  Image,
   Rectangle,
   RoundedRectangle,
   Spacer,
@@ -13,6 +12,7 @@ import {
 import {
   accessibilityElement,
   accessibilityLabel,
+  clipped,
   containerBackground,
   environment,
   fixedSize,
@@ -22,9 +22,11 @@ import {
   layoutPriority,
   lineLimit,
   monospacedDigit,
+  offset,
   opacity,
-  progressViewStyle,
-  tint,
+  padding,
+  resizable,
+  widgetAccentedRenderingMode,
   widgetURL,
 } from "@expo/ui/swift-ui/modifiers";
 import { createWidget, type WidgetEnvironment } from "expo-widgets";
@@ -36,9 +38,7 @@ type UsageConfiguration = {
   period?: "auto" | "weekly" | "session" | "both";
 };
 
-type WidgetModifier = ReturnType<typeof frame>;
-
-function SubscriptionUsage(
+export function SubscriptionUsage(
   props: SubscriptionUsageProps,
   widgetEnvironment: WidgetEnvironment<UsageConfiguration> & {
     showsContainerBackground?: boolean;
@@ -55,7 +55,9 @@ function SubscriptionUsage(
   const large = family === "systemLarge" || family === "systemExtraLarge";
   const simplified = widgetEnvironment.levelOfDetail === "simplified";
   const monochrome =
-    widgetEnvironment.widgetRenderingMode !== "fullColor" || widgetEnvironment.isLuminanceReduced;
+    (widgetEnvironment.widgetRenderingMode !== undefined &&
+      widgetEnvironment.widgetRenderingMode !== "fullColor") ||
+    widgetEnvironment.isLuminanceReduced === true;
   const mode = props.theme?.mode;
   const appearance =
     mode === "light" || mode === "dark"
@@ -70,8 +72,9 @@ function SubscriptionUsage(
       : undefined;
   const primary = palette?.foreground ?? "primary";
   const secondary = palette?.secondary ?? "secondary";
-  const trackColor = palette?.track ?? (appearance === "dark" ? "#2c2c2e" : "#e5e5ea");
-  const dangerColor = palette?.danger ?? (appearance === "light" ? "#dc2626" : "#fca5a5");
+  const trackColor = palette?.track ?? (appearance === "dark" ? "#26262a" : "#e8e8ed");
+  const dividerColor = appearance === "dark" ? "#26262a" : "#e6e6eb";
+  const dangerColor = palette?.danger ?? (appearance === "light" ? "#dc2626" : "#f87171");
 
   // English until the app publishes its first snapshot in the UI language.
   const text = props.text ?? {
@@ -89,6 +92,18 @@ function SubscriptionUsage(
     tapToConnect: "Tap to connect in T4",
     shortWeekly: "W",
     shortSession: "5h",
+    // oxlint-disable-next-line t3code/no-untranslated-copy -- widget fallback until the app publishes translated text
+    weeklyLabel: "Weekly",
+    sessionLabel: "5-hour",
+    // oxlint-disable-next-line t3code/no-untranslated-copy -- widget fallback until the app publishes translated text
+    weeklyQuotaLabel: "Weekly",
+    unitDay: "d",
+    unitDayHour: "h",
+    // oxlint-disable-next-line t3code/no-untranslated-copy -- widget fallback until the app publishes translated text
+    paceTitle: "Pace",
+    paceAhead: "Fast",
+    paceOn: "Steady",
+    paceUnder: "Slow",
     providerAccessibility: "{provider}. {detail}.",
     windowAccessibility: "{provider}, {window}, {remaining} percent remaining. {reset}. {detail}.",
     moreInApp: {} as Record<string, string>,
@@ -141,105 +156,226 @@ function SubscriptionUsage(
       ? rawProviders
       : rawProviders.filter((p) => p.driver === selectedProviderFilter);
 
-  const maxProviders = accessory ? 2 : small || medium ? 4 : family === "systemExtraLarge" ? 6 : 5;
+  const maxProviders = accessory ? 2 : small || medium ? 4 : family === "systemExtraLarge" ? 6 : 4;
   const visibleProviders = filteredProviders.slice(0, maxProviders);
 
-  const defaultProviderColor = (driver: string) => {
-    if (driver === "claudeAgent") return "#d97757";
-    if (driver === "antigravity") return "#8c7bd1";
-    if (driver === "cursor") return "#8b8b8b";
-    if (driver === "grok") return appearance === "dark" ? "#a1a1aa" : "#52525b";
-    return appearance === "dark" ? "#e6e6e6" : "#3c3c43";
-  };
-
-  type SnapshotProvider = SubscriptionUsageProps["providers"][number];
+  type SnapshotProvider = (typeof rawProviders)[number];
   type SnapshotWindow = SnapshotProvider["windows"][number];
 
-  const livePacePercent = (win: SnapshotWindow): number | undefined => {
-    if (win.resetsAt && win.durationMs && win.durationMs > 0) {
-      const fraction = (win.resetsAt - now) / win.durationMs;
-      if (fraction > 0 && fraction < 1) return Math.round(fraction * 100);
+  const providerBarColor = (provider: SnapshotProvider) => {
+    switch (provider.driver) {
+      case "claudeAgent":
+        return "#d97757";
+      case "antigravity":
+        return "#8b7cf6";
+      case "codex":
+        return "#339cff";
+      case "cursor":
+        return appearance === "dark" ? "#34d399" : "#10b981";
+      case "grok":
+        return appearance === "dark" ? "#b4b7bf" : "#52525b";
+      case "opencode":
+        return "#38bdf8";
+      case "pi":
+        return "#f59e0b";
+      case "muse":
+        return "#0081fb";
+      default:
+        return provider.colors?.[appearance] ?? "#339cff";
     }
-    return win.paceTimeLeft;
   };
 
-  const widthFraction = (fraction: number): WidgetModifier =>
-    ({ $type: "universalLayout", widthFraction: fraction }) as unknown as WidgetModifier;
+  const providerIconAsset = (driver: string) => {
+    switch (driver) {
+      case "codex":
+        return { assetName: "ProviderCodex", original: false, tintColor: primary };
+      case "claudeAgent":
+        return {
+          assetName: "ProviderClaude",
+          original: false,
+          tintColor: monochrome ? primary : "#d97757",
+        };
+      case "antigravity":
+        return { assetName: "ProviderAntigravity", original: true, tintColor: primary };
+      case "cursor":
+        return { assetName: "ProviderCursor", original: false, tintColor: primary };
+      case "grok":
+        return { assetName: "ProviderGrok", original: false, tintColor: primary };
+      case "opencode":
+        return { assetName: "ProviderOpenCode", original: false, tintColor: primary };
+      case "pi":
+        return { assetName: "ProviderPi", original: false, tintColor: primary };
+      case "muse":
+        return {
+          assetName: "ProviderMuse",
+          original: false,
+          tintColor: monochrome ? primary : "#0081fb",
+        };
+      default:
+        return null;
+    }
+  };
 
-  const renderPaceBar = (
-    remaining: number,
-    barColor: string,
-    pacePct: number | undefined,
-    barHeight: number,
-  ) => {
-    const clampedRemaining = Math.max(0, Math.min(100, remaining));
-    const fillColor = monochrome ? primary : clampedRemaining <= 10 ? dangerColor : barColor;
-    const showTick = !accessory && pacePct !== undefined && pacePct > 2 && pacePct < 98;
-    const clampedPace = showTick ? Math.max(2, Math.min(96, pacePct!)) : 0;
-    const tickHeight = barHeight + 4;
-    // ParentAwareHStackLayout only resolves child widthFraction when its parent opts into universal percentages.
-    // ZStack resets that environment flag, so wrap each percentage HStack in a VStack(resolvesChildPercentages).
-    return (
-      <ZStack
-        alignment="leading"
-        modifiers={[frame({ maxWidth: Infinity }), frame({ height: tickHeight })]}
-      >
-        <Capsule
+  // Image views ignore frame/foregroundStyle directly, so size and tint via a square HStack container.
+  const renderProviderIcon = (provider: SnapshotProvider, size: number) => {
+    const icon = providerIconAsset(provider.driver);
+    if (!icon) {
+      const dotSize = Math.max(5, Math.round(size * 0.5));
+      return (
+        <Circle
           modifiers={[
-            foregroundStyle(trackColor),
-            frame({ maxWidth: Infinity }),
-            frame({ height: barHeight }),
+            foregroundStyle(monochrome ? primary : providerBarColor(provider)),
+            frame({ width: dotSize, height: dotSize }),
           ]}
         />
-        {clampedRemaining > 0 ? (
-          <VStack
-            alignment="leading"
-            spacing={0}
-            resolvesChildPercentages
-            modifiers={[frame({ maxWidth: Infinity }), frame({ height: barHeight })]}
-          >
-            <HStack
-              spacing={0}
-              resolvesChildPercentages
-              modifiers={[frame({ maxWidth: Infinity }), frame({ height: barHeight })]}
-            >
-              <Capsule
-                modifiers={[
-                  foregroundStyle(fillColor),
-                  frame({ height: barHeight }),
-                  widthFraction(clampedRemaining / 100),
-                ]}
-              />
-              <Spacer minLength={0} />
-            </HStack>
-          </VStack>
-        ) : null}
-        {showTick ? (
-          <VStack
-            alignment="leading"
-            spacing={0}
-            resolvesChildPercentages
-            modifiers={[frame({ maxWidth: Infinity }), frame({ height: tickHeight })]}
-          >
-            <HStack
-              spacing={0}
-              resolvesChildPercentages
-              modifiers={[frame({ maxWidth: Infinity }), frame({ height: tickHeight })]}
-            >
-              <Rectangle
-                modifiers={[opacity(0), frame({ height: 1 }), widthFraction(clampedPace / 100)]}
-              />
-              <RoundedRectangle
-                cornerRadius={1}
-                modifiers={[foregroundStyle(primary), frame({ width: 2, height: tickHeight })]}
-              />
-              <Spacer minLength={0} />
-            </HStack>
-          </VStack>
-        ) : null}
-      </ZStack>
+      );
+    }
+    return (
+      <HStack
+        modifiers={[
+          frame({ width: size, height: size }),
+          ...(icon.original ? [] : [foregroundStyle(icon.tintColor)]),
+        ]}
+      >
+        <Image
+          assetName={icon.assetName}
+          modifiers={
+            icon.original ? [resizable(), widgetAccentedRenderingMode("accented")] : [resizable()]
+          }
+        />
+      </HStack>
     );
   };
+
+  const renderWatermark = (provider: SnapshotProvider) => {
+    const icon = providerIconAsset(provider.driver);
+    if (!icon) return null;
+    return (
+      <HStack
+        modifiers={[
+          frame({ width: 112, height: 112 }),
+          ...(icon.original ? [] : [foregroundStyle(icon.tintColor)]),
+          opacity(icon.original ? 0.065 : 0.045),
+          offset({ x: 20, y: 20 }),
+        ]}
+      >
+        <Image assetName={icon.assetName} modifiers={[resizable()]} />
+      </HStack>
+    );
+  };
+
+  const renderResetChip = (label: string, size = 9) => (
+    <HStack spacing={2.5} alignment="center">
+      <HStack modifiers={[frame({ width: size, height: size }), foregroundStyle(secondary)]}>
+        <Image systemName="arrow.clockwise" modifiers={[resizable()]} />
+      </HStack>
+      <Text
+        modifiers={[
+          font({ size }),
+          monospacedDigit(),
+          lineLimit(1),
+          layoutPriority(1),
+          foregroundStyle(secondary),
+        ]}
+      >
+        {label}
+      </Text>
+    </HStack>
+  );
+
+  const renderSegmentedScale = (
+    remaining: number,
+    barColor: string,
+    segments: number,
+    height: number,
+    spacing = 2,
+    cornerRadius = 1.4,
+    monochromeBar = false,
+  ) => {
+    const clamped = Math.max(0, Math.min(100, remaining));
+    const fillColor =
+      monochromeBar || monochrome ? primary : clamped <= 10 ? dangerColor : barColor;
+    const filled = (clamped / 100) * segments;
+    return (
+      <HStack spacing={spacing} modifiers={[frame({ maxWidth: Infinity }), frame({ height })]}>
+        {Array.from({ length: segments }, (_, index) => {
+          const lit = Math.max(0, Math.min(1, filled - index));
+          return (
+            <ZStack key={index} modifiers={[frame({ maxWidth: Infinity }), frame({ height })]}>
+              <RoundedRectangle
+                cornerRadius={cornerRadius}
+                modifiers={[
+                  foregroundStyle(monochromeBar ? primary : trackColor),
+                  ...(monochromeBar ? [opacity(0.22)] : []),
+                  frame({ maxWidth: Infinity }),
+                  frame({ height }),
+                ]}
+              />
+              {lit > 0 ? (
+                <RoundedRectangle
+                  cornerRadius={cornerRadius}
+                  modifiers={[
+                    foregroundStyle(fillColor),
+                    opacity(lit * (monochromeBar ? 0.92 : 0.88)),
+                    frame({ maxWidth: Infinity }),
+                    frame({ height }),
+                  ]}
+                />
+              ) : null}
+            </ZStack>
+          );
+        })}
+      </HStack>
+    );
+  };
+
+  const formatCountdown = (win: SnapshotWindow): string | undefined => {
+    if (win.resetsAt !== undefined) {
+      const remainingMs = win.resetsAt - now;
+      if (remainingMs > 0) {
+        const totalMinutes = Math.max(1, Math.round(remainingMs / 60_000));
+        const days = Math.floor(totalMinutes / (24 * 60));
+        const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+        const minutes = totalMinutes % 60;
+        if (days > 0) {
+          const dayUnit = text.unitDay ?? "d";
+          const hourUnit = text.unitDayHour ?? "h";
+          const sep = dayUnit === "d" ? " " : "";
+          return hours > 0 ? `${days}${dayUnit}${sep}${hours}${hourUnit}` : `${days}${dayUnit}`;
+        }
+        if (hours > 0) {
+          return minutes > 0 ? `${hours}h${minutes}m` : `${hours}h`;
+        }
+        return `${minutes}m`;
+      }
+    }
+    return win.shortReset;
+  };
+
+  const windowDisplayLabel = (provider: SnapshotProvider, win: SnapshotWindow) => {
+    if (provider.driver === "antigravity") {
+      // oxlint-disable-next-line t3code/no-untranslated-copy -- brand name + localized short badge
+      if (win.kind === "session") return `Gemini · ${text.shortSession}`;
+      // oxlint-disable-next-line t3code/no-untranslated-copy -- brand name + localized short badge
+      if (win.kind === "weekly") return `Gemini · ${text.shortWeekly}`;
+    }
+    if (win.kind === "session") return text.sessionLabel;
+    if (win.kind === "weekly") return text.weeklyLabel;
+    return win.label;
+  };
+
+  const paceDisplayText = (pace: SnapshotWindow["pace"]) => {
+    if (pace === "ahead") return text.paceAhead;
+    if (pace === "on") return text.paceOn;
+    if (pace === "under") return text.paceUnder;
+    return undefined;
+  };
+
+  const percentColor = (remaining: number) =>
+    remaining <= 10 && !monochrome ? dangerColor : primary;
+
+  const shortKindTag = (win: SnapshotWindow) =>
+    win.kind === "weekly" ? text.shortWeekly : win.kind === "session" ? text.shortSession : "";
 
   const pickWindows = (provider: SnapshotProvider) => {
     const stale = provider.windows.length > 0 && now >= provider.expiresAt;
@@ -272,8 +408,8 @@ function SubscriptionUsage(
     if (period === "session") {
       return { stale: false, weekly: undefined, session, shown: session ? [session] : [] };
     }
-    // Both / Auto: keep Weekly first so high-level quota leads, then 5h session if present.
-    const pair = [weekly, session].filter((w): w is SnapshotWindow => w !== undefined);
+    // Both / Auto: keep 5h session first, then weekly, matching the in-app Limits layout.
+    const pair = [session, weekly].filter((w): w is SnapshotWindow => w !== undefined);
     const extras = provider.windows.filter((w) => !pair.includes(w));
     return {
       stale: false,
@@ -283,19 +419,10 @@ function SubscriptionUsage(
     };
   };
 
-  const providerColor = (provider: SnapshotProvider) =>
-    provider.colors?.[appearance] ?? defaultProviderColor(provider.driver);
-
-  const percentColor = (remaining: number) =>
-    remaining <= 10 && !monochrome ? dangerColor : primary;
-
-  const shortKindTag = (win: SnapshotWindow) =>
-    win.kind === "weekly" ? text.shortWeekly : win.kind === "session" ? text.shortSession : "";
-
-  // Lock Screen (accessoryRectangular)
+  // Lock Screen (accessoryRectangular) — Crisp monochrome 2-row segmented scale
   if (accessory) {
     return (
-      <VStack alignment="leading" spacing={4} modifiers={props.url ? [widgetURL(props.url)] : []}>
+      <VStack alignment="leading" spacing={6} modifiers={props.url ? [widgetURL(props.url)] : []}>
         {visibleProviders.length === 0 ? (
           <Text modifiers={[font({ textStyle: "caption" }), foregroundStyle(secondary)]}>
             {text.noLimits}
@@ -308,27 +435,25 @@ function SubscriptionUsage(
                 ? picked.session
                 : period === "weekly"
                   ? (picked.weekly ?? picked.shown[0])
-                  : picked.shown.reduce<SnapshotWindow | undefined>(
-                      (best, w) => (!best || w.remaining < best.remaining ? w : best),
-                      undefined,
-                    );
+                  : (picked.session ?? picked.weekly ?? picked.shown[0]);
+            const kindTag = target ? shortKindTag(target) : "";
             return (
-              <VStack key={provider.driver} alignment="leading" spacing={2}>
-                <HStack spacing={4}>
+              <VStack key={provider.driver} alignment="leading" spacing={3}>
+                <HStack spacing={4} alignment="center">
+                  {renderProviderIcon(provider, 11)}
                   <Text
                     modifiers={[
-                      font({ textStyle: "caption", weight: "semibold" }),
+                      font({ size: 11, weight: "semibold" }),
                       lineLimit(1),
                       foregroundStyle(primary),
                     ]}
                   >
-                    {provider.name}
-                    {target && shortKindTag(target) ? ` · ${shortKindTag(target)}` : ""}
+                    {kindTag ? `${provider.name} · ${kindTag}` : provider.name}
                   </Text>
                   <Spacer minLength={2} />
                   <Text
                     modifiers={[
-                      font({ textStyle: "caption", weight: "semibold" }),
+                      font({ size: 11, weight: "bold" }),
                       monospacedDigit(),
                       lineLimit(1),
                       layoutPriority(1),
@@ -342,12 +467,9 @@ function SubscriptionUsage(
                         : text.notApplicable}
                   </Text>
                 </HStack>
-                {target ? (
-                  <ProgressView
-                    value={target.remaining / 100}
-                    modifiers={[progressViewStyle("linear"), frame({ height: 4 }), tint(primary)]}
-                  />
-                ) : null}
+                {target
+                  ? renderSegmentedScale(target.remaining, primary, 14, 4.5, 1.5, 1, true)
+                  : null}
               </VStack>
             );
           })
@@ -363,214 +485,420 @@ function SubscriptionUsage(
       : []),
   ];
 
-  const compactTimeFooter = (
-    <HStack spacing={4}>
-      <Spacer minLength={0} />
-      <Text
-        modifiers={[font({ size: 9 }), monospacedDigit(), foregroundStyle(secondary), lineLimit(1)]}
-      >
-        {props.checkedAt
-          ? new Date(props.checkedAt).toLocaleTimeString(undefined, {
-              hour: "numeric",
-              minute: "2-digit",
-            })
-          : text.tapToConnect}
-      </Text>
-    </HStack>
-  );
+  const disconnectedFooter = !props.checkedAt ? (
+    <Text modifiers={[font({ size: 9.5 }), foregroundStyle(secondary), lineLimit(1)]}>
+      {text.tapToConnect}
+    </Text>
+  ) : null;
 
-  // Small Widget — Single Provider Detailed View
+  // Small Widget — Single Provider Hero Card (Nowdex Segmented Style + Subtle Corner Watermark)
   if (small && visibleProviders.length === 1) {
     const provider = visibleProviders[0]!;
-    const color = providerColor(provider);
+    const color = providerBarColor(provider);
     const picked = pickWindows(provider);
-    const shown = picked.shown.slice(0, 2);
+    const isCursorMulti = provider.driver === "cursor" && picked.shown.length > 1;
+    const shown = isCursorMulti ? picked.shown.slice(0, 3) : picked.shown.slice(0, 2);
+    const soloWindow = shown.length === 1 ? shown[0] : undefined;
+    const soloPace = soloWindow ? paceDisplayText(soloWindow.pace) : undefined;
+
     return (
-      <VStack alignment="leading" spacing={6} modifiers={rootModifiers}>
-        <HStack spacing={6} alignment="center">
-          <Circle
-            modifiers={[
-              foregroundStyle(monochrome ? primary : color),
-              frame({ width: 7, height: 7 }),
-            ]}
-          />
-          <Text
-            modifiers={[font({ size: 13, weight: "bold" }), foregroundStyle(primary), lineLimit(1)]}
-          >
-            {provider.name}
-          </Text>
-          <Spacer minLength={0} />
-        </HStack>
-        {shown.length === 0 ? (
-          <Text modifiers={[font({ size: 11 }), foregroundStyle(secondary), lineLimit(2)]}>
-            {picked.stale
-              ? text.refresh
-              : period === "session" && provider.windows.length > 0
-                ? text.noSessionLimit
-                : provider.detail}
-          </Text>
-        ) : (
-          <VStack alignment="leading" spacing={8}>
-            {shown.map((win) => (
-              <VStack
-                key={`${win.kind}:${win.label}`}
-                alignment="leading"
-                spacing={2}
-                modifiers={[
-                  accessibilityElement("ignore"),
-                  accessibilityLabel(
-                    text.windowAccessibility
-                      .replace("{provider}", provider.name)
-                      .replace("{window}", win.label)
-                      .replace("{remaining}", String(win.remaining))
-                      .replace("{reset}", win.reset)
-                      .replace("{detail}", provider.detail),
-                  ),
-                ]}
-              >
-                <HStack spacing={4}>
+      <ZStack
+        alignment="bottomTrailing"
+        modifiers={[
+          ...rootModifiers,
+          frame({ maxWidth: Infinity, maxHeight: Infinity }),
+          clipped(),
+        ]}
+      >
+        {renderWatermark(provider)}
+        <VStack
+          alignment="leading"
+          spacing={0}
+          modifiers={[frame({ maxWidth: Infinity, maxHeight: Infinity, alignment: "topLeading" })]}
+        >
+          <HStack spacing={5} alignment="center">
+            {renderProviderIcon(provider, 14)}
+            <Text
+              modifiers={[
+                font({ size: 12, weight: "semibold" }),
+                foregroundStyle(primary),
+                lineLimit(1),
+              ]}
+            >
+              {provider.name}
+            </Text>
+            <Spacer minLength={0} />
+          </HStack>
+
+          {shown.length === 0 ? (
+            <VStack alignment="leading" spacing={4}>
+              <Spacer minLength={0} />
+              <Text modifiers={[font({ size: 11 }), foregroundStyle(secondary), lineLimit(2)]}>
+                {picked.stale
+                  ? text.refresh
+                  : period === "session" && provider.windows.length > 0
+                    ? text.noSessionLimit
+                    : provider.detail}
+              </Text>
+              <Spacer minLength={0} />
+              {disconnectedFooter}
+            </VStack>
+          ) : isCursorMulti ? (
+            <VStack alignment="leading" spacing={0}>
+              {(() => {
+                const lead = shown[0]!;
+                const subRows = shown.slice(1, 3);
+                const leadCountdown = formatCountdown(lead);
+                return (
+                  <>
+                    <Spacer minLength={6} />
+                    <HStack alignment="bottom" spacing={4}>
+                      <VStack alignment="leading" spacing={2}>
+                        <Text
+                          modifiers={[
+                            font({ size: 10, weight: "semibold" }),
+                            foregroundStyle(primary),
+                            opacity(0.85),
+                            lineLimit(1),
+                          ]}
+                        >
+                          {lead.label}
+                        </Text>
+                        {leadCountdown ? renderResetChip(leadCountdown, 8.5) : null}
+                      </VStack>
+                      <Spacer minLength={2} />
+                      <HStack alignment="bottom" spacing={1}>
+                        <Text
+                          modifiers={[
+                            font({ size: 26, weight: "regular" }),
+                            monospacedDigit(),
+                            lineLimit(1),
+                            layoutPriority(1),
+                            foregroundStyle(percentColor(lead.remaining)),
+                          ]}
+                        >
+                          {String(lead.remaining)}
+                        </Text>
+                        <Text
+                          modifiers={[
+                            font({ size: 9.5, weight: "medium" }),
+                            foregroundStyle(secondary),
+                            padding({ bottom: 3 }),
+                          ]}
+                        >
+                          %
+                        </Text>
+                      </HStack>
+                    </HStack>
+                    <Spacer minLength={5} />
+                    {renderSegmentedScale(lead.remaining, color, 16, 10, 2, 1.4)}
+                    <Spacer minLength={8} />
+                    <VStack alignment="leading" spacing={5}>
+                      {subRows.map((sub) => (
+                        <HStack key={sub.id ?? sub.label} spacing={5} alignment="center">
+                          <Text
+                            modifiers={[
+                              font({ size: 9, weight: "medium" }),
+                              foregroundStyle(secondary),
+                              lineLimit(1),
+                              frame({ width: 36, alignment: "leading" }),
+                            ]}
+                          >
+                            {sub.label.replace(/ Models$/i, "")}
+                          </Text>
+                          {renderSegmentedScale(sub.remaining, color, 10, 5.5, 1.5, 1)}
+                          <Text
+                            modifiers={[
+                              font({ size: 10, weight: "semibold" }),
+                              monospacedDigit(),
+                              lineLimit(1),
+                              layoutPriority(1),
+                              frame({ width: 28, alignment: "trailing" }),
+                              foregroundStyle(percentColor(sub.remaining)),
+                            ]}
+                          >
+                            {`${sub.remaining}%`}
+                          </Text>
+                        </HStack>
+                      ))}
+                    </VStack>
+                  </>
+                );
+              })()}
+            </VStack>
+          ) : soloWindow ? (
+            <VStack
+              alignment="leading"
+              spacing={0}
+              modifiers={[
+                frame({ maxWidth: Infinity, maxHeight: Infinity, alignment: "topLeading" }),
+                accessibilityElement("ignore"),
+                accessibilityLabel(
+                  text.windowAccessibility
+                    .replace("{provider}", provider.name)
+                    .replace("{window}", soloWindow.label)
+                    .replace("{remaining}", String(soloWindow.remaining))
+                    .replace("{reset}", soloWindow.reset)
+                    .replace("{detail}", provider.detail),
+                ),
+              ]}
+            >
+              <Spacer minLength={8} />
+              <HStack alignment="bottom" spacing={4}>
+                <VStack alignment="leading" spacing={2}>
                   <Text
                     modifiers={[
-                      font({ size: 11, weight: "medium" }),
-                      foregroundStyle(secondary),
+                      font({ size: 10, weight: "semibold" }),
+                      foregroundStyle(primary),
+                      opacity(0.85),
                       lineLimit(1),
                     ]}
                   >
-                    {win.label}
+                    {windowDisplayLabel(provider, soloWindow)}
                   </Text>
-                  <Spacer minLength={2} />
+                  {(() => {
+                    const countdown = formatCountdown(soloWindow);
+                    return countdown ? renderResetChip(countdown, 8.5) : null;
+                  })()}
+                </VStack>
+                <Spacer minLength={2} />
+                <HStack alignment="bottom" spacing={1}>
                   <Text
                     modifiers={[
-                      font({ size: 12, weight: "bold" }),
+                      font({ size: 36, weight: "regular" }),
                       monospacedDigit(),
+                      lineLimit(1),
                       layoutPriority(1),
-                      foregroundStyle(percentColor(win.remaining)),
+                      foregroundStyle(percentColor(soloWindow.remaining)),
                     ]}
                   >
-                    {`${win.remaining}%`}
+                    {String(soloWindow.remaining)}
+                  </Text>
+                  <Text
+                    modifiers={[
+                      font({ size: 10, weight: "medium" }),
+                      foregroundStyle(secondary),
+                      padding({ bottom: 5 }),
+                    ]}
+                  >
+                    %
                   </Text>
                 </HStack>
-                {renderPaceBar(win.remaining, color, livePacePercent(win), 6)}
-                {win.shortReset ? (
-                  <Text modifiers={[font({ size: 9 }), foregroundStyle(secondary), lineLimit(1)]}>
-                    {win.shortReset}
-                  </Text>
-                ) : null}
-              </VStack>
-            ))}
-          </VStack>
-        )}
-        <Spacer minLength={0} />
-        {compactTimeFooter}
-      </VStack>
-    );
-  }
-
-  // Small Widget — Dense Multi-Provider Stack (fits up to 4 core subscriptions cleanly!)
-  if (small || simplified) {
-    return (
-      <VStack alignment="leading" spacing={5} modifiers={rootModifiers}>
-        {visibleProviders.length === 0 ? (
-          <Text modifiers={[font({ textStyle: "caption" }), foregroundStyle(secondary)]}>
-            {text.noLimits}
-          </Text>
-        ) : (
-          <VStack alignment="leading" spacing={visibleProviders.length >= 4 ? 5 : 7}>
-            {visibleProviders.map((provider) => {
-              const color = providerColor(provider);
-              const picked = pickWindows(provider);
-              // Small multi-provider defaults to Weekly (falls back to first available window).
-              const target =
-                period === "session" ? picked.session : (picked.weekly ?? picked.shown[0]);
-              const showPeriodHint =
-                target !== undefined &&
-                (period === "session" || (period === "auto" && target.kind === "session"));
-              return (
-                <VStack
-                  key={provider.driver}
-                  alignment="leading"
-                  spacing={2}
-                  modifiers={[
-                    frame({ maxWidth: Infinity, alignment: "leading" }),
-                    accessibilityElement("ignore"),
-                    accessibilityLabel(
-                      target
-                        ? text.windowAccessibility
-                            .replace("{provider}", provider.name)
-                            .replace("{window}", target.label)
-                            .replace("{remaining}", String(target.remaining))
-                            .replace("{reset}", target.reset)
-                            .replace("{detail}", provider.detail)
-                        : text.providerAccessibility
-                            .replace("{provider}", provider.name)
-                            .replace("{detail}", picked.stale ? text.refresh : provider.detail),
-                    ),
-                  ]}
-                >
-                  <HStack spacing={4} alignment="center">
-                    <Circle
-                      modifiers={[
-                        foregroundStyle(monochrome ? primary : color),
-                        frame({ width: 5, height: 5 }),
-                      ]}
-                    />
-                    <Text
-                      modifiers={[
-                        font({ size: 11, weight: "semibold" }),
-                        foregroundStyle(primary),
-                        lineLimit(1),
-                      ]}
-                    >
-                      {provider.name}
+              </HStack>
+              <Spacer minLength={10} />
+              {renderSegmentedScale(soloWindow.remaining, color, 16, 11, 2, 1.5)}
+              <Spacer minLength={0} />
+              {soloPace ? (
+                <VStack alignment="leading" spacing={6}>
+                  <Rectangle
+                    modifiers={[
+                      foregroundStyle(dividerColor),
+                      frame({ maxWidth: Infinity }),
+                      frame({ height: 1 }),
+                    ]}
+                  />
+                  <HStack alignment="center">
+                    <Text modifiers={[font({ size: 9.5 }), foregroundStyle(secondary)]}>
+                      {text.paceTitle}
                     </Text>
-                    {showPeriodHint ? (
-                      <Text
-                        modifiers={[
-                          font({ size: 9, weight: "medium" }),
-                          foregroundStyle(secondary),
-                          lineLimit(1),
-                        ]}
-                      >
-                        {shortKindTag(target)}
-                      </Text>
-                    ) : null}
                     <Spacer minLength={2} />
                     <Text
                       modifiers={[
-                        font({ size: 11, weight: "bold" }),
-                        monospacedDigit(),
-                        layoutPriority(1),
-                        foregroundStyle(target ? percentColor(target.remaining) : secondary),
+                        font({ size: 9.5, weight: "semibold" }),
+                        foregroundStyle(primary),
                       ]}
                     >
-                      {target ? `${target.remaining}%` : "-"}
+                      {soloPace}
                     </Text>
                   </HStack>
-                  {target ? (
-                    renderPaceBar(target.remaining, color, livePacePercent(target), 5)
-                  ) : (
-                    <Capsule
-                      modifiers={[
-                        foregroundStyle(trackColor),
-                        frame({ maxWidth: Infinity }),
-                        frame({ height: 5 }),
-                      ]}
-                    />
-                  )}
                 </VStack>
-              );
-            })}
+              ) : null}
+            </VStack>
+          ) : (
+            <VStack alignment="leading" spacing={0}>
+              <Spacer minLength={4} />
+              <VStack alignment="leading" spacing={10}>
+                {shown.map((win) => {
+                  const countdown = formatCountdown(win);
+                  return (
+                    <VStack
+                      key={`${win.kind}:${win.label}`}
+                      alignment="leading"
+                      spacing={4}
+                      modifiers={[
+                        accessibilityElement("ignore"),
+                        accessibilityLabel(
+                          text.windowAccessibility
+                            .replace("{provider}", provider.name)
+                            .replace("{window}", win.label)
+                            .replace("{remaining}", String(win.remaining))
+                            .replace("{reset}", win.reset)
+                            .replace("{detail}", provider.detail),
+                        ),
+                      ]}
+                    >
+                      <HStack alignment="bottom" spacing={4}>
+                        <VStack alignment="leading" spacing={1.5}>
+                          <Text
+                            modifiers={[
+                              font({ size: 10, weight: "semibold" }),
+                              foregroundStyle(primary),
+                              opacity(0.85),
+                              lineLimit(1),
+                            ]}
+                          >
+                            {windowDisplayLabel(provider, win)}
+                          </Text>
+                          {countdown ? renderResetChip(countdown, 8.5) : null}
+                        </VStack>
+                        <Spacer minLength={2} />
+                        <HStack alignment="bottom" spacing={1}>
+                          <Text
+                            modifiers={[
+                              font({ size: 25, weight: "regular" }),
+                              monospacedDigit(),
+                              lineLimit(1),
+                              layoutPriority(1),
+                              foregroundStyle(percentColor(win.remaining)),
+                            ]}
+                          >
+                            {String(win.remaining)}
+                          </Text>
+                          <Text
+                            modifiers={[
+                              font({ size: 9, weight: "medium" }),
+                              foregroundStyle(secondary),
+                              padding({ bottom: 3 }),
+                            ]}
+                          >
+                            %
+                          </Text>
+                        </HStack>
+                      </HStack>
+                      {renderSegmentedScale(win.remaining, color, 16, 10, 2, 1.4)}
+                    </VStack>
+                  );
+                })}
+              </VStack>
+              <Spacer minLength={0} />
+            </VStack>
+          )}
+        </VStack>
+      </ZStack>
+    );
+  }
+
+  // Small Widget — Compact 4-in-1 Multi-Provider Stack (Nowdex Mini Segmented Scale)
+  if (small || simplified) {
+    const renderSmallRow = (provider: SnapshotProvider) => {
+      const color = providerBarColor(provider);
+      const picked = pickWindows(provider);
+      const target =
+        period === "session"
+          ? picked.session
+          : period === "weekly"
+            ? (picked.weekly ?? picked.shown[0])
+            : (picked.session ?? picked.weekly ?? picked.shown[0]);
+      const kindTag = target ? shortKindTag(target) : "";
+      return (
+        <VStack
+          key={provider.driver}
+          alignment="leading"
+          spacing={3}
+          modifiers={[
+            frame({ maxWidth: Infinity, alignment: "leading" }),
+            accessibilityElement("ignore"),
+            accessibilityLabel(
+              target
+                ? text.windowAccessibility
+                    .replace("{provider}", provider.name)
+                    .replace("{window}", target.label)
+                    .replace("{remaining}", String(target.remaining))
+                    .replace("{reset}", target.reset)
+                    .replace("{detail}", provider.detail)
+                : text.providerAccessibility
+                    .replace("{provider}", provider.name)
+                    .replace("{detail}", picked.stale ? text.refresh : provider.detail),
+            ),
+          ]}
+        >
+          <HStack spacing={4} alignment="center">
+            {renderProviderIcon(provider, 11.5)}
+            <Text
+              modifiers={[
+                font({ size: 11, weight: "semibold" }),
+                foregroundStyle(primary),
+                lineLimit(1),
+              ]}
+            >
+              {provider.name}
+            </Text>
+            {kindTag ? (
+              <Text
+                modifiers={[
+                  font({ size: 9, weight: "medium" }),
+                  foregroundStyle(secondary),
+                  lineLimit(1),
+                ]}
+              >
+                {kindTag}
+              </Text>
+            ) : null}
+            <Spacer minLength={2} />
+            <Text
+              modifiers={[
+                font({ size: 11, weight: "bold" }),
+                monospacedDigit(),
+                layoutPriority(1),
+                foregroundStyle(target ? percentColor(target.remaining) : secondary),
+              ]}
+            >
+              {target ? `${target.remaining}%` : "-"}
+            </Text>
+          </HStack>
+          {renderSegmentedScale(target ? target.remaining : 0, color, 16, 5.5, 1.5, 1)}
+        </VStack>
+      );
+    };
+
+    const evenlyDistribute = visibleProviders.length >= 4;
+    return (
+      <VStack alignment="leading" spacing={0} modifiers={rootModifiers}>
+        {visibleProviders.length === 0 ? (
+          <VStack alignment="leading" spacing={4}>
+            <Spacer minLength={0} />
+            <Text modifiers={[font({ textStyle: "caption" }), foregroundStyle(secondary)]}>
+              {text.noLimits}
+            </Text>
+            <Spacer minLength={0} />
+          </VStack>
+        ) : evenlyDistribute ? (
+          visibleProviders.flatMap((provider, index) => [
+            index > 0 ? <Spacer key={`gap-${provider.driver}`} minLength={2} /> : null,
+            renderSmallRow(provider),
+          ])
+        ) : (
+          <VStack alignment="leading" spacing={0}>
+            <Spacer minLength={0} />
+            <VStack alignment="leading" spacing={visibleProviders.length === 3 ? 10 : 12}>
+              {visibleProviders.map(renderSmallRow)}
+            </VStack>
+            <Spacer minLength={0} />
           </VStack>
         )}
-        <Spacer minLength={0} />
-        {compactTimeFooter}
+        {!props.checkedAt && visibleProviders.every((p) => p.windows.length === 0) ? (
+          <VStack alignment="leading" spacing={0}>
+            <Spacer minLength={4} />
+            {disconnectedFooter}
+          </VStack>
+        ) : null}
       </VStack>
     );
   }
 
-  // Medium Widget — 2x2 Matrix for 3-4 Providers (Weekly + 5h neatly aligned, graceful 1-window fallback!)
+  // Medium Widget — 2x2 Matrix for 3-4 Providers (Nowdex Segmented Scale, 5h above Weekly)
   const renderMediumCell = (provider: SnapshotProvider) => {
-    const color = providerColor(provider);
+    const color = providerBarColor(provider);
     const picked = pickWindows(provider);
     const rows =
       period === "weekly"
@@ -581,27 +909,32 @@ function SubscriptionUsage(
           ? picked.session
             ? [picked.session]
             : []
-          : [picked.weekly, picked.session].filter((w): w is SnapshotWindow => w !== undefined);
+          : [picked.session, picked.weekly].filter((w): w is SnapshotWindow => w !== undefined);
     const effectiveRows = rows.length > 0 ? rows : picked.shown.slice(0, 2);
     const singleWindow = effectiveRows.length === 1 ? effectiveRows[0] : undefined;
+    const headerResetWindow =
+      !singleWindow && effectiveRows.length > 0
+        ? picked.weekly &&
+          picked.weekly.remaining <= 10 &&
+          (!picked.session || picked.session.remaining > 10)
+          ? picked.weekly
+          : (picked.session ?? picked.weekly)
+        : undefined;
+    const headerCountdown = headerResetWindow ? formatCountdown(headerResetWindow) : undefined;
+    const singleCountdown = singleWindow ? formatCountdown(singleWindow) : undefined;
 
     return (
       <VStack
         key={provider.driver}
         alignment="leading"
-        spacing={singleWindow ? 4 : 3}
+        spacing={singleWindow ? 5 : 4.5}
         modifiers={[
           frame({ maxWidth: Infinity, alignment: "leading" }),
           fixedSize({ horizontal: false, vertical: true }),
         ]}
       >
-        <HStack spacing={5} alignment="center">
-          <Circle
-            modifiers={[
-              foregroundStyle(monochrome ? primary : color),
-              frame({ width: 6, height: 6 }),
-            ]}
-          />
+        <HStack spacing={4.5} alignment="center">
+          {renderProviderIcon(provider, 13)}
           <Text
             modifiers={[
               font({ size: 11.5, weight: "bold" }),
@@ -623,6 +956,8 @@ function SubscriptionUsage(
             >
               {`${singleWindow.remaining}%`}
             </Text>
+          ) : headerCountdown ? (
+            renderResetChip(headerCountdown, 8.5)
           ) : null}
         </HStack>
         {effectiveRows.length === 0 ? (
@@ -636,7 +971,7 @@ function SubscriptionUsage(
         ) : singleWindow ? (
           <VStack
             alignment="leading"
-            spacing={2}
+            spacing={4}
             modifiers={[
               accessibilityElement("ignore"),
               accessibilityLabel(
@@ -649,15 +984,19 @@ function SubscriptionUsage(
               ),
             ]}
           >
-            {renderPaceBar(singleWindow.remaining, color, livePacePercent(singleWindow), 6)}
-            <Text modifiers={[font({ size: 9.5 }), foregroundStyle(secondary), lineLimit(1)]}>
-              {singleWindow.shortReset
-                ? `${singleWindow.label} · ${singleWindow.shortReset}`
-                : singleWindow.label}
-            </Text>
+            {renderSegmentedScale(singleWindow.remaining, color, 14, 8, 2, 1.4)}
+            <HStack spacing={4} alignment="center">
+              <Text modifiers={[font({ size: 9.5 }), foregroundStyle(secondary), lineLimit(1)]}>
+                {singleWindow.kind === "weekly"
+                  ? (text.weeklyQuotaLabel ?? singleWindow.label)
+                  : singleWindow.label}
+              </Text>
+              <Spacer minLength={2} />
+              {singleCountdown ? renderResetChip(singleCountdown, 8.5) : null}
+            </HStack>
           </VStack>
         ) : (
-          <VStack alignment="leading" spacing={3}>
+          <VStack alignment="leading" spacing={4}>
             {effectiveRows.map((win) => (
               <HStack
                 key={`${win.kind}:${win.label}`}
@@ -680,19 +1019,19 @@ function SubscriptionUsage(
                     font({ size: 9.5, weight: "semibold" }),
                     foregroundStyle(secondary),
                     lineLimit(1),
-                    frame({ width: 16, alignment: "leading" }),
+                    frame({ width: 15, alignment: "leading" }),
                   ]}
                 >
                   {shortKindTag(win) || "•"}
                 </Text>
-                {renderPaceBar(win.remaining, color, livePacePercent(win), 5)}
+                {renderSegmentedScale(win.remaining, color, 12, 6.5, 1.8, 1.2)}
                 <Text
                   modifiers={[
                     font({ size: 10, weight: "semibold" }),
                     monospacedDigit(),
                     lineLimit(1),
                     layoutPriority(1),
-                    frame({ width: 29, alignment: "trailing" }),
+                    frame({ width: 28, alignment: "trailing" }),
                     foregroundStyle(percentColor(win.remaining)),
                   ]}
                 >
@@ -710,11 +1049,18 @@ function SubscriptionUsage(
     const topRow = visibleProviders.slice(0, 2);
     const bottomRow = visibleProviders.slice(2, 4);
     return (
-      <VStack alignment="leading" spacing={6} modifiers={rootModifiers}>
-        <HStack alignment="top" spacing={14}>
+      <VStack
+        alignment="leading"
+        spacing={14}
+        modifiers={[
+          ...rootModifiers,
+          frame({ maxWidth: Infinity, maxHeight: Infinity, alignment: "center" }),
+        ]}
+      >
+        <HStack alignment="top" spacing={16}>
           {topRow.map(renderMediumCell)}
         </HStack>
-        <HStack alignment="top" spacing={14}>
+        <HStack alignment="top" spacing={16}>
           {bottomRow.map(renderMediumCell)}
           {bottomRow.length === 1 ? (
             <VStack modifiers={[frame({ maxWidth: Infinity })]}>
@@ -722,38 +1068,40 @@ function SubscriptionUsage(
             </VStack>
           ) : null}
         </HStack>
-        <Spacer minLength={0} />
-        {compactTimeFooter}
       </VStack>
     );
   }
 
-  // Spacious Column/Row Layout (Medium with 1-2 providers, Large, ExtraLarge)
-  const windowLimit = large ? 2 : 2;
-  const renderDetailedProvider = (provider: SnapshotProvider) => {
-    const color = providerColor(provider);
+  // Large Widget — 4-Provider Detailed Card (Side-by-side 5h / Weekly for 2-window providers)
+  const renderLargeProvider = (provider: SnapshotProvider, index: number) => {
+    const color = providerBarColor(provider);
     const picked = pickWindows(provider);
-    const shown = picked.shown.slice(0, windowLimit);
+    const shown = picked.shown.slice(0, 2);
+    const paceLabel = paceDisplayText(shown[0]?.pace ?? shown[1]?.pace);
     return (
       <VStack
         key={provider.driver}
         alignment="leading"
-        spacing={large ? 4 : 5}
+        spacing={6}
         modifiers={[
           frame({ maxWidth: Infinity, alignment: "leading" }),
           fixedSize({ horizontal: false, vertical: true }),
         ]}
       >
-        <HStack spacing={6} alignment="center">
-          <Circle
+        {index > 0 ? (
+          <Rectangle
             modifiers={[
-              foregroundStyle(monochrome ? primary : color),
-              frame({ width: 7, height: 7 }),
+              foregroundStyle(dividerColor),
+              frame({ maxWidth: Infinity }),
+              frame({ height: 1 }),
             ]}
           />
+        ) : null}
+        <HStack spacing={6} alignment="center">
+          {renderProviderIcon(provider, 14)}
           <Text
             modifiers={[
-              font({ size: large ? 13 : 14, weight: "bold" }),
+              font({ size: 12.5, weight: "bold" }),
               foregroundStyle(primary),
               lineLimit(1),
             ]}
@@ -761,13 +1109,9 @@ function SubscriptionUsage(
             {provider.name}
           </Text>
           <Spacer minLength={4} />
-          {large ? (
+          {paceLabel ? (
             <Text modifiers={[font({ size: 10 }), foregroundStyle(secondary), lineLimit(1)]}>
-              {picked.stale
-                ? text.refresh
-                : provider.detail === text.subscriptionRemaining
-                  ? ""
-                  : provider.detail}
+              {paceLabel}
             </Text>
           ) : null}
         </HStack>
@@ -781,14 +1125,71 @@ function SubscriptionUsage(
                   ? text.noWeeklyLimit
                   : provider.detail}
           </Text>
+        ) : shown.length === 2 ? (
+          <HStack alignment="top" spacing={12}>
+            {shown.map((win) => {
+              const countdown = formatCountdown(win);
+              const label =
+                win.kind === "session"
+                  ? (text.sessionLabel ?? win.label)
+                  : win.kind === "weekly"
+                    ? (text.weeklyLabel ?? win.label)
+                    : win.label;
+              return (
+                <VStack
+                  key={`${win.kind}:${win.label}`}
+                  alignment="leading"
+                  spacing={4}
+                  modifiers={[
+                    frame({ maxWidth: Infinity, alignment: "leading" }),
+                    accessibilityElement("ignore"),
+                    accessibilityLabel(
+                      text.windowAccessibility
+                        .replace("{provider}", provider.name)
+                        .replace("{window}", win.label)
+                        .replace("{remaining}", String(win.remaining))
+                        .replace("{reset}", win.reset)
+                        .replace("{detail}", provider.detail),
+                    ),
+                  ]}
+                >
+                  <HStack spacing={4} alignment="center">
+                    <Text
+                      modifiers={[
+                        font({ size: 10, weight: "medium" }),
+                        foregroundStyle(secondary),
+                        lineLimit(1),
+                      ]}
+                    >
+                      {countdown ? `${label} · ${countdown}` : label}
+                    </Text>
+                    <Spacer minLength={2} />
+                    <Text
+                      modifiers={[
+                        font({ size: 11.5, weight: "bold" }),
+                        monospacedDigit(),
+                        layoutPriority(1),
+                        foregroundStyle(percentColor(win.remaining)),
+                      ]}
+                    >
+                      {`${win.remaining}%`}
+                    </Text>
+                  </HStack>
+                  {renderSegmentedScale(win.remaining, color, 12, 8, 2, 1.4)}
+                </VStack>
+              );
+            })}
+          </HStack>
         ) : (
-          <VStack alignment="leading" spacing={large ? 4 : 6}>
-            {shown.map((win) => (
+          (() => {
+            const win = shown[0]!;
+            const countdown = formatCountdown(win);
+            return (
               <VStack
-                key={`${win.kind}:${win.label}`}
                 alignment="leading"
-                spacing={2}
+                spacing={4}
                 modifiers={[
+                  frame({ maxWidth: Infinity, alignment: "leading" }),
                   accessibilityElement("ignore"),
                   accessibilityLabel(
                     text.windowAccessibility
@@ -800,17 +1201,18 @@ function SubscriptionUsage(
                   ),
                 ]}
               >
-                <HStack spacing={4}>
+                <HStack spacing={6} alignment="center">
                   <Text
                     modifiers={[
-                      font({ size: 11, weight: "medium" }),
+                      font({ size: 10, weight: "medium" }),
                       foregroundStyle(secondary),
                       lineLimit(1),
                     ]}
                   >
-                    {win.label}
+                    {win.kind === "weekly" ? (text.weeklyQuotaLabel ?? win.label) : win.label}
                   </Text>
                   <Spacer minLength={2} />
+                  {countdown ? renderResetChip(countdown, 9) : null}
                   <Text
                     modifiers={[
                       font({ size: 11.5, weight: "bold" }),
@@ -822,49 +1224,130 @@ function SubscriptionUsage(
                     {`${win.remaining}%`}
                   </Text>
                 </HStack>
-                {renderPaceBar(win.remaining, color, livePacePercent(win), 6)}
-                {!large || visibleProviders.length <= 3 ? (
-                  <Text modifiers={[font({ size: 9.5 }), foregroundStyle(secondary), lineLimit(1)]}>
-                    {win.reset}
-                  </Text>
-                ) : null}
+                {renderSegmentedScale(win.remaining, color, 24, 8, 2, 1.4)}
               </VStack>
-            ))}
+            );
+          })()
+        )}
+      </VStack>
+    );
+  };
+
+  // Medium Widget — 1-2 Providers Detailed Columns
+  const renderDetailedMediumProvider = (provider: SnapshotProvider) => {
+    const color = providerBarColor(provider);
+    const picked = pickWindows(provider);
+    const shown = picked.shown.slice(0, 2);
+    return (
+      <VStack
+        key={provider.driver}
+        alignment="leading"
+        spacing={6}
+        modifiers={[
+          frame({ maxWidth: Infinity, alignment: "leading" }),
+          fixedSize({ horizontal: false, vertical: true }),
+        ]}
+      >
+        <HStack spacing={6} alignment="center">
+          {renderProviderIcon(provider, 15)}
+          <Text
+            modifiers={[
+              font({ size: 13.5, weight: "bold" }),
+              foregroundStyle(primary),
+              lineLimit(1),
+            ]}
+          >
+            {provider.name}
+          </Text>
+          <Spacer minLength={2} />
+        </HStack>
+        {shown.length === 0 ? (
+          <Text modifiers={[font({ size: 11 }), foregroundStyle(secondary), lineLimit(1)]}>
+            {picked.stale ? text.refresh : provider.detail}
+          </Text>
+        ) : (
+          <VStack alignment="leading" spacing={8}>
+            {shown.map((win) => {
+              const countdown = formatCountdown(win);
+              return (
+                <VStack key={`${win.kind}:${win.label}`} alignment="leading" spacing={3.5}>
+                  <HStack spacing={4} alignment="center">
+                    <Text
+                      modifiers={[
+                        font({ size: 10.5, weight: "medium" }),
+                        foregroundStyle(secondary),
+                        lineLimit(1),
+                      ]}
+                    >
+                      {windowDisplayLabel(provider, win)}
+                    </Text>
+                    <Spacer minLength={2} />
+                    {countdown ? renderResetChip(countdown, 8.5) : null}
+                    <Text
+                      modifiers={[
+                        font({ size: 11.5, weight: "bold" }),
+                        monospacedDigit(),
+                        layoutPriority(1),
+                        foregroundStyle(percentColor(win.remaining)),
+                      ]}
+                    >
+                      {`${win.remaining}%`}
+                    </Text>
+                  </HStack>
+                  {renderSegmentedScale(win.remaining, color, 16, 8, 2, 1.4)}
+                </VStack>
+              );
+            })}
           </VStack>
         )}
       </VStack>
     );
   };
 
+  if (large) {
+    return (
+      <VStack
+        alignment="leading"
+        spacing={0}
+        modifiers={[
+          ...rootModifiers,
+          frame({ maxWidth: Infinity, maxHeight: Infinity, alignment: "center" }),
+        ]}
+      >
+        {visibleProviders.length === 0 ? (
+          <Text modifiers={[font({ textStyle: "caption" }), foregroundStyle(secondary)]}>
+            {text.noLimits}
+          </Text>
+        ) : (
+          visibleProviders.flatMap((provider, index) => [
+            index > 0 ? <Spacer key={`lg-gap-${provider.driver}`} minLength={6} /> : null,
+            renderLargeProvider(provider, index),
+          ])
+        )}
+        {disconnectedFooter}
+      </VStack>
+    );
+  }
+
   return (
-    <VStack alignment="leading" spacing={large ? 8 : 6} modifiers={rootModifiers}>
+    <VStack
+      alignment="leading"
+      spacing={6}
+      modifiers={[
+        ...rootModifiers,
+        frame({ maxWidth: Infinity, maxHeight: Infinity, alignment: "center" }),
+      ]}
+    >
       {visibleProviders.length === 0 ? (
         <Text modifiers={[font({ textStyle: "caption" }), foregroundStyle(secondary)]}>
           {text.noLimits}
         </Text>
-      ) : large ? (
-        <VStack alignment="leading" spacing={10}>
-          {visibleProviders.map(renderDetailedProvider)}
-        </VStack>
       ) : (
         <HStack alignment="top" spacing={16}>
-          {visibleProviders.map(renderDetailedProvider)}
+          {visibleProviders.map(renderDetailedMediumProvider)}
         </HStack>
       )}
-      <Spacer minLength={0} />
-      <Text modifiers={[font({ textStyle: "caption2" }), foregroundStyle(secondary), lineLimit(1)]}>
-        {props.checkedAt
-          ? text.asOf.replace(
-              "{time}",
-              new Date(props.checkedAt).toLocaleString(undefined, {
-                hour: "numeric",
-                minute: "2-digit",
-                month: "short",
-                day: "numeric",
-              }),
-            )
-          : text.tapToConnect}
-      </Text>
+      {disconnectedFooter}
     </VStack>
   );
 }

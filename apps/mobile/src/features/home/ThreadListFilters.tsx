@@ -1,8 +1,19 @@
-import { useGT } from "gt-react-native";
+import { useGT, useMessages } from "gt-react-native";
 import { Pressable, ScrollView } from "react-native";
+import type { MenuAction } from "@react-native-menu/menu";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { ListFilterMenu } from "../layout/workspace/ListFilterMenu";
 import type { EnvironmentId } from "@t3tools/contracts";
+import {
+  DEFAULT_THREAD_LIST_SECTION_ORDER,
+  DEFAULT_THREAD_LIST_SORT_ORDER,
+  THREAD_LIST_SECTION_PRESETS,
+  THREAD_LIST_SORT_OPTIONS,
+  isThreadListSortOrder,
+  sameThreadListSectionOrder,
+  type ThreadListSection,
+  type ThreadListSortOrder,
+} from "../threads/threadListSort";
 import type {
   HomeListFilterMenuEnvironment,
   HomeListFilterMenuProject,
@@ -13,18 +24,65 @@ export function ThreadListFilters(props: {
   readonly projects: ReadonlyArray<HomeListFilterMenuProject>;
   readonly selectedEnvironmentId: EnvironmentId | null;
   readonly selectedProjectKey: string | null;
+  readonly sortOrder: ThreadListSortOrder;
+  readonly sectionOrder: readonly ThreadListSection[];
+  readonly workingShelfEnabled: boolean;
   readonly onEnvironmentChange: (environmentId: EnvironmentId | null) => void;
   readonly onProjectChange: (projectKey: string | null) => void;
+  readonly onSortOrderChange: (order: ThreadListSortOrder) => void;
+  readonly onSectionOrderChange: (order: readonly ThreadListSection[]) => void;
+  readonly onOpenSortSettings?: () => void;
   /** List padding the scroller bleeds through so pills start where row content does. */
   readonly gutter: number;
 }) {
   const gt = useGT();
+  const m = useMessages();
   const selectedEnvironment = props.environments.find(
     (environment) => environment.environmentId === props.selectedEnvironmentId,
   );
   const selectedProject = props.projects.find(
     (project) => project.key === props.selectedProjectKey,
   );
+  const activeSortOption =
+    THREAD_LIST_SORT_OPTIONS.find((option) => option.order === props.sortOrder) ??
+    THREAD_LIST_SORT_OPTIONS[0]!;
+  const sortCustomized =
+    props.sortOrder !== DEFAULT_THREAD_LIST_SORT_ORDER ||
+    (props.workingShelfEnabled &&
+      props.sortOrder !== "manual" &&
+      !sameThreadListSectionOrder(props.sectionOrder, DEFAULT_THREAD_LIST_SECTION_ORDER));
+  const sortActions: MenuAction[] = [
+    ...THREAD_LIST_SORT_OPTIONS.map((option) => ({
+      id: `sort:${option.order}`,
+      title: m(option.label),
+      state: option.order === props.sortOrder ? ("on" as const) : ("off" as const),
+    })),
+    ...(props.workingShelfEnabled && props.sortOrder !== "manual"
+      ? [
+          {
+            id: "section-order",
+            title: gt("Group order", { $context: "chat list status group order heading" }),
+            displayInline: true,
+            subactions: THREAD_LIST_SECTION_PRESETS.map((preset) => ({
+              id: `preset:${preset.id}`,
+              title: m(preset.label),
+              state: sameThreadListSectionOrder(props.sectionOrder, preset.order)
+                ? ("on" as const)
+                : ("off" as const),
+            })),
+          },
+        ]
+      : []),
+    ...(props.onOpenSortSettings
+      ? [
+          {
+            id: "sort:settings",
+            title: gt("Customize in Settings…"),
+            image: "gearshape",
+          },
+        ]
+      : []),
+  ];
   return (
     <ScrollView
       horizontal
@@ -32,6 +90,30 @@ export function ThreadListFilters(props: {
       style={{ marginHorizontal: -props.gutter, overflow: "visible" }}
       contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 2, paddingBottom: 10, gap: 8 }}
     >
+      <ListFilterMenu
+        label={m(activeSortOption.shortLabel)}
+        accessibilityLabel={gt("Sort threads")}
+        active={sortCustomized}
+        actions={sortActions}
+        onSelect={(id) => {
+          if (id === "sort:settings") {
+            props.onOpenSortSettings?.();
+            return;
+          }
+          if (id.startsWith("sort:")) {
+            const candidate = id.slice("sort:".length);
+            if (isThreadListSortOrder(candidate)) props.onSortOrderChange(candidate);
+            return;
+          }
+          if (id.startsWith("preset:")) {
+            const presetId = id.slice("preset:".length);
+            const preset = THREAD_LIST_SECTION_PRESETS.find(
+              (candidate) => candidate.id === presetId,
+            );
+            if (preset) props.onSectionOrderChange(preset.order);
+          }
+        }}
+      />
       <ListFilterMenu
         label={selectedEnvironment?.label ?? gt("All environments")}
         accessibilityLabel={gt("Filter threads by environment")}

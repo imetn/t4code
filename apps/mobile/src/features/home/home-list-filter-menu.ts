@@ -7,6 +7,13 @@ import { msg } from "gt-react-native";
 import type { AppBarMenuItem } from "../../components/ui/AppBar.types";
 import { m, type MessageResolver } from "../../i18n/messages";
 import type { WorkspaceEnvironment } from "../../state/workspaceModel";
+import {
+  THREAD_LIST_SECTION_PRESETS,
+  THREAD_LIST_SORT_OPTIONS,
+  sameThreadListSectionOrder,
+  type ThreadListSection,
+  type ThreadListSortOrder,
+} from "../threads/threadListSort";
 
 export interface HomeListFilterMenuEnvironment {
   readonly environmentId: EnvironmentId;
@@ -31,6 +38,15 @@ export interface HomeListFilterMenuProject {
   readonly label: string;
 }
 
+export interface HomeListFilterMenuSort {
+  readonly sortOrder: ThreadListSortOrder;
+  readonly sectionOrder: readonly ThreadListSection[];
+  readonly workingShelfEnabled: boolean;
+  readonly onSortOrderChange: (order: ThreadListSortOrder) => void;
+  readonly onSectionOrderChange: (order: readonly ThreadListSection[]) => void;
+  readonly onOpenSortSettings?: () => void;
+}
+
 export function buildHomeListFilterMenuItems(
   props: {
     readonly environments: ReadonlyArray<HomeListFilterMenuEnvironment>;
@@ -39,6 +55,7 @@ export function buildHomeListFilterMenuItems(
     readonly selectedProjectKey: string | null;
     readonly onEnvironmentChange: (environmentId: EnvironmentId | null) => void;
     readonly onProjectChange: (projectKey: string | null) => void;
+    readonly sort?: HomeListFilterMenuSort;
   },
   resolve: MessageResolver = m,
 ): AppBarMenuItem[] {
@@ -84,6 +101,43 @@ export function buildHomeListFilterMenuItems(
         })),
       ],
     });
+  }
+
+  if (props.sort) {
+    const sort = props.sort;
+    items.push({
+      id: "sort",
+      title: resolve(msg("Sort by", { $context: "chat list sort menu heading" })),
+      items: THREAD_LIST_SORT_OPTIONS.map((option) => ({
+        id: `sort:${option.order}`,
+        title: resolve(option.label),
+        selected: sort.sortOrder === option.order,
+        onPress: () => sort.onSortOrderChange(option.order),
+      })),
+    });
+    if (sort.workingShelfEnabled && sort.sortOrder !== "manual") {
+      items.push({
+        id: "section-order",
+        title: resolve(msg("Group order", { $context: "chat list status group order heading" })),
+        items: [
+          ...THREAD_LIST_SECTION_PRESETS.map((preset) => ({
+            id: `preset:${preset.id}`,
+            title: resolve(preset.label),
+            selected: sameThreadListSectionOrder(sort.sectionOrder, preset.order),
+            onPress: () => sort.onSectionOrderChange(preset.order),
+          })),
+          ...(sort.onOpenSortSettings
+            ? [
+                {
+                  id: "sort:settings",
+                  title: resolve(msg("Customize in Settings…")),
+                  onPress: sort.onOpenSortSettings,
+                },
+              ]
+            : []),
+        ],
+      });
+    }
   }
 
   return items;

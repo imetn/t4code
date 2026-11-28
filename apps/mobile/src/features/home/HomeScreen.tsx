@@ -78,6 +78,7 @@ import {
   ThreadListV2SettledShelfHeader,
   ThreadListV2ShowMoreRow,
   ThreadListV2SnoozedShelfHeader,
+  ThreadListV2StatusSectionHeader,
   ThreadListV2WorkingShelfHeader,
 } from "../threads/thread-list-v2-items";
 import { useThreadRowProviderInstanceResolver } from "../threads/thread-provider-instance";
@@ -126,6 +127,7 @@ interface HomeScreenProps {
   readonly onProjectChange: (projectKey: string | null) => void;
   readonly onAddConnection: () => void;
   readonly onOpenSettings: () => void;
+  readonly onOpenSortSettings?: () => void;
   readonly onStartNewTask: () => void;
   readonly onSelectThread: (thread: EnvironmentThreadShell) => void;
   readonly onArchiveThread: (thread: EnvironmentThreadShell) => void;
@@ -397,9 +399,13 @@ export function HomeScreen(props: HomeScreenProps) {
     snoozedShelfExpanded,
     workingShelfEnabled,
     workingShelfExpanded,
+    sortOrder,
+    sectionOrder,
     toggleSettledShelf,
     toggleSnoozedShelf,
     toggleWorkingShelf,
+    setSortOrder,
+    setSectionOrder,
   } = useThreadListV2ShelfPreferences();
   const now = useThreadListNow(props.threads);
   const listEnvironments = useAtomValue(threadListEnvironmentsAtom);
@@ -442,6 +448,8 @@ export function HomeScreen(props: HomeScreenProps) {
     shelfPreferencesLoaded,
     workingShelfEnabled,
     workingShelfExpanded,
+    sortOrder,
+    sectionOrder,
     snoozedShelfExpanded,
     settledShelfExpanded,
     selectedThreadKey,
@@ -512,6 +520,9 @@ export function HomeScreen(props: HomeScreenProps) {
           onToggle={toggleWorkingShelf}
         />
       );
+    }
+    if (item.type === "v2-section-divider") {
+      return <ThreadListV2StatusSectionHeader section={item.section} />;
     }
     if (item.type === "v2-snoozed-shelf") {
       return (
@@ -591,7 +602,7 @@ export function HomeScreen(props: HomeScreenProps) {
         reorderSupported={
           item.item.pinned
             ? pinReorderEnvironmentIds.has(thread.environmentId)
-            : !workingShelfEnabled && activeReorderEnvironmentIds.has(thread.environmentId)
+            : sortOrder === "manual" && activeReorderEnvironmentIds.has(thread.environmentId)
         }
         canMoveUp={item.canMoveUp}
         canMoveDown={item.canMoveDown}
@@ -622,6 +633,8 @@ export function HomeScreen(props: HomeScreenProps) {
     selectedThreadKey,
     threadSearchMatchByKey,
     workingShelfEnabled,
+    sortOrder,
+    sectionOrder,
   };
 
   const hasAnyThreads =
@@ -711,8 +724,14 @@ export function HomeScreen(props: HomeScreenProps) {
           }))}
           selectedEnvironmentId={props.selectedEnvironmentId}
           selectedProjectKey={props.selectedProjectKey}
+          sortOrder={sortOrder}
+          sectionOrder={sectionOrder}
+          workingShelfEnabled={workingShelfEnabled}
           onEnvironmentChange={props.onEnvironmentChange}
           onProjectChange={props.onProjectChange}
+          onSortOrderChange={setSortOrder}
+          onSectionOrderChange={setSectionOrder}
+          onOpenSortSettings={props.onOpenSortSettings}
         />
       ) : null}
     </>

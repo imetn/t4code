@@ -1836,16 +1836,25 @@ describe("Working section beta", () => {
   const ids = (layout: ReturnType<typeof buildThreadListV2Items>) =>
     layout.items.map((item) => item.thread.id);
 
-  it("folds unpinned working threads into a collapsed shelf", () => {
+  it("folds unpinned working threads into a shelf between completed/attention and other active by default", () => {
     const layout = build();
     expect(ids(layout)).toEqual([
       "pinned-working",
-      "finished-late",
       "asks-approval",
+      "finished-late",
       "finished-early",
     ]);
     expect(layout.workingCount).toBe(1);
-    expect(layout.workingShelfHeaderIndex).toBe(4);
+    expect(layout.workingShelfHeaderIndex).toBe(2);
+
+    const bottomWorking = build({ sectionOrder: ["completed", "idle", "working"] });
+    expect(ids(bottomWorking)).toEqual([
+      "pinned-working",
+      "asks-approval",
+      "finished-late",
+      "finished-early",
+    ]);
+    expect(bottomWorking.workingShelfHeaderIndex).toBe(4);
 
     const off = build({ workingShelfEnabled: false });
     expect(ids(off)).toContain("working");
@@ -1880,15 +1889,173 @@ describe("Working section beta", () => {
     }
   });
 
-  it("orders the inbox by the latest return this device observed", () => {
+  it("orders threads within a tier by the latest return this device observed", () => {
     const layout = build({
       inboxReturnAt: (thread) =>
         thread.id === "finished-early" ? Date.parse("2026-06-01T04:00:00.000Z") : undefined,
     });
-    expect(ids(layout).slice(1)).toEqual(["finished-early", "finished-late", "asks-approval"]);
+    expect(ids(layout).slice(1)).toEqual(["asks-approval", "finished-early", "finished-late"]);
   });
 
-  it("places the shelf after queued tasks and before snoozed and settled threads", () => {
+  it("orders completed/attention first, working second, and other active third with dividers", () => {
+    const unreadDone = makeThread({
+      id: ThreadId.make("done-unread"),
+      title: "Done unread",
+      createdAt: "2026-06-01T01:00:00.000Z",
+      lastVisitedAt: "2026-06-01T01:30:00.000Z",
+      latestRun: {
+        runId: RunId.make("run-done"),
+        status: "completed",
+        requestedAt: "2026-06-01T01:40:00.000Z",
+        startedAt: "2026-06-01T01:40:00.000Z",
+        completedAt: "2026-06-01T02:00:00.000Z",
+        assistantMessageId: null,
+      },
+    });
+    const workingThread = makeThread({
+      id: ThreadId.make("working"),
+      title: "Working",
+      createdAt: "2026-06-01T00:30:00.000Z",
+      runtime: running,
+    });
+    const idleRead = makeThread({
+      id: ThreadId.make("idle-read"),
+      title: "Idle read",
+      createdAt: "2026-06-01T05:00:00.000Z",
+      lastVisitedAt: "2026-06-01T06:00:00.000Z",
+    });
+
+    const defaultLayout = buildThreadListV2Items({
+      threads: [idleRead, workingThread, unreadDone],
+      environmentId: null,
+      searchQuery: "",
+      now: NOW,
+      workingShelfEnabled: true,
+      workingShelfExpanded: true,
+    });
+    const defaultItems = buildThreadListV2ListItems({
+      items: defaultLayout.items,
+      sectionHeaders: defaultLayout.sectionHeaders,
+      pendingTasks: [],
+      workingCount: defaultLayout.workingCount,
+      workingShelfExpanded: true,
+    });
+    expect(
+      defaultItems.map((item) => (item.type === "v2-thread" ? item.item.thread.id : item.key)),
+    ).toEqual([
+      "done-unread",
+      "v2-working-shelf",
+      "working",
+      "v2-section-divider:idle",
+      "idle-read",
+    ]);
+
+    const collapsedItems = buildThreadListV2ListItems({
+      items: buildThreadListV2Items({
+        threads: [idleRead, workingThread, unreadDone],
+        environmentId: null,
+        searchQuery: "",
+        now: NOW,
+        workingShelfEnabled: true,
+        workingShelfExpanded: false,
+      }).items,
+      sectionHeaders: buildThreadListV2Items({
+        threads: [idleRead, workingThread, unreadDone],
+        environmentId: null,
+        searchQuery: "",
+        now: NOW,
+        workingShelfEnabled: true,
+        workingShelfExpanded: false,
+      }).sectionHeaders,
+      pendingTasks: [],
+      workingCount: 1,
+      workingShelfExpanded: false,
+    });
+    expect(
+      collapsedItems.map((item) => (item.type === "v2-thread" ? item.item.thread.id : item.key)),
+    ).toEqual(["done-unread", "v2-working-shelf", "v2-section-divider:idle", "idle-read"]);
+
+    const workingFirstLayout = buildThreadListV2Items({
+      threads: [idleRead, workingThread, unreadDone],
+      environmentId: null,
+      searchQuery: "",
+      now: NOW,
+      workingShelfEnabled: true,
+      workingShelfExpanded: true,
+      sectionOrder: ["working", "completed", "idle"],
+    });
+    const workingFirstItems = buildThreadListV2ListItems({
+      items: workingFirstLayout.items,
+      sectionHeaders: workingFirstLayout.sectionHeaders,
+      pendingTasks: [],
+      workingCount: workingFirstLayout.workingCount,
+      workingShelfExpanded: true,
+    });
+    expect(
+      workingFirstItems.map((item) => (item.type === "v2-thread" ? item.item.thread.id : item.key)),
+    ).toEqual([
+      "v2-working-shelf",
+      "working",
+      "v2-section-divider:completed",
+      "done-unread",
+      "v2-section-divider:idle",
+      "idle-read",
+    ]);
+  });
+
+  it("supports created_at and manual sort orders", () => {
+    const olderRecentlyUpdated = makeThread({
+      id: ThreadId.make("older-updated"),
+      title: "Older updated",
+      createdAt: "2026-06-01T01:00:00.000Z",
+      latestUserMessageAt: "2026-06-01T10:00:00.000Z",
+      activeOrderKey: "bb",
+    });
+    const newerIdle = makeThread({
+      id: ThreadId.make("newer-idle"),
+      title: "Newer idle",
+      createdAt: "2026-06-01T05:00:00.000Z",
+      activeOrderKey: "cc",
+    });
+    const manuallyFirst = makeThread({
+      id: ThreadId.make("manual-first"),
+      title: "Manual first",
+      createdAt: "2026-06-01T00:30:00.000Z",
+      activeOrderKey: "aa",
+    });
+
+    const byUpdated = buildThreadListV2Items({
+      threads: [olderRecentlyUpdated, newerIdle, manuallyFirst],
+      environmentId: null,
+      searchQuery: "",
+      now: NOW,
+      workingShelfEnabled: true,
+      sortOrder: "updated_at",
+    });
+    expect(ids(byUpdated)).toEqual(["older-updated", "newer-idle", "manual-first"]);
+
+    const byCreated = buildThreadListV2Items({
+      threads: [olderRecentlyUpdated, newerIdle, manuallyFirst],
+      environmentId: null,
+      searchQuery: "",
+      now: NOW,
+      workingShelfEnabled: true,
+      sortOrder: "created_at",
+    });
+    expect(ids(byCreated)).toEqual(["newer-idle", "older-updated", "manual-first"]);
+
+    const byManual = buildThreadListV2Items({
+      threads: [olderRecentlyUpdated, newerIdle, manuallyFirst],
+      environmentId: null,
+      searchQuery: "",
+      now: NOW,
+      workingShelfEnabled: true,
+      sortOrder: "manual",
+    });
+    expect(ids(byManual)).toEqual(["manual-first", "older-updated", "newer-idle"]);
+  });
+
+  it("places shelves according to sectionOrder alongside queued, snoozed, and settled threads", () => {
     const layout = buildThreadListV2Items({
       threads: [
         makeThread({ id: ThreadId.make("active"), title: "active" }),
@@ -1912,10 +2079,12 @@ describe("Working section beta", () => {
       now: NOW,
       workingShelfEnabled: true,
       workingShelfExpanded: true,
+      sectionOrder: ["completed", "idle", "working"],
       snoozedShelfExpanded: true,
     });
     const items = buildThreadListV2ListItems({
       items: layout.items,
+      sectionHeaders: layout.sectionHeaders,
       pendingTasks: [makePendingTask("queued")],
       workingCount: layout.workingCount,
       workingShelfExpanded: true,

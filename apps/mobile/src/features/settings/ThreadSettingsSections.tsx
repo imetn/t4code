@@ -18,11 +18,23 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
 import { supportsSharedSettingsSync } from "@t3tools/client-runtime/state/shared-settings";
 import { AppText as Text } from "../../components/ui/AppText";
+import { IconButton } from "../../components/ui/IconButton";
+import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
 import { useEnvironments } from "../../state/environments";
 import { mobilePreferencesAtom, saveMobilePreferences } from "../../state/preferences";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { ListChoiceRow as SettingsChoiceRow } from "../../components/ui/ListChoiceRow";
+import {
+  DEFAULT_THREAD_LIST_SECTION_ORDER,
+  THREAD_LIST_SECTION_META,
+  THREAD_LIST_SORT_OPTIONS,
+  moveThreadListSection,
+  resolveThreadListSectionOrder,
+  resolveThreadListSortOrder,
+  sameThreadListSectionOrder,
+  type ThreadListSection,
+} from "../threads/threadListSort";
 import { SettingsSection } from "./components/SettingsSection";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
 import { SettingsScreen } from "./components/SettingsScreen";
@@ -227,30 +239,136 @@ export function AutoSettleSettingsRows(props: {
   );
 }
 
+const SECTION_ICONS: Readonly<Record<ThreadListSection, AppSymbolName>> = {
+  completed: "checkmark.circle",
+  working: "circle.dashed",
+  idle: "text.bubble",
+};
+
 export function WorkingSectionSettings() {
   const gt = useGT();
+  const m = useMessages();
   const savePreferences = useAtomCommand(saveMobilePreferences);
   const preferences = useAtomValue(mobilePreferencesAtom);
+  const ready = AsyncResult.isSuccess(preferences) && !preferences.waiting;
   const workingShelfEnabled =
     AsyncResult.isSuccess(preferences) && preferences.value.workingShelfEnabled !== false;
+  const sortOrder = AsyncResult.isSuccess(preferences)
+    ? resolveThreadListSortOrder(preferences.value.threadListSortOrder)
+    : null;
+  const sectionOrder = AsyncResult.isSuccess(preferences)
+    ? resolveThreadListSectionOrder(preferences.value.threadListSectionOrder)
+    : DEFAULT_THREAD_LIST_SECTION_ORDER;
+  const groupOrderingActive = workingShelfEnabled && sortOrder !== "manual";
+  const groupOrderCustomized = !sameThreadListSectionOrder(
+    sectionOrder,
+    DEFAULT_THREAD_LIST_SECTION_ORDER,
+  );
 
   return (
     <View className="gap-3">
-      <SettingsSection title={gt("Sidebar")}>
+      <SettingsSection title={gt("Chat list sort")}>
+        {THREAD_LIST_SORT_OPTIONS.map((option, index) => (
+          <SettingsChoiceRow
+            key={option.order}
+            label={m(option.label)}
+            description={m(option.description)}
+            selected={sortOrder === option.order}
+            separated={index > 0}
+            disabled={!ready}
+            onPress={() => {
+              void savePreferences({ threadListSortOrder: option.order });
+            }}
+          />
+        ))}
+      </SettingsSection>
+      <SettingsSection title={gt("Chat list groups")}>
         <SettingsSwitchRow
           icon="bolt.circle"
-          label={gt("Working section")}
+          label={gt("Group by status")}
+          subtitle={gt(
+            "Group completed, in-progress, and other active threads into separate sections.",
+          )}
           value={workingShelfEnabled}
+          disabled={!ready || sortOrder === "manual"}
           onValueChange={(value) => {
             void savePreferences({ workingShelfEnabled: value });
           }}
         />
       </SettingsSection>
+      {groupOrderingActive ? (
+        <>
+          <SettingsSection
+            title={gt("Group order", { $context: "chat list status group order heading" })}
+          >
+            {sectionOrder.map((section, index) => {
+              const meta = THREAD_LIST_SECTION_META[section];
+              const label = m(meta.label);
+              return (
+                <View key={section} className="flex-row items-center gap-3 px-4 py-3">
+                  <SymbolView
+                    name={SECTION_ICONS[section]}
+                    size={22}
+                    tintColorClassName="accent-icon"
+                  />
+                  <View className="flex-1">
+                    <Text>{label}</Text>
+                    <Text className="text-xs text-foreground-muted">{m(meta.description)}</Text>
+                  </View>
+                  <IconButton
+                    icon="arrow.up"
+                    accessibilityLabel={gt("Move {section} up", { section: label })}
+                    disabled={!ready || index === 0}
+                    onPress={() => {
+                      void savePreferences({
+                        transform: (current) => ({
+                          threadListSectionOrder: moveThreadListSection(
+                            current.threadListSectionOrder,
+                            section,
+                            index - 1,
+                          ),
+                        }),
+                      });
+                    }}
+                  />
+                  <IconButton
+                    icon="arrow.down"
+                    accessibilityLabel={gt("Move {section} down", { section: label })}
+                    disabled={!ready || index === sectionOrder.length - 1}
+                    onPress={() => {
+                      void savePreferences({
+                        transform: (current) => ({
+                          threadListSectionOrder: moveThreadListSection(
+                            current.threadListSectionOrder,
+                            section,
+                            index + 1,
+                          ),
+                        }),
+                      });
+                    }}
+                  />
+                </View>
+              );
+            })}
+          </SettingsSection>
+          {groupOrderCustomized ? (
+            <Button
+              label={gt("Reset group order")}
+              tone="text"
+              disabled={!ready}
+              onPress={() => {
+                void savePreferences({
+                  threadListSectionOrder: [...DEFAULT_THREAD_LIST_SECTION_ORDER],
+                });
+              }}
+            />
+          ) : null}
+        </>
+      ) : null}
       <Text className="px-2 text-sm text-foreground-muted">
         <T>
-          Fold working and monitoring threads into a Working section. They return to the top of the
-          list when they need you. While this is on, active threads are ordered by time and cannot
-          be moved.
+          Pinned threads always stay at the top. Manual order disables status grouping so active
+          threads can be dragged or moved freely.
         </T>
       </Text>
     </View>

@@ -13,18 +13,37 @@ export function isSharedSlotTab(value: unknown): value is SharedSlotTab {
 }
 
 /**
- * Pull requests and issues share one slot in the tab bar. The open one holds it, or else the one
- * opened last; this returns the other, which the bar leaves out.
+ * Pull requests and issues share one slot in the tab bar when both are enabled. The open one holds
+ * it, or else the one opened last; this returns the other, which the bar leaves out. When either
+ * is hidden by the user, no absentee is needed.
  */
-export function sharedSlotAbsentee(selected: NavigationTab, last: unknown): SharedSlotTab {
+export function sharedSlotAbsentee(
+  selected: NavigationTab,
+  last: unknown,
+  userHidden?: readonly unknown[],
+): SharedSlotTab | null {
+  const hidden = resolveHiddenNavigationTabs(userHidden);
+  if (SHARED_SLOT_TABS.some((tab) => hidden.includes(tab))) return null;
   const holder = isSharedSlotTab(selected) ? selected : last === "issues" ? last : "pullRequests";
   return holder === "issues" ? "pullRequests" : "issues";
 }
 
+export function effectiveHiddenNavigationTabs(
+  savedHidden: readonly unknown[] | undefined,
+  selected: NavigationTab,
+  sharedSlotTab: unknown,
+): readonly NavigationTab[] {
+  const userHidden = navigationCustomizationAvailable()
+    ? resolveHiddenNavigationTabs(savedHidden)
+    : [];
+  const absentee = sharedSlotAbsentee(selected, sharedSlotTab, userHidden);
+  return absentee === null ? userHidden : [...userHidden, absentee];
+}
+
 export function navigationCustomizationAvailable(
-  registeredSections: number = NAVIGATION_TAB_ORDER.length - 1,
+  registeredSections: number = NAVIGATION_TAB_ORDER.length,
 ) {
-  return registeredSections > 4;
+  return registeredSections > 1;
 }
 
 export const NAVIGATION_TAB_LABELS: Readonly<Record<NavigationTab, string>> = {

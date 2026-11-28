@@ -23,6 +23,12 @@ import { ToolCallVisibility } from "@t3tools/contracts/settings";
 import type { AndroidNavigationStyle } from "../lib/androidNavigationStyle";
 import type { ComposerEnterBehavior } from "../lib/composerEnterBehavior";
 import type { FollowUpBehavior } from "../lib/followUpBehavior";
+import {
+  isThreadListSection,
+  isThreadListSortOrder,
+  type ThreadListSection,
+  type ThreadListSortOrder,
+} from "../features/threads/threadListSort";
 import { isMicrophoneKind, type MicrophoneEntry } from "../lib/microphonePriority";
 import { MOBILE_THEME_IDS, type MobileThemeId, type MobileThemeMode } from "../lib/mobileTheme";
 import * as MobileDatabase from "./mobile-database";
@@ -187,6 +193,8 @@ export interface Preferences {
   readonly threadListSettledShelfExpanded?: boolean;
   readonly threadListSnoozedShelfExpanded?: boolean;
   readonly threadListWorkingShelfExpanded?: boolean;
+  readonly threadListSortOrder?: ThreadListSortOrder;
+  readonly threadListSectionOrder?: readonly ThreadListSection[];
   readonly threadListFilters?: ThreadListFilters;
   readonly pullRequestListFilters?: PullRequestListPreferences;
   readonly workspaceSelections?: WorkspaceSelections;
@@ -281,6 +289,8 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     threadListSettledShelfExpanded?: boolean;
     threadListSnoozedShelfExpanded?: boolean;
     threadListWorkingShelfExpanded?: boolean;
+    threadListSortOrder?: ThreadListSortOrder;
+    threadListSectionOrder?: readonly ThreadListSection[];
     threadListFilters?: ThreadListFilters;
     pullRequestListFilters?: PullRequestListPreferences;
     workspaceSelections?: WorkspaceSelections;
@@ -471,6 +481,15 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (typeof parsed.threadListWorkingShelfExpanded === "boolean") {
     preferences.threadListWorkingShelfExpanded = parsed.threadListWorkingShelfExpanded;
+  }
+  if (isThreadListSortOrder(parsed.threadListSortOrder)) {
+    preferences.threadListSortOrder = parsed.threadListSortOrder;
+  }
+  if (Array.isArray(parsed.threadListSectionOrder)) {
+    const sections = parsed.threadListSectionOrder.filter(isThreadListSection);
+    if (sections.length > 0) {
+      preferences.threadListSectionOrder = [...new Set(sections)];
+    }
   }
   if (isThreadListFilters(parsed.threadListFilters)) {
     preferences.threadListFilters = parsed.threadListFilters;

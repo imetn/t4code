@@ -118,6 +118,30 @@ describe("mobile connection storage", () => {
     });
   });
 
+  it("persists and sanitizes chat list sort and section order preferences", async () => {
+    await savePreferencesPatch({
+      threadListSortOrder: "created_at",
+      threadListSectionOrder: ["working", "completed", "idle"],
+    });
+    await expect(loadPreferences()).resolves.toEqual({
+      threadListSortOrder: "created_at",
+      threadListSectionOrder: ["working", "completed", "idle"],
+    });
+
+    mocks.setPreferencesJson(
+      JSON.stringify({
+        threadListSortOrder: "bogus",
+        threadListSectionOrder: ["working", "invalid", "working", "completed"],
+        baseFontSize: 18,
+      }),
+      2,
+    );
+    await expect(loadPreferences()).resolves.toEqual({
+      threadListSectionOrder: ["working", "completed"],
+      baseFontSize: 18,
+    });
+  });
+
   it("ignores invalid tab-order entries without dropping other saved preferences", async () => {
     mocks.setPreferencesJson(
       JSON.stringify({

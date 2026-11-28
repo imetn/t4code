@@ -11,6 +11,8 @@ final class T3SegmentedControlView: ExpoView {
       for (index, label) in labels.enumerated() {
         control.insertSegment(withTitle: label, at: index, animated: false)
       }
+      control.apportionsSegmentWidthsByContent = labels.count > 4
+      updateColors()
       updateSelection()
     }
   }
@@ -51,8 +53,15 @@ final class T3SegmentedControlView: ExpoView {
   }
 
   private func updateColors() {
-    control.setTitleTextAttributes([.foregroundColor: mutedColor], for: .normal)
-    control.setTitleTextAttributes([.foregroundColor: textColor], for: .selected)
+    var normal: [NSAttributedString.Key: Any] = [.foregroundColor: mutedColor]
+    var selected: [NSAttributedString.Key: Any] = [.foregroundColor: textColor]
+    if labels.count > 5 {
+      let font = UIFont.systemFont(ofSize: 12, weight: .medium)
+      normal[.font] = font
+      selected[.font] = font
+    }
+    control.setTitleTextAttributes(normal, for: .normal)
+    control.setTitleTextAttributes(selected, for: .selected)
   }
 
   @objc private func selectionChanged() {

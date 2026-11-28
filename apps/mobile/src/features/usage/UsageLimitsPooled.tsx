@@ -17,16 +17,11 @@ import {
   type LimitPoolWindow,
 } from "@t3tools/shared/usageLimits";
 import { AsyncResult } from "effect/reactivity";
-import {
-  collectExternalUsageLinks,
-  collectLimitNotices,
-  cursorUsageWindowDetails,
-} from "@t3tools/shared/usageLimitsCopy";
+import { collectLimitNotices, cursorUsageWindowDetails } from "@t3tools/shared/usageLimitsCopy";
 import { msg, T, useGT, useMessages, Var } from "gt-react-native";
 import { Fragment, type ReactNode, useId, useState } from "react";
 import { Pressable, View } from "react-native";
 import { useNowMinuteMs } from "../../lib/clock";
-import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { Defs, Path, Pattern, Rect, Svg } from "react-native-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -638,7 +633,6 @@ export function UsageLimitsSection({
   const quotaSources = collectHttpQuotaSources(selected);
   const m = useMessages();
   const notices = collectLimitNotices(selected, m);
-  const externalLinks = collectExternalUsageLinks(selected, m);
   const colors = useProviderColors();
   const gt = useGT();
   return (
@@ -646,7 +640,6 @@ export function UsageLimitsSection({
       {pools.length === 0 &&
       notices.length === 0 &&
       failedLabels.length === 0 &&
-      externalLinks.length === 0 &&
       quotaSources.length === 0 ? (
         <Text className="py-12 text-center text-base text-foreground-muted">
           {selected.size === 0
@@ -843,9 +836,6 @@ export function UsageLimitsSection({
                       type="monochrome"
                       weight="semibold"
                     />
-                    {hiddenCount > 0 ? (
-                      <View className="absolute top-0.5 right-0.5 size-1.5 rounded-full bg-primary" />
-                    ) : null}
                   </Pressable>
                 </Menu>
               ) : null}
@@ -875,7 +865,9 @@ export function UsageLimitsSection({
                 pool.driver === "cursor" ? cursorUsageWindowDetails(window.id, pool, m) : undefined;
               return (
                 <Fragment key={`${window.kind}:${window.id}`}>
-                  {!wide && windowIndex > 0 ? <View className="h-px bg-border-subtle/50" /> : null}
+                  {!wide && windowIndex > 0 ? (
+                    <View className="my-0.5 h-px bg-border-subtle/50" />
+                  ) : null}
                   <PoolWindowCard
                     pool={window}
                     color={colors[usageProviderKind(pool.driver) ?? "codex"]}
@@ -899,32 +891,14 @@ export function UsageLimitsSection({
                 {windowCards}
               </View>
             ) : (
-              <View className="gap-2.5 rounded-2xl border-continuous bg-grouped-card px-3.5 py-2.5">
+              <View className="gap-2 rounded-2xl border-continuous bg-grouped-card px-3.5 py-3">
                 {header}
-                <View className="gap-2">{windowCards}</View>
+                <View className="gap-1.5">{windowCards}</View>
               </View>
             )}
           </Fragment>
         );
       })}
-      {externalLinks.map((link) => (
-        <View key={link.url} className="gap-3 rounded-xl border border-border-subtle p-4">
-          <Text className="text-base font-t3-medium text-foreground">{link.label}</Text>
-          <Text className="text-xs text-foreground-muted">{link.accounts.join(", ")}</Text>
-          {link.message ? (
-            <Text className="text-sm text-foreground-muted">{link.message}</Text>
-          ) : null}
-          <Pressable
-            accessibilityRole="link"
-            className="min-h-11 justify-center"
-            onPress={() => void tryOpenExternalUrl(link.url)}
-          >
-            <Text className="text-sm font-t3-medium text-primary">
-              <T>Manage usage</T>
-            </Text>
-          </Pressable>
-        </View>
-      ))}
       {notices.length > 0 || failedLabels.length > 0 ? (
         <View
           accessible

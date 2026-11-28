@@ -1,5 +1,4 @@
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
-import { ChatGptUsageSummary } from "./ChatGptUsageSummary";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { EnvironmentId, USAGE_CONTRACT_VERSION, type UsageProviderKind } from "@t3tools/contracts";
 import { type RouteProp, useIsFocused, useRoute } from "@react-navigation/native";
@@ -112,6 +111,20 @@ const WIDE_CHART_HEIGHT = 260;
 const WIDE_WIDTH = 600;
 const MAX_CONTENT_WIDTH = 1080;
 const providerLabel = (provider: UsageProviderKind) => PROVIDER_LABEL[provider];
+
+function formatDuplicateSourceSummary(sources: readonly string[]): string {
+  const environments = [
+    ...new Set(
+      sources
+        .map((entry) => {
+          const separator = entry.indexOf(":");
+          return (separator > 0 ? entry.slice(0, separator) : entry).trim();
+        })
+        .filter((label) => label.length > 0),
+    ),
+  ];
+  return environments.join(", ");
+}
 
 export function UsageRouteScreen(props: { readonly workspace?: boolean }) {
   const route = useRoute<RouteProp<{ Usage: { tab?: string } | undefined }, "Usage">>();
@@ -354,15 +367,6 @@ function UsageScreen(props: {
                       size="compact"
                     />
                   )}
-                  <ChatGptUsageSummary selectedEnvironmentIds={selectedEnvironmentIds} />
-                  {merged.duplicateSources.length > 0 ? (
-                    <Text className="text-sm text-foreground-muted">
-                      <T>
-                        Counted once across environments sharing a transcript directory:{" "}
-                        <Var>{merged.duplicateSources.join(", ")}</Var>
-                      </T>
-                    </Text>
-                  ) : null}
                   {isPending ? (
                     <Text className="py-16 text-center text-base text-foreground-muted">
                       <T>Scanning provider transcripts…</T>
@@ -438,6 +442,14 @@ function UsageScreen(props: {
                           onBreakdownChange={setBreakdown}
                           showEnvironment={selectedEnvironments.length > 1}
                         />
+                        {merged.duplicateSources.length > 0 ? (
+                          <Text className="px-1 text-xs text-foreground-muted">
+                            <T>
+                              Shared usage across environments is counted once:{" "}
+                              <Var>{formatDuplicateSourceSummary(merged.duplicateSources)}</Var>
+                            </T>
+                          </Text>
+                        ) : null}
                       </UsageUpdating>
                     </>
                   )}

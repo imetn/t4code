@@ -9,6 +9,8 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import {
   buildSubscriptionUsageSnapshot,
   createWidgetRefresher,
+  SNAPSHOT_MAX_AGE,
+  subscriptionUsageTimeline,
   WIDGET_REFRESH_INTERVAL,
 } from "./subscriptionUsageSnapshot";
 
@@ -268,13 +270,38 @@ describe("subscription widget snapshots", () => {
 });
 
 describe("subscription widget expiry", () => {
-  const maxAgeDeadline = now + 15 * 60_000;
+  const maxAgeDeadline = now + SNAPSHOT_MAX_AGE;
   function single(resetsAt: string) {
     return buildSubscriptionUsageSnapshot(
       presentations([provider({ usageLimits: { checkedAt, windows: [{ ...window, resetsAt }] } })]),
       deepLink,
     ).providers[0];
   }
+
+  it("keeps snapshots fresh past a 15-minute Antigravity auto-probe interval", () => {
+    const ag = provider({
+      instanceId: ProviderInstanceId.make("antigravity"),
+      driver: ProviderDriverKind.make("antigravity"),
+      usageLimits: {
+        checkedAt,
+        windows: [
+          {
+            id: "gemini-weekly",
+            kind: "weekly",
+            label: "Gemini · Weekly",
+            usedPercent: 6,
+            resetsAt: "2026-09-09T00:00:00.000Z",
+            windowDurationMins: 10080,
+          },
+        ],
+      },
+    });
+    const snapshot = buildSubscriptionUsageSnapshot(presentations([ag]), deepLink);
+    expect(snapshot.providers[0]?.expiresAt).toBe(now + 4 * 60 * 60_000);
+    const timeline = subscriptionUsageTimeline(snapshot, now + 20 * 60_000);
+    expect(timeline[0]?.props.providers[0]?.windows).toHaveLength(1);
+    expect(timeline[0]?.props.providers[0]?.windows[0]?.remaining).toBe(94);
+  });
 
   it.each(["2026-09-05T11:50:00.000Z", checkedAt])(
     "keeps usage whose reset at %s already happened when observed",
@@ -308,7 +335,7 @@ describe("subscription widget expiry", () => {
                     resetsAt:
                       index === resetAccount
                         ? "2026-09-05T12:02:00.000Z"
-                        : "2026-09-05T13:00:00.000Z",
+                        : "2026-09-05T17:00:00.000Z",
                   },
                 ],
               },
