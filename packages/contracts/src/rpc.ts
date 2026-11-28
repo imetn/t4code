@@ -202,11 +202,19 @@ import {
 import { KeybindingsConfigError } from "./keybindings.ts";
 import { OrchestrationSearchThreadsError } from "./threadSearch.ts";
 import {
+  ProviderMcpControlError,
+  ProviderMcpReconnectInput,
+  ProviderMcpReconnectResult,
   ProviderMcpSignInCompleteInput,
   ProviderMcpSignInCompleteResult,
   ProviderMcpSignInError,
   ProviderMcpSignInStartInput,
   ProviderMcpSignInStartResult,
+  ProviderMcpToggleInput,
+  ProviderMcpToggleResult,
+  ProviderThreadInspectError,
+  ProviderThreadInspectInput,
+  ProviderThreadInspectResult,
   ProviderUploadFeedbackError,
   ProviderUploadFeedbackInput,
   ProviderUploadFeedbackResult,
@@ -562,6 +570,9 @@ export const WS_METHODS = {
   providerUploadFeedback: "provider.uploadFeedback",
   providerMcpSignInStart: "provider.mcpSignIn.start",
   providerMcpSignInComplete: "provider.mcpSignIn.complete",
+  providerThreadInspect: "provider.thread.inspect",
+  providerMcpReconnect: "provider.mcp.reconnect",
+  providerMcpToggle: "provider.mcp.toggle",
   providerAuthStart: "provider.auth.start",
   providerConsumeResetCredit: "provider.consumeResetCredit",
   providerAuthComplete: "provider.auth.complete",
@@ -2004,6 +2015,24 @@ const WsProviderMcpSignInCompleteRpc = Rpc.make(WS_METHODS.providerMcpSignInComp
   error: Schema.Union([ProviderMcpSignInError, EnvironmentAuthorizationError]),
 });
 
+const WsProviderThreadInspectRpc = Rpc.make(WS_METHODS.providerThreadInspect, {
+  payload: ProviderThreadInspectInput,
+  success: ProviderThreadInspectResult,
+  error: Schema.Union([ProviderThreadInspectError, EnvironmentAuthorizationError]),
+});
+
+const WsProviderMcpReconnectRpc = Rpc.make(WS_METHODS.providerMcpReconnect, {
+  payload: ProviderMcpReconnectInput,
+  success: ProviderMcpReconnectResult,
+  error: Schema.Union([ProviderMcpControlError, EnvironmentAuthorizationError]),
+});
+
+const WsProviderMcpToggleRpc = Rpc.make(WS_METHODS.providerMcpToggle, {
+  payload: ProviderMcpToggleInput,
+  success: ProviderMcpToggleResult,
+  error: Schema.Union([ProviderMcpControlError, EnvironmentAuthorizationError]),
+});
+
 const WsSubscribeVcsBranchRpc = Rpc.make(WS_METHODS.subscribeVcsBranch, {
   payload: VcsStatusInput,
   success: VcsBranchStatus,
@@ -2859,6 +2888,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsProviderUploadFeedbackRpc,
   WsProviderMcpSignInStartRpc,
   WsProviderMcpSignInCompleteRpc,
+  WsProviderThreadInspectRpc,
+  WsProviderMcpReconnectRpc,
+  WsProviderMcpToggleRpc,
   WsSubscribeVcsStatusRpc,
   WsSubscribeVcsBranchRpc,
   WsVcsRefreshBranchRpc,

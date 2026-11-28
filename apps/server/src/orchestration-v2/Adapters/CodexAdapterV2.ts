@@ -39,7 +39,12 @@ import {
   type OrchestrationV2GoalCommand,
   OrchestrationV2ProviderGoal,
   parseGoalCommand,
+  type ProviderContextBreakdown,
+  type ProviderContextMcpTool,
+  type ProviderContextMemoryFile,
   ProviderDriverKind,
+  type ProviderMcpServerConnectionStatus,
+  type ProviderMcpServerEntry,
   ProviderMcpSignInError,
   ProviderSetupError,
   type ServerProviderCompatibilityAdvisory,
@@ -1754,8 +1759,30 @@ function codexThreadRuntimeParams(input: {
 }
 
 const decodeCodexResumeMetadata = Schema.decodeUnknownEffect(
-  Schema.Struct({ thread: Schema.Struct({ id: Schema.String, updatedAt: Schema.Number }) }),
+  Schema.Struct({
+    thread: Schema.Struct({ id: Schema.String, updatedAt: Schema.Number }),
+    cwd: Schema.optional(Schema.String),
+    instructionSources: Schema.optional(Schema.Array(Schema.String)),
+  }),
 );
+
+function mapCodexMcpServerStatus(
+  runtimeStatus: string | null | undefined,
+): ProviderMcpServerConnectionStatus {
+  switch (runtimeStatus) {
+    case "connected":
+      return "connected";
+    case "authenticationRequired":
+      return "needs-auth";
+    case "disabled":
+      return "disabled";
+    case "starting":
+    case "notStarted":
+      return "pending";
+    default:
+      return "failed";
+  }
+}
 
 const CodexChildSelection = Schema.Struct({
   thread: Schema.Struct({ id: Schema.String }),
@@ -2524,6 +2551,8 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
         // Once a turn opens Codex may answer without its servers, so only a thread still
         // starting counts its MCP servers.
         const appThreadByNativeThread = new Map<string, ThreadId>();
+        const instructionSourcesByNativeThread = new Map<string, ReadonlyArray<string>>();
+        const cwdByNativeThread = new Map<string, string>();
         const startingMcpServers = new Map<string, Set<string>>();
         const resumingThreads = new Set<ThreadId>();
         let reportedStartupPhase:
@@ -8463,6 +8492,15 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               ),
               Effect.tap((response) => {
                 appThreadByNativeThread.set(response.thread.id, threadInput.threadId);
+                if (response.instructionSources && response.instructionSources.length > 0) {
+                  instructionSourcesByNativeThread.set(
+                    response.thread.id,
+                    response.instructionSources,
+                  );
+                }
+                if (response.cwd) {
+                  cwdByNativeThread.set(response.thread.id, response.cwd);
+                }
                 return reportStartupPhase();
               }),
               Effect.map((response): OrchestrationV2ProviderThread =>
@@ -8536,6 +8574,15 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 nativeConversationHeadRef: threadInput.providerThread.nativeConversationHeadRef,
                 updatedAt: codexTimestamp(response.thread.updatedAt),
               } satisfies OrchestrationV2ProviderThread;
+              if (response.instructionSources && response.instructionSources.length > 0) {
+                instructionSourcesByNativeThread.set(
+                  response.thread.id,
+                  response.instructionSources,
+                );
+              }
+              if (response.cwd) {
+                cwdByNativeThread.set(response.thread.id, response.cwd);
+              }
               rootProviderThreads.set(nativeThreadId, resumed);
               yield* releaseGoalUpdates(nativeThreadId);
               return rootProviderThreads.get(nativeThreadId) ?? resumed;
@@ -9435,6 +9482,101 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               if (!succeeded) {
                 return yield* fail(`${server} didn't accept the sign-in. Start again.`);
               }
+            }),
+          },
+          threadInspector: {
+            inspect: Effect.fn("CodexAdapterV2.threadInspector.inspect")(function* ({
+              providerThread,
+            }) {
+              const nativeThreadId = providerThread.nativeThreadRef?.nativeId;
+              if (!nativeThreadId) {
+                return { context: null, mcpServers: [] };
+              }
+              const mcpResponse = yield* ensureInitialized.pipe(
+                Effect.andThen(
+                  withLoadedThread(
+                    providerThread,
+                    nativeThreadId,
+                    client.request("mcpServerStatus/list", {
+                      threadId: nativeThreadId,
+                      detail: "toolsAndAuthOnly",
+                    }),
+                  ),
+                ),
+                Effect.timeoutOrElse({
+                  duration: "4 seconds",
+                  orElse: () => Effect.succeed({ data: [] }),
+                }),
+                Effect.orElseSucceed(() => ({ data: [] })),
+              );
+              const mcpServers: ProviderMcpServerEntry[] = [];
+              const mcpTools: ProviderContextMcpTool[] = [];
+              for (const entry of mcpResponse.data) {
+                const name = entry.name.trim();
+                if (name.length === 0) continue;
+                const status = mapCodexMcpServerStatus(entry.runtimeStatus);
+                const toolEntries = Object.values(entry.tools ?? {});
+                const tools = toolEntries
+                  .map((tool) => {
+                    const toolName = tool.name.trim();
+                    if (toolName.length === 0) return null;
+                    return {
+                      name: toolName,
+                      ...(typeof tool.description === "string" && tool.description.trim().length > 0
+                        ? { description: tool.description.trim().slice(0, 200) }
+                        : {}),
+                    };
+                  })
+                  .filter((tool): tool is NonNullable<typeof tool> => tool !== null);
+                for (const tool of tools) {
+                  mcpTools.push({
+                    name: tool.name,
+                    serverName: name,
+                    isLoaded: status === "connected",
+                  });
+                }
+                mcpServers.push({
+                  name,
+                  status,
+                  toolCount: tools.length,
+                  ...(tools.length > 0 ? { tools } : {}),
+                  canReconnect: false,
+                  canToggle: false,
+                  canSignIn: status === "needs-auth",
+                });
+              }
+              const cwd = cwdByNativeThread.get(nativeThreadId);
+              const memoryFiles: ProviderContextMemoryFile[] = (
+                instructionSourcesByNativeThread.get(nativeThreadId) ?? []
+              )
+                .map((filePath) => filePath.trim())
+                .filter((filePath) => filePath.length > 0)
+                .map((filePath) => ({
+                  path: filePath,
+                  type: cwd && filePath.startsWith(cwd) ? "Project" : "User",
+                }));
+              const usage = providerThread.contextUsage;
+              const context: ProviderContextBreakdown | null =
+                mcpTools.length > 0 || memoryFiles.length > 0 || usage !== null
+                  ? {
+                      source: "estimated",
+                      totalTokens: usage?.usedTokens ?? 0,
+                      maxTokens: usage?.maxTokens ?? null,
+                      percentage:
+                        usage?.maxTokens && usage.maxTokens > 0
+                          ? Math.round((usage.usedTokens / usage.maxTokens) * 1000) / 10
+                          : null,
+                      autoCompactThreshold: usage?.autoCompactThreshold ?? null,
+                      ...(usage?.compactsAutomatically !== undefined
+                        ? { isAutoCompactEnabled: usage.compactsAutomatically }
+                        : {}),
+                      categories: [],
+                      mcpTools,
+                      memoryFiles,
+                      skills: [],
+                    }
+                  : null;
+              return { context, mcpServers };
             }),
           },
           readThreadSnapshot: Effect.fn("CodexAdapterV2.readThreadSnapshot")(

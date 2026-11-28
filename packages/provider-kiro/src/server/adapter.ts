@@ -2,6 +2,9 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import { resolveSelfInvocation, type SelfInvocation } from "@t3tools/shared/nodeRuntime";
 import {
   type ModelSelection,
+  type ProviderContextBreakdown,
+  type ProviderContextCategory,
+  type ProviderContextMemoryFile,
   ProviderDriverKind,
   type OrchestrationV2ProviderCapabilities,
 } from "@t3tools/contracts";
@@ -38,6 +41,7 @@ import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
 import type * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
 import type * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+import type { ProviderAdapterV2ThreadInspector } from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
 import type * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import {
@@ -535,7 +539,135 @@ function kiroPromptFailure(cause: unknown) {
   });
 }
 
-function makeKiroAcpAdapterFlavor(options: KiroAdapterV2Options): AcpAdapterV2Flavor {
+const KiroBreakdownEntry = Schema.Struct({
+  tokens: Schema.optional(Schema.Number),
+  percent: Schema.optional(Schema.Number),
+  items: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        path: Schema.optional(Schema.String),
+        name: Schema.optional(Schema.String),
+        tokens: Schema.optional(Schema.Number),
+      }),
+    ),
+  ),
+});
+
+const KiroContextUsageMeta = Schema.Struct({
+  kiro: Schema.Struct({
+    kind: Schema.optional(Schema.String),
+    usagePercentage: Schema.optional(Schema.Number),
+    contextUsage: Schema.optional(
+      Schema.Struct({ usagePercentage: Schema.optional(Schema.Number) }),
+    ),
+    breakdown: Schema.Struct({
+      contextFiles: Schema.optional(KiroBreakdownEntry),
+      sessionFiles: Schema.optional(KiroBreakdownEntry),
+      memory: Schema.optional(KiroBreakdownEntry),
+      yourPrompts: Schema.optional(KiroBreakdownEntry),
+      kiroResponses: Schema.optional(KiroBreakdownEntry),
+      tools: Schema.optional(
+        Schema.Struct({
+          tokens: Schema.optional(Schema.Number),
+          mcp: Schema.optional(KiroBreakdownEntry),
+          builtin: Schema.optional(KiroBreakdownEntry),
+        }),
+      ),
+    }),
+  }),
+});
+const decodeKiroContextUsageMeta = Schema.decodeUnknownOption(KiroContextUsageMeta);
+
+function nonNegativeRound(value: number | undefined): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.round(value) : 0;
+}
+
+function parseKiroContextBreakdown(meta: unknown): ProviderContextBreakdown | null {
+  const decoded = decodeKiroContextUsageMeta(meta);
+  if (Option.isNone(decoded)) return null;
+  const kiro = decoded.value.kiro;
+  const breakdown = kiro.breakdown;
+  const messagesTokens =
+    nonNegativeRound(breakdown.yourPrompts?.tokens) +
+    nonNegativeRound(breakdown.kiroResponses?.tokens);
+  const mcpTokens = nonNegativeRound(breakdown.tools?.mcp?.tokens);
+  const builtinToolsTokens = nonNegativeRound(breakdown.tools?.builtin?.tokens);
+  const memoryTokens =
+    nonNegativeRound(breakdown.memory?.tokens) +
+    nonNegativeRound(breakdown.contextFiles?.tokens) +
+    nonNegativeRound(breakdown.sessionFiles?.tokens);
+  const totalTokens = messagesTokens + mcpTokens + builtinToolsTokens + memoryTokens;
+  const percentage = kiro.usagePercentage ?? kiro.contextUsage?.usagePercentage ?? null;
+  const clampedPct =
+    percentage !== null && Number.isFinite(percentage)
+      ? Math.round(Math.max(0, Math.min(100, percentage)) * 10) / 10
+      : null;
+  const maxTokens =
+    clampedPct !== null && clampedPct > 0 && totalTokens > 0
+      ? Math.max(totalTokens, Math.round((totalTokens * 100) / clampedPct))
+      : null;
+  const categories: ProviderContextCategory[] = [];
+  if (messagesTokens > 0) {
+    categories.push({ id: "messages", name: "Messages", tokens: messagesTokens, kind: "used" });
+  }
+  if (mcpTokens > 0) {
+    categories.push({ id: "mcp_tools", name: "MCP tools", tokens: mcpTokens, kind: "used" });
+  }
+  if (builtinToolsTokens > 0) {
+    categories.push({
+      id: "system_tools",
+      name: "System tools",
+      tokens: builtinToolsTokens,
+      kind: "used",
+    });
+  }
+  if (memoryTokens > 0) {
+    categories.push({
+      id: "memory_files",
+      name: "Memory files",
+      tokens: memoryTokens,
+      kind: "used",
+    });
+  }
+  if (maxTokens !== null && maxTokens > totalTokens) {
+    categories.push({
+      id: "free_space",
+      name: "Free space",
+      tokens: maxTokens - totalTokens,
+      kind: "free",
+    });
+  }
+  const memoryFiles: ProviderContextMemoryFile[] = [
+    ...(breakdown.contextFiles?.items ?? []),
+    ...(breakdown.sessionFiles?.items ?? []),
+  ]
+    .map((item) => {
+      const filePath = (item.path ?? item.name ?? "").trim();
+      if (filePath.length === 0) return null;
+      const tokens = nonNegativeRound(item.tokens);
+      return {
+        path: filePath,
+        type: "Project",
+        ...(tokens > 0 ? { tokens } : {}),
+      };
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+  return {
+    source: "provider",
+    totalTokens,
+    maxTokens,
+    percentage: clampedPct,
+    categories,
+    mcpTools: [],
+    memoryFiles,
+    skills: [],
+  };
+}
+
+function makeKiroAcpAdapterFlavor(
+  options: KiroAdapterV2Options,
+  contextBreakdownBySessionId: Map<string, ProviderContextBreakdown>,
+): AcpAdapterV2Flavor {
   const makeRuntime =
     options.makeRuntime ??
     ((input: AcpAdapterV2RuntimeInput) => {
@@ -558,8 +690,15 @@ function makeKiroAcpAdapterFlavor(options: KiroAdapterV2Options): AcpAdapterV2Fl
     makeRuntime,
     promptFailure: kiroPromptFailure,
     ignoreSessionUpdate: makeKiroCloudConfigFilter(),
-    normalizeSessionUpdate: (notification) =>
-      stripSteeringNote(normalizeKiroSessionUpdate(notification)),
+    normalizeSessionUpdate: (notification) => {
+      if (notification.update.sessionUpdate === "session_info_update") {
+        const parsed = parseKiroContextBreakdown(notification.update._meta);
+        if (parsed !== null) {
+          contextBreakdownBySessionId.set(notification.sessionId, parsed);
+        }
+      }
+      return stripSteeringNote(normalizeKiroSessionUpdate(notification));
+    },
     extractSubagentUpdate: extractKiroSubagentUpdate,
     // See applyKiroModelSelection: `model` arrives after session/new.
     modelOptionArrivesLate: true,
@@ -591,13 +730,31 @@ function makeKiroAcpAdapterFlavor(options: KiroAdapterV2Options): AcpAdapterV2Fl
 export const makeKiroAdapterV2 = Effect.fn("makeKiroAdapterV2")(function* (
   options: KiroAdapterV2Options,
 ) {
-  return yield* makeAcpAdapterV2({
+  const contextBreakdownBySessionId = new Map<string, ProviderContextBreakdown>();
+  const base = yield* makeAcpAdapterV2({
     instanceId: options.instanceId,
-    flavor: makeKiroAcpAdapterFlavor(options),
+    flavor: makeKiroAcpAdapterFlavor(options, contextBreakdownBySessionId),
     selfInvocation: options.selfInvocation,
     ...(options.nativeLogging === undefined ? {} : { nativeLogging: options.nativeLogging }),
     ...(options.testHooks === undefined ? {} : { testHooks: options.testHooks }),
   });
+  const threadInspector: ProviderAdapterV2ThreadInspector = {
+    inspect: ({ providerThread }) => {
+      const sessionId = providerThread.nativeThreadRef?.nativeId;
+      const context = sessionId ? (contextBreakdownBySessionId.get(sessionId) ?? null) : null;
+      return Effect.succeed({ context, mcpServers: [] });
+    },
+  };
+  return {
+    ...base,
+    openSession: (input: Parameters<typeof base.openSession>[0]) =>
+      base.openSession(input).pipe(
+        Effect.map((runtime) => ({
+          ...runtime,
+          threadInspector,
+        })),
+      ),
+  };
 });
 
 export type KiroAdapterV2DriverEnv =

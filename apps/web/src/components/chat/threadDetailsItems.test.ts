@@ -11,19 +11,29 @@ const servers = THREAD_DETAILS_ITEMS.find((item) => item.id === "servers")!;
 
 describe("thread details items", () => {
   it.each([
-    { legacy: false, items: {}, usage: false, context: false },
-    { legacy: true, items: {}, usage: true, context: true },
-    { legacy: true, items: { usage: false }, usage: false, context: true },
-    { legacy: false, items: { usage: true, retired: false }, usage: true, context: false },
-  ])("resolves Usage and Context from overrides and the retired Labs flag: %o", (row) => {
-    const visibility = resolveThreadDetailsVisibility({
-      threadDetailsItems: row.items,
-      threadDetailsUsageEnabled: row.legacy,
-    });
-    expect(visibility.usage).toBe(row.usage);
-    expect(visibility.context).toBe(row.context);
-    expect(visibility.servers).toBe(true);
-  });
+    { legacy: false, items: {}, usage: false, context: true, connectors: true },
+    { legacy: true, items: {}, usage: true, context: true, connectors: true },
+    { legacy: true, items: { usage: false }, usage: false, context: true, connectors: true },
+    {
+      legacy: false,
+      items: { usage: true, context: false, retired: false },
+      usage: true,
+      context: false,
+      connectors: true,
+    },
+  ])(
+    "resolves Usage, Context, and Connectors from overrides and the retired Labs flag: %o",
+    (row) => {
+      const visibility = resolveThreadDetailsVisibility({
+        threadDetailsItems: row.items,
+        threadDetailsUsageEnabled: row.legacy,
+      });
+      expect(visibility.usage).toBe(row.usage);
+      expect(visibility.context).toBe(row.context);
+      expect(visibility.connectors).toBe(row.connectors);
+      expect(visibility.servers).toBe(true);
+    },
+  );
 
   it("stores only choices that differ from the default", () => {
     const legacyOn = { threadDetailsItems: {}, threadDetailsUsageEnabled: true };

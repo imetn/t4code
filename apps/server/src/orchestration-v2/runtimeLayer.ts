@@ -11,6 +11,7 @@ import * as McpAppModelContext from "../mcpApps/McpAppModelContext.ts";
 import * as PreviewAgentActivity from "../preview/PreviewAgentActivity.ts";
 import * as McpAppRequests from "../mcpApps/McpAppRequests.ts";
 import * as McpSignIn from "../mcpApps/McpSignIn.ts";
+import * as ThreadInspector from "../mcpApps/ThreadInspector.ts";
 import * as ProviderSessionRuntime from "../persistence/ProviderSessionRuntime.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
@@ -427,11 +428,22 @@ const layerMcpSignInProvided = McpSignIn.layer.pipe(
   Layer.provide(Layer.merge(layerThreadManagementProvided, layerProviderSessionManagerProvided)),
 );
 
+const layerThreadInspectorProvided = ThreadInspector.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      layerThreadManagementProvided,
+      layerProviderSessionManagerProvided,
+      layerProjectService,
+    ),
+  ),
+);
+
 export const layer = Layer.mergeAll(
   layerCommandOutputHubProvided,
   layerOrchestratorProvided,
   layerMcpAppRequestsProvided,
   layerMcpSignInProvided,
+  layerThreadInspectorProvided,
   layerThreadManagementProvided,
   layerEffectWorkerProvided,
   layerProviderSessionManagerProvided,

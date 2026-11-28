@@ -28,20 +28,22 @@ import { ThreadAutomationsPanel } from "./ThreadAutomationsPanel";
 import { ThreadRelationshipsPanel } from "./ThreadRelationshipsControl";
 import { ThreadRepositorySections } from "./ThreadRepositorySections";
 import { ThreadServersPanel } from "./ThreadServersPanel";
-import {
-  ThreadDetailsContext,
-  ThreadDetailsUsage,
-  type ThreadDetailsUsageInput,
-} from "./ThreadDetailsUsage";
+import { ThreadDetailsConnectors } from "./ThreadDetailsConnectors";
+import { ThreadDetailsContext } from "./ThreadDetailsContext";
+import { formatCompactFilePath } from "./ThreadDetailsContext.logic";
+import { ThreadDetailsUsage, type ThreadDetailsUsageInput } from "./ThreadDetailsUsage";
+import { useThreadInspector } from "./useThreadInspector";
 import { ThreadDetailsItemsMenuItems } from "./ThreadDetailsItemsMenu";
 import { resolveThreadDetailsVisibility, THREAD_DETAILS_ITEMS } from "./threadDetailsItems";
+import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { useClientSettings } from "../../hooks/useSettings";
 import { useProject, useServerConfigs } from "../../state/entities";
 import { filesystemEnvironment } from "../../state/filesystem";
 import { useEnvironmentQuery } from "../../state/query";
 import { ThreadDetailsThreadPrRows } from "./ThreadDetailsPrRows";
 import { cn } from "../../lib/utils";
-import { SlidersHorizontalIcon } from "lucide-react";
+import { CheckIcon, FolderIcon, SlidersHorizontalIcon } from "lucide-react";
+import { StartTruncatedPath } from "../StartTruncatedPath";
 import { ThreadDetailsControl } from "./ThreadDetailsControl";
 import {
   THREAD_DETAILS_PANEL_ICON_CLASS,
@@ -101,6 +103,8 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
   const visible = useClientSettings(resolveThreadDetailsVisibility);
   const gt = useGT();
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
+  const { copyToClipboard: copyWorkspacePath, isCopied: workspacePathCopied } =
+    useCopyToClipboard();
   const t3File = useT3ProjectFileState(
     props.environmentId,
     props.activeProjectScripts && visible.scripts ? props.gitCwd : null,
@@ -108,6 +112,13 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
   const activeThreadRef = { environmentId: props.environmentId, threadId: props.threadId };
   const project = useProject(scopeProjectRef(props.environmentId, props.projectId));
   const serverConfig = useServerConfigs().get(props.environmentId);
+  const workspacePath = props.worktreePath ?? project?.workspaceRoot ?? props.gitCwd ?? null;
+  const inspector = useThreadInspector({
+    environmentId: props.environmentId,
+    threadId: props.threadId,
+    enabled: !props.draftId && props.isServerThread && (visible.context || visible.connectors),
+    refreshKey: `${props.usage.contextWindow?.updatedAt ?? ""}:${props.usage.contextWindow?.usedTokens ?? 0}`,
+  });
   const tracksFolders = (project?.trackedFolders?.length ?? 0) > 0;
   // A worktree thread reaches tracked repositories only through its own task folder.
   const taskFolderQuery = useEnvironmentQuery(
@@ -213,19 +224,62 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                 >
                   <div className="flex flex-col">
                     {show.environment ? (
-                      <BranchToolbar
-                        layout="panel"
-                        panelSection="workspace"
-                        availableEnvironments={props.availableEnvironments}
-                        {...(props.onEnvironmentChange
-                          ? { onEnvironmentChange: props.onEnvironmentChange }
-                          : {})}
-                        autoEnvironmentLabel={props.autoEnvironmentLabel}
-                        onAutoEnvironment={props.onAutoEnvironment}
-                        {...branchToolbarProps}
-                        // Workspace modes follow the composer's rule, not this folder's own status.
-                        showGitControls={props.offersWorkspaceModes}
-                      />
+                      <>
+                        <BranchToolbar
+                          layout="panel"
+                          panelSection="workspace"
+                          availableEnvironments={props.availableEnvironments}
+                          {...(props.onEnvironmentChange
+                            ? { onEnvironmentChange: props.onEnvironmentChange }
+                            : {})}
+                          autoEnvironmentLabel={props.autoEnvironmentLabel}
+                          onAutoEnvironment={props.onAutoEnvironment}
+                          {...branchToolbarProps}
+                          // Workspace modes follow the composer's rule, not this folder's own status.
+                          showGitControls={props.offersWorkspaceModes}
+                        />
+                        {workspacePath &&
+                        serverConfig !== undefined &&
+                        project !== null &&
+                        !isScratchProject(project, serverConfig.scratchWorkspaceRoot) ? (
+                          <ThreadDetailsControl
+                            variant="ghost"
+                            size="sm"
+                            part="row"
+                            tone="muted"
+                            aria-label={gt("Copy workspace path: {path}", { path: workspacePath })}
+                            onClick={() => copyWorkspacePath(workspacePath)}
+                          >
+                            {workspacePathCopied ? (
+                              <CheckIcon
+                                className={cn(
+                                  THREAD_DETAILS_PANEL_ICON_CLASS,
+                                  "text-success-foreground",
+                                )}
+                                aria-hidden
+                              />
+                            ) : (
+                              <FolderIcon className={THREAD_DETAILS_PANEL_ICON_CLASS} aria-hidden />
+                            )}
+                            <span className="flex min-w-0 flex-1 items-center gap-1 text-xs">
+                              {props.activeProjectName ? (
+                                <span className="shrink-0 font-medium text-foreground/80">
+                                  {props.activeProjectName}
+                                </span>
+                              ) : null}
+                              {props.activeProjectName ? (
+                                <span aria-hidden className="shrink-0 text-muted-foreground/60">
+                                  ·
+                                </span>
+                              ) : null}
+                              <StartTruncatedPath
+                                path={formatCompactFilePath(workspacePath, null)}
+                                className="flex-1 text-muted-foreground"
+                              />
+                            </span>
+                          </ThreadDetailsControl>
+                        ) : null}
+                      </>
                     ) : null}
 
                     {show.openIn ? (
@@ -330,8 +384,29 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
 
               {visible.usage ? <ThreadDetailsUsage {...props.usage} /> : null}
 
-              {visible.context && props.usage.contextWindow ? (
-                <ThreadDetailsContext usage={props.usage.contextWindow} />
+              {visible.context ? (
+                <ThreadDetailsContext
+                  threadRef={activeThreadRef}
+                  usage={props.usage.contextWindow}
+                  breakdown={inspector.data?.context ?? null}
+                  workspacePath={workspacePath}
+                  loading={inspector.loading}
+                  {...(!props.draftId && props.isServerThread
+                    ? { onRefresh: inspector.refresh }
+                    : {})}
+                />
+              ) : null}
+
+              {density === "full" && !props.draftId && visible.connectors ? (
+                <ThreadDetailsConnectors
+                  environmentId={props.environmentId}
+                  threadId={props.threadId}
+                  providerThreadId={inspector.data?.providerThreadId ?? null}
+                  servers={inspector.data?.mcpServers ?? []}
+                  fetchedAt={inspector.data?.fetchedAt ?? null}
+                  loading={inspector.loading}
+                  onRefresh={inspector.refresh}
+                />
               ) : null}
 
               {/* Shown only when no section above has content, so an emptied card can be refilled. */}

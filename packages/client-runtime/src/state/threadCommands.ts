@@ -530,6 +530,18 @@ export function createThreadEnvironmentAtoms<R, E>(
       onSuccess: ({ environmentId, input }, registry, result) =>
         Effect.sync(() => markMcpSignedIn(registry, environmentId, input, result.signedInAt)),
     }),
+    inspectThread: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:commands:thread:inspect",
+      tag: WS_METHODS.providerThreadInspect,
+    }),
+    mcpReconnect: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:commands:thread:mcp-reconnect",
+      tag: WS_METHODS.providerMcpReconnect,
+    }),
+    mcpToggle: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:commands:thread:mcp-toggle",
+      tag: WS_METHODS.providerMcpToggle,
+    }),
   };
   const commands = {
     ...sent,

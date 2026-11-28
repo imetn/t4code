@@ -21,9 +21,12 @@ import {
   OrchestrationV2Subagent,
   OrchestrationV2TurnItem,
   ProviderApprovalDecision,
+  type ProviderContextBreakdown,
   ProviderInteractionMode,
   ProviderDriverKind,
   ProviderInstanceId,
+  ProviderMcpControlError,
+  type ProviderMcpServerEntry,
   ProviderMcpSignInError,
   PositiveInt,
   ProviderUserInputAnswers,
@@ -756,6 +759,31 @@ export interface ProviderAdapterV2McpSignIn {
   }) => Effect.Effect<void, ProviderMcpSignInError | ProviderAdapterV2Error>;
 }
 
+/**
+ * Reads live context-window breakdowns and MCP connector states from an active
+ * provider session, and exposes provider-native connector controls where available.
+ */
+export interface ProviderAdapterV2ThreadInspector {
+  readonly inspect: (input: {
+    readonly providerThread: OrchestrationV2ProviderThread;
+  }) => Effect.Effect<
+    {
+      readonly context: ProviderContextBreakdown | null;
+      readonly mcpServers: ReadonlyArray<ProviderMcpServerEntry>;
+    },
+    ProviderAdapterV2Error
+  >;
+  readonly reconnectMcpServer?: (input: {
+    readonly providerThread: OrchestrationV2ProviderThread;
+    readonly server: string;
+  }) => Effect.Effect<void, ProviderMcpControlError | ProviderAdapterV2Error>;
+  readonly toggleMcpServer?: (input: {
+    readonly providerThread: OrchestrationV2ProviderThread;
+    readonly server: string;
+    readonly enabled: boolean;
+  }) => Effect.Effect<void, ProviderMcpControlError | ProviderAdapterV2Error>;
+}
+
 export type ProviderAdapterV2SubagentOutcome = {
   readonly status: "completed" | "failed" | "cancelled";
   readonly completedAt: NonNullable<OrchestrationV2Subagent["completedAt"]>;
@@ -876,6 +904,8 @@ export interface ProviderAdapterV2SessionRuntime {
   readonly mcpApps?: ProviderAdapterV2McpApps;
   /** Absent when the agent has no way to sign an MCP server in. */
   readonly mcpSignIn?: ProviderAdapterV2McpSignIn;
+  /** Absent when the provider exposes no live context breakdown or connector status. */
+  readonly threadInspector?: ProviderAdapterV2ThreadInspector;
   readonly rollbackThread: (
     input: ProviderAdapterV2RollbackThreadInput,
   ) => Effect.Effect<ProviderAdapterV2ThreadSnapshot, ProviderAdapterV2Error>;

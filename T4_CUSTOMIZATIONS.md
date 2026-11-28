@@ -217,3 +217,20 @@ Each entry uses `<!-- t4-lock: <id> -->` and explicit path prefixes/files so `sc
 - **Non-Negotiable Invariants**:
   - Flavor-gated, callback-permit-synchronized steer decline (`flavor.promptRefusedWhileAgentWaits`) in `packages/provider-acp/src/server/adapter.ts` — do not downgrade to an unsynchronized or unconditional check.
   - ToS-compliant opt-in `agy` CLI quota checks, keychain login visibility, wake latch stability, and session reopen after settings rebuild.
+
+### 12. Right-Sidebar Context Breakdown & Connectors Management
+
+<!-- t4-lock: thread-context-connectors -->
+
+- **Status**: `Locked`
+- **Surfaces**: Contracts, Client Runtime, Server, Providers (`Claude`, `Codex`, `Kiro`, `core`), Web, Desktop
+- **Protected Paths**:
+  - `apps/server/src/mcpApps/ThreadInspector.ts`
+  - `apps/web/src/components/chat/ThreadDetailsContext.tsx`
+  - `apps/web/src/components/chat/ThreadDetailsContext.logic.ts`
+  - `apps/web/src/components/chat/ThreadDetailsConnectors.tsx`
+  - `apps/web/src/components/chat/useThreadInspector.ts`
+  - `apps/web/src/components/chat/ThreadDetailsPanel.tsx`
+- **Non-Negotiable Invariants**:
+  - Right-sidebar `Context` section displays a multi-segment color-coded context bar, interactive breakdown rows (Messages, MCP tools, System prompt, Skills, Memory files, deferred tools, Autocompact buffer, Free space), and expandable MCP tools / Memory files detail lists powered by `provider.thread.inspect`.
+  - Right-sidebar `Connectors` row opens the connector management view with per-server status, reconnect (`provider.mcp.reconnect`), enable/disable toggle (`provider.mcp.toggle`), and OAuth sign-in actions.

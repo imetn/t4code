@@ -40,6 +40,7 @@ export function McpSignInAction({
   providerThreadId,
   server,
   noticeAt,
+  onSignedIn,
 }: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
@@ -47,6 +48,7 @@ export function McpSignInAction({
   readonly server: string;
   /** When the environment raised the notice, in epoch milliseconds. */
   readonly noticeAt: number;
+  readonly onSignedIn?: () => void;
 }) {
   const gt = useGT();
   const formId = useId();
@@ -71,6 +73,7 @@ export function McpSignInAction({
   const done = () => {
     close();
     toastManager.add({ type: "success", title: gt("Signed in to {server}", { server }) });
+    onSignedIn?.();
   };
   const begin = async () => {
     const current = ++attempt.current;

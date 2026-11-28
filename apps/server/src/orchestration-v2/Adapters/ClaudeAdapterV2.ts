@@ -61,6 +61,7 @@ import {
   type SpawnedProcess as ClaudeSpawnedProcess,
   type SDKAssistantMessage,
   type SDKAPIRetryMessage,
+  type SDKControlGetContextUsageResponse,
   type SDKMessage,
   type SDKRateLimitInfo,
   type SDKResultMessage,
@@ -126,6 +127,11 @@ import {
   type OrchestrationV2WebSearchResult,
   type ProviderApprovalDecision,
   type ProviderApprovalFullAccessOverride,
+  type ProviderContextBreakdown,
+  type ProviderContextCategory,
+  type ProviderContextCategoryId,
+  ProviderMcpControlError,
+  type ProviderMcpServerEntry,
   ProviderMcpSignInError,
   type ProviderApprovalOption,
   ProviderDriverKind,
@@ -260,7 +266,164 @@ import {
 
 export const CLAUDE_PROVIDER = ProviderDriverKind.make("claudeAgent");
 /** The query exited before the turn attached, so the prompt was never offered. */
-export const CLAUDE_QUERY_ENDED_BEFORE_TURN_DETAIL =
+export const CLAUDE_CONTEXT_CATEGORY_IDS = new Set<ProviderContextCategoryId>([
+  "system_prompt",
+  "system_tools",
+  "mcp_tools",
+  "mcp_instructions",
+  "mcp_tools_deferred",
+  "system_tools_deferred",
+  "custom_agents",
+  "memory_files",
+  "skills",
+  "messages",
+  "autocompact_buffer",
+  "compact_buffer",
+  "free_space",
+  "other",
+]);
+
+function normalizeClaudeCategoryId(id: string | undefined): ProviderContextCategoryId | undefined {
+  if (id === undefined) return undefined;
+  return CLAUDE_CONTEXT_CATEGORY_IDS.has(id as ProviderContextCategoryId)
+    ? (id as ProviderContextCategoryId)
+    : "other";
+}
+
+function toClaudeNonNegInt(value: number | undefined): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.round(value) : 0;
+}
+
+function toClaudePositiveIntOrNull(value: number | undefined): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.round(value)
+    : null;
+}
+
+function toClaudeContextBreakdown(
+  raw: SDKControlGetContextUsageResponse,
+): ProviderContextBreakdown {
+  const maxTokens =
+    toClaudePositiveIntOrNull(raw.rawMaxTokens) ?? toClaudePositiveIntOrNull(raw.maxTokens);
+  const totalTokens = toClaudeNonNegInt(raw.totalTokens);
+  const percentage = Number.isFinite(raw.percentage)
+    ? Math.round(Math.max(0, raw.percentage) * 10) / 10
+    : maxTokens !== null
+      ? Math.round((totalTokens / maxTokens) * 1000) / 10
+      : null;
+  const categories: ProviderContextCategory[] = [];
+  for (const cat of raw.categories ?? []) {
+    const name = cat.name.trim();
+    if (name.length === 0) continue;
+    const id = normalizeClaudeCategoryId(cat.id);
+    categories.push({
+      ...(id === undefined ? {} : { id }),
+      name,
+      tokens: toClaudeNonNegInt(cat.tokens),
+      kind: cat.kind,
+    });
+  }
+  const mcpTools = (raw.mcpTools ?? [])
+    .map((tool) => {
+      const name = tool.name.trim();
+      const serverName = tool.serverName.trim();
+      if (name.length === 0 || serverName.length === 0) return null;
+      return {
+        name,
+        serverName,
+        tokens: toClaudeNonNegInt(tool.tokens),
+        ...(tool.isLoaded === undefined ? {} : { isLoaded: tool.isLoaded }),
+      };
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+  const memoryFiles = (raw.memoryFiles ?? [])
+    .map((file) => {
+      const filePath = file.path.trim();
+      const type = file.type.trim() || "Project";
+      if (filePath.length === 0) return null;
+      return {
+        path: filePath,
+        type,
+        tokens: toClaudeNonNegInt(file.tokens),
+      };
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+  const skills = (raw.skills?.skillFrontmatter ?? [])
+    .map((skill) => {
+      const name = skill.name.trim();
+      const source = skill.source.trim() || "user";
+      if (name.length === 0) return null;
+      const skillPath = skill.path?.trim();
+      const pluginName = skill.pluginName?.trim();
+      return {
+        name,
+        source,
+        ...(skillPath ? { path: skillPath } : {}),
+        ...(pluginName ? { pluginName } : {}),
+        tokens: toClaudeNonNegInt(skill.tokens),
+      };
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+  const model = raw.model?.trim();
+  return {
+    source: "provider",
+    ...(model ? { model } : {}),
+    totalTokens,
+    maxTokens,
+    percentage,
+    autoCompactThreshold: toClaudePositiveIntOrNull(raw.autoCompactThreshold),
+    isAutoCompactEnabled: raw.isAutoCompactEnabled,
+    categories,
+    mcpTools,
+    memoryFiles,
+    skills,
+  };
+}
+
+function toClaudeMcpServerEntries(
+  statuses: ReadonlyArray<ClaudeMcpServerStatus>,
+): ReadonlyArray<ProviderMcpServerEntry> {
+  const entries: ProviderMcpServerEntry[] = [];
+  for (const status of statuses) {
+    const name = status.name.trim();
+    if (name.length === 0) continue;
+    // Every claude.ai catalog connector the user never linked reports needs-auth.
+    if (status.scope === "claudeai" && status.status === "needs-auth") continue;
+    const tools = (status.tools ?? [])
+      .map((tool) => {
+        const toolName = tool.name.trim();
+        if (toolName.length === 0) return null;
+        return {
+          name: toolName,
+          ...(typeof tool.description === "string" && tool.description.trim().length > 0
+            ? { description: tool.description.trim().slice(0, 200) }
+            : {}),
+        };
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+    const scope = status.scope?.trim();
+    const source = status.source?.trim();
+    const rawError = status.error?.trim();
+    const error = rawError
+      ? rawError.replace(/Bearer\s+\S+/gi, "Bearer [redacted]").slice(0, 300)
+      : undefined;
+    entries.push({
+      name,
+      status: status.status,
+      toolCount: tools.length,
+      ...(tools.length > 0 ? { tools } : {}),
+      ...(scope ? { scope } : {}),
+      ...(source ? { source } : {}),
+      ...(error ? { error } : {}),
+      canReconnect: true,
+      canToggle: name !== "t3-code" && source !== "sdk",
+      canSignIn: status.status === "needs-auth",
+    });
+  }
+  return entries;
+}
+
+const CLAUDE_QUERY_ENDED_BEFORE_TURN_DETAIL =
   "Claude provider query ended before the turn could start.";
 const CLAUDE_AGENT_SDK_QUERY_PROTOCOL = "claude-agent-sdk.query" as const;
 
@@ -821,6 +984,14 @@ export interface ClaudeAgentSdkQuerySession {
   readonly reconnectMcpServer: (
     server: string,
   ) => Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
+  readonly toggleMcpServer?: (
+    server: string,
+    enabled: boolean,
+  ) => Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
+  readonly getContextUsage?: Effect.Effect<
+    SDKControlGetContextUsageResponse,
+    ClaudeAgentSdkQueryRunnerError
+  >;
   /** Runs an MCP tool without a model turn and returns the server's raw `CallToolResult`. */
   readonly callMcpTool: (input: {
     readonly tool: string;
@@ -2158,6 +2329,15 @@ export const layerQueryRunner: Layer.Layer<
             try: () => queryRuntime.reconnectMcpServer(server),
             catch: (cause) => queryRunnerError(cause, "reconnectMcpServer"),
           }),
+        toggleMcpServer: (server, enabled) =>
+          Effect.tryPromise({
+            try: () => queryRuntime.toggleMcpServer(server, enabled),
+            catch: (cause) => queryRunnerError(cause, "toggleMcpServer"),
+          }),
+        getContextUsage: Effect.tryPromise({
+          try: () => queryRuntime.getContextUsage({ detail: "full" }),
+          catch: (cause) => queryRunnerError(cause, "getContextUsage"),
+        }),
         callMcpTool: (call) =>
           Effect.tryPromise({
             try: () =>
@@ -15327,6 +15507,84 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   ),
                 );
             }),
+          },
+          threadInspector: {
+            inspect: Effect.fn("ClaudeAdapterV2.threadInspector.inspect")(function* ({
+              providerThread,
+            }) {
+              const liveQuery = yield* Ref.get(queryContext);
+              const nativeId = providerThread.nativeThreadRef?.nativeId;
+              if (
+                liveQuery === null ||
+                liveQuery.stopping ||
+                !nativeId ||
+                (liveQuery.nativeThreadId !== nativeId &&
+                  clearedNativeSessions.get(liveQuery.nativeThreadId) !== nativeId)
+              ) {
+                return { context: null, mcpServers: [] };
+              }
+              const [rawContext, statuses] = yield* Effect.all(
+                [
+                  liveQuery.query.getContextUsage
+                    ? liveQuery.query.getContextUsage.pipe(
+                        Effect.timeoutOrElse({
+                          duration: "5 seconds",
+                          orElse: () => Effect.succeed(null),
+                        }),
+                        Effect.orElseSucceed(() => null),
+                      )
+                    : Effect.succeed(null),
+                  liveQuery.query.mcpServerStatus.pipe(
+                    Effect.timeoutOrElse({
+                      duration: "4 seconds",
+                      orElse: () => Effect.succeed<ReadonlyArray<ClaudeMcpServerStatus>>([]),
+                    }),
+                    Effect.orElseSucceed((): ReadonlyArray<ClaudeMcpServerStatus> => []),
+                  ),
+                ],
+                { concurrency: "unbounded" },
+              );
+              return {
+                context: rawContext === null ? null : toClaudeContextBreakdown(rawContext),
+                mcpServers: toClaudeMcpServerEntries(statuses),
+              };
+            }),
+            reconnectMcpServer: Effect.fn("ClaudeAdapterV2.threadInspector.reconnectMcpServer")(
+              function* ({ providerThread, server }) {
+                const liveQuery = yield* liveQueryForThread(providerThread);
+                yield* liveQuery.query.reconnectMcpServer(server).pipe(
+                  Effect.mapError(
+                    () =>
+                      new ProviderMcpControlError({
+                        server,
+                        detail: `Claude couldn't reconnect ${server}.`,
+                      }),
+                  ),
+                );
+              },
+            ),
+            toggleMcpServer: Effect.fn("ClaudeAdapterV2.threadInspector.toggleMcpServer")(
+              function* ({ providerThread, server, enabled }) {
+                const liveQuery = yield* liveQueryForThread(providerThread);
+                if (!liveQuery.query.toggleMcpServer) {
+                  return yield* new ProviderMcpControlError({
+                    server,
+                    detail: `This Claude session doesn't support toggling ${server}.`,
+                  });
+                }
+                yield* liveQuery.query.toggleMcpServer(server, enabled).pipe(
+                  Effect.mapError(
+                    () =>
+                      new ProviderMcpControlError({
+                        server,
+                        detail: enabled
+                          ? `Claude couldn't enable ${server}.`
+                          : `Claude couldn't disable ${server}.`,
+                      }),
+                  ),
+                );
+              },
+            ),
           },
           stopTask: Effect.fn("ClaudeAdapterV2.stopTask")(function* ({ providerThread, taskId }) {
             const liveQuery = yield* Ref.get(queryContext);
