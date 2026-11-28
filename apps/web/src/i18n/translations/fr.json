@@ -3340,7 +3340,10 @@
     {
       "t": "span",
       "i": 2,
-      "c": [" ", "sur l’ordinateur qui a ouvert cette page"]
+      "c": [
+        " ",
+        "sur l’ordinateur qui a ouvert cette page"
+      ]
     }
   ],
   "b2d53b4d1d48fbef": [
@@ -3352,7 +3355,10 @@
     {
       "t": "span",
       "i": 2,
-      "c": [" ", "· quiconque l’exécute obtient cet accès"]
+      "c": [
+        " ",
+        "· quiconque l’exécute obtient cet accès"
+      ]
     }
   ],
   "c54cc9c75db9dc58": "N’approuvez qu’une connexion que vous venez de lancer.",
@@ -13454,5 +13460,21 @@
   "8cd580f0e5bd5c8e": "Group by day",
   "f77f2efe3ef7b2d3": "Group by status",
   "25e5450dd59f93df": "All",
-  "7a4041f8a9b415ed": "No todos or memory notes recorded in this month."
+  "7a4041f8a9b415ed": "No todos or memory notes recorded in this month.",
+  "2d4b888d587a5b70": "Dessiner sur {name}",
+  "cfa1fc62923d3d32": "Outil de dessin",
+  "3b7a720d84d54cd5": "Dessin à main levée (D)",
+  "2f5782fab3b69ec0": "Dessiner",
+  "d921a0a1ba87a665": "Effacer un trait (E)",
+  "449a265c477785b0": "Effacer",
+  "a8ed2dbdd7333ead": "Couleur du trait",
+  "650afcc1cdb79840": "Couleur du thème",
+  "42102b61a3c388ad": "Le dessin n'a pas pu être enregistré. Réessayez ou annulez.",
+  "e1abc4e22afc6c41": "Dessiner sur l'image",
+  "677fbda9e901b45e": "Rouge",
+  "c23be241b9d249c9": "Orange",
+  "c63d942911808821": "Vert",
+  "75f923f6e3e41def": "Blanc",
+  "04cabf0f2aa08368": "Noir",
+  "a992afd4cdaa1317": "Annuler le dessin"
 }

@@ -4,6 +4,7 @@ import { AppText } from "./ui/AppText";
 import { Image } from "expo-image";
 import { memo, useLayoutEffect, useMemo, useState } from "react";
 import { View } from "react-native";
+import type { EnvironmentProject } from "@t3tools/client-runtime/state/models";
 import type { EnvironmentId, ProjectIconOverride } from "@t3tools/contracts";
 import { dashboardIconUrl } from "@t3tools/shared/dashboardIcons";
 import {
@@ -43,6 +44,8 @@ export const ProjectFavicon = memo(function ProjectFavicon(props: {
   readonly workspaceRoot?: string | null;
   readonly faviconPath?: string | null;
   readonly projectIcon?: ProjectIconOverride | null;
+  /** Projects whose icon to show, in order, when this project has none. */
+  readonly fallbackProjects?: ReadonlyArray<ProjectFaviconSource>;
 }) {
   const size = props.size ?? 42;
   const symbol = resolveProjectIconSymbol(props.projectIcon);
@@ -92,6 +95,17 @@ export const ProjectFavicon = memo(function ProjectFavicon(props: {
     );
   }
 
+  if (renderableFaviconUrl === null && props.fallbackProjects?.length) {
+    return (
+      <FallbackProjectFavicon
+        projects={props.fallbackProjects}
+        projectTitle={props.projectTitle}
+        size={size}
+        open={props.open}
+      />
+    );
+  }
+
   return (
     <ProjectFaviconImage
       key={cacheKey}
@@ -120,6 +134,33 @@ function DashboardProjectFavicon(props: {
       open={props.open}
       projectTitle={props.projectTitle}
       size={props.size}
+    />
+  );
+}
+
+type ProjectFaviconSource = Pick<
+  EnvironmentProject,
+  "environmentId" | "workspaceRoot" | "faviconPath" | "projectIcon"
+>;
+
+function FallbackProjectFavicon(props: {
+  readonly projects: ReadonlyArray<ProjectFaviconSource>;
+  readonly projectTitle: string;
+  readonly size: number;
+  readonly open: boolean | undefined;
+}) {
+  const [project, ...laterProjects] = props.projects;
+  if (!project) return null;
+  return (
+    <ProjectFavicon
+      environmentId={project.environmentId}
+      workspaceRoot={project.workspaceRoot}
+      faviconPath={project.faviconPath}
+      projectIcon={project.projectIcon}
+      projectTitle={props.projectTitle}
+      size={props.size}
+      fallbackProjects={laterProjects}
+      {...(props.open === undefined ? {} : { open: props.open })}
     />
   );
 }

@@ -3341,7 +3341,10 @@
     {
       "t": "span",
       "i": 2,
-      "c": [" ", "auf dem Computer, der diese Seite geöffnet hat"]
+      "c": [
+        " ",
+        "auf dem Computer, der diese Seite geöffnet hat"
+      ]
     }
   ],
   "b2d53b4d1d48fbef": [
@@ -3353,7 +3356,10 @@
     {
       "t": "span",
       "i": 2,
-      "c": [" ", "· wer es ausführt, erhält diesen Zugriff"]
+      "c": [
+        " ",
+        "· wer es ausführt, erhält diesen Zugriff"
+      ]
     }
   ],
   "c54cc9c75db9dc58": "Genehmige nur eine Anmeldung, die du gerade selbst gestartet hast.",
@@ -13454,5 +13460,21 @@
   "8cd580f0e5bd5c8e": "Group by day",
   "f77f2efe3ef7b2d3": "Group by status",
   "25e5450dd59f93df": "All",
-  "7a4041f8a9b415ed": "No todos or memory notes recorded in this month."
+  "7a4041f8a9b415ed": "No todos or memory notes recorded in this month.",
+  "2d4b888d587a5b70": "Auf {name} zeichnen",
+  "cfa1fc62923d3d32": "Zeichenwerkzeug",
+  "3b7a720d84d54cd5": "Freihand zeichnen (D)",
+  "2f5782fab3b69ec0": "Zeichnen",
+  "d921a0a1ba87a665": "Strich entfernen (E)",
+  "449a265c477785b0": "Radieren",
+  "a8ed2dbdd7333ead": "Strichfarbe",
+  "650afcc1cdb79840": "Designfarbe",
+  "42102b61a3c388ad": "Die Zeichnung konnte nicht gespeichert werden. Versuche es erneut oder brich ab.",
+  "e1abc4e22afc6c41": "Auf Bild zeichnen",
+  "677fbda9e901b45e": "Rot",
+  "c23be241b9d249c9": "Orange",
+  "c63d942911808821": "Grün",
+  "75f923f6e3e41def": "Weiß",
+  "04cabf0f2aa08368": "Schwarz",
+  "a992afd4cdaa1317": "Zeichnen abbrechen"
 }

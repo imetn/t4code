@@ -20,6 +20,7 @@ import { useClientSettings } from "~/hooks/useSettings";
 import { seedDraftModelSelection } from "~/lib/seedDraftModelSelection";
 import {
   deriveLogicalProjectKeyFromSettings,
+  groupIconFallbacks,
   pickableProjectGroups,
   selectProjectGroupingSettings,
 } from "@t3tools/client-runtime/state/project-grouping";
@@ -285,7 +286,11 @@ export function DraftHeroHeadline({
                 {item.value === ADD_PROJECT_VALUE ? (
                   <FolderPlusIcon className="size-4 shrink-0" />
                 ) : entry ? (
-                  <ProjectFavicon project={entry.group} className="size-4 shrink-0" />
+                  <ProjectFavicon
+                    project={entry.group}
+                    fallbackProjects={groupIconFallbacks(entry.group.memberProjects, entry.group)}
+                    className="size-4 shrink-0"
+                  />
                 ) : null}
                 <Tooltip>
                   <TooltipTrigger render={<span className="min-w-0 flex-1 text-sm" />}>
