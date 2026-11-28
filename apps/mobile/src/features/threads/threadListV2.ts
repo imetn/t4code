@@ -532,6 +532,8 @@ export interface ThreadListV2Layout {
   readonly listedSettledThreads: ReadonlyArray<EnvironmentThreadShell>;
   readonly workingCount: number;
   readonly workingShelfHeaderIndex: number | null;
+  readonly completedCount: number;
+  readonly idleCount: number;
   readonly snoozedCount: number;
   readonly snoozedShelfHeaderIndex: number | null;
   readonly settledCount: number;
@@ -593,6 +595,9 @@ export interface ThreadListV2SectionDividerListItem {
   readonly type: "v2-section-divider";
   readonly key: "v2-section-divider:completed" | "v2-section-divider:idle";
   readonly section: "completed" | "idle";
+  readonly count: number;
+  readonly expanded: boolean;
+  readonly disabled: boolean;
 }
 
 export type ThreadListV2ListItem =
@@ -656,7 +661,13 @@ export function threadListV2ListItemsAreEqual(
         previous.disabled === item.disabled
       );
     case "v2-section-divider":
-      return previous.type === "v2-section-divider" && previous.section === item.section;
+      return (
+        previous.type === "v2-section-divider" &&
+        previous.section === item.section &&
+        previous.count === item.count &&
+        previous.expanded === item.expanded &&
+        previous.disabled === item.disabled
+      );
     case "v2-snoozed-shelf":
       return (
         previous.type === "v2-snoozed-shelf" &&
@@ -717,6 +728,10 @@ export function buildThreadListV2ListItems(input: {
   readonly workingCount?: number;
   readonly workingShelfExpanded?: boolean;
   readonly workingShelfHeaderIndex?: number | null;
+  readonly completedCount?: number;
+  readonly completedShelfExpanded?: boolean;
+  readonly idleCount?: number;
+  readonly idleShelfExpanded?: boolean;
   readonly snoozedCount?: number;
   readonly snoozedShelfExpanded?: boolean;
   readonly snoozedShelfHeaderIndex?: number | null;
@@ -810,6 +825,13 @@ export function buildThreadListV2ListItems(input: {
             type: "v2-section-divider",
             key: `v2-section-divider:${header.kind}`,
             section: header.kind,
+            count:
+              header.kind === "completed" ? (input.completedCount ?? 0) : (input.idleCount ?? 0),
+            expanded:
+              header.kind === "completed"
+                ? input.completedShelfExpanded !== false
+                : input.idleShelfExpanded !== false,
+            disabled: shelfDisabled,
           });
         } else if (header.kind === "snoozed" && snoozedCount > 0) {
           result.push({
@@ -883,6 +905,8 @@ export function buildThreadListV2Items(input: {
   readonly now: string;
   readonly workingShelfEnabled?: boolean;
   readonly workingShelfExpanded?: boolean;
+  readonly completedShelfExpanded?: boolean;
+  readonly idleShelfExpanded?: boolean;
   readonly sortOrder?: ThreadListSortOrder;
   readonly sectionOrder?: readonly ThreadListSection[];
   readonly isWorking?: (thread: EnvironmentThreadShell) => boolean;
@@ -1018,6 +1042,8 @@ export function buildThreadListV2Items(input: {
       listedSettledThreads: [],
       workingCount: 0,
       workingShelfHeaderIndex: null,
+      completedCount: 0,
+      idleCount: 0,
       snoozedCount: 0,
       snoozedShelfHeaderIndex: null,
       settledCount: 0,
@@ -1135,9 +1161,15 @@ export function buildThreadListV2Items(input: {
   };
   pushBlocks(layout.pinned);
   const workingCount = rowCount(layout.working);
+  const completedCount = rowCount(layout.completed);
+  const idleCount = rowCount(layout.idle);
+  const completedExpanded = input.completedShelfExpanded !== false;
+  const idleExpanded = input.idleShelfExpanded !== false;
   let workingShelfHeaderIndex: number | null = null;
   if (statusGroupingEnabled) {
     let hasSectionHeaderAbove = false;
+    const hasMultipleStatusGroups =
+      [completedCount, workingCount, idleCount].filter((count) => count > 0).length > 1;
     for (const section of sectionOrder) {
       if (section === "working") {
         if (workingCount > 0) {
@@ -1147,17 +1179,19 @@ export function buildThreadListV2Items(input: {
           pushBlocks(shelf(layout.working, input.workingShelfExpanded === true));
         }
       } else if (section === "completed") {
-        if (layout.completed.length > 0) {
-          if (hasSectionHeaderAbove) {
+        if (completedCount > 0) {
+          if (hasSectionHeaderAbove || hasMultipleStatusGroups || !completedExpanded) {
             sectionHeaders.push({ index: items.length, kind: "completed" });
+            hasSectionHeaderAbove = true;
           }
-          pushBlocks(layout.completed);
+          pushBlocks(shelf(layout.completed, completedExpanded));
         }
-      } else if (layout.idle.length > 0) {
-        if (hasSectionHeaderAbove) {
+      } else if (idleCount > 0) {
+        if (hasSectionHeaderAbove || hasMultipleStatusGroups || !idleExpanded) {
           sectionHeaders.push({ index: items.length, kind: "idle" });
+          hasSectionHeaderAbove = true;
         }
-        pushBlocks(layout.idle);
+        pushBlocks(shelf(layout.idle, idleExpanded));
       }
     }
   } else {
@@ -1187,6 +1221,8 @@ export function buildThreadListV2Items(input: {
     ),
     workingCount,
     workingShelfHeaderIndex,
+    completedCount,
+    idleCount,
     snoozedCount,
     snoozedShelfHeaderIndex,
     settledCount: settledTotal,

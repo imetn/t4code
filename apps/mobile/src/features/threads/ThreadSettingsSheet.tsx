@@ -754,6 +754,34 @@ function buildThreadSettingsCatalogItems(
   ];
 }
 
+function modelSheetSurface(isDarkMode: boolean) {
+  return isDarkMode
+    ? {
+        canvas: "#111114",
+        card: "#1A1A1E",
+        cardBorder: "rgba(255,255,255,0.08)",
+        activeTab: "#252529",
+        activeTabBorder: "rgba(255,255,255,0.09)",
+        actionBtn: "rgba(255,255,255,0.08)",
+        selectedRow: "rgba(255,255,255,0.095)",
+        divider: "rgba(255,255,255,0.08)",
+        pill: "rgba(255,255,255,0.09)",
+        speedActive: "#323238",
+      }
+    : {
+        canvas: "#F2F2F7",
+        card: "#FFFFFF",
+        cardBorder: "rgba(0,0,0,0.055)",
+        activeTab: "#FFFFFF",
+        activeTabBorder: "rgba(0,0,0,0.06)",
+        actionBtn: "rgba(0,0,0,0.05)",
+        selectedRow: "rgba(24,24,27,0.06)",
+        divider: "rgba(0,0,0,0.075)",
+        pill: "rgba(24,24,27,0.06)",
+        speedActive: "#FFFFFF",
+      };
+}
+
 function ThreadSettingsTopBar(props: {
   readonly searchExpanded: boolean;
   readonly onOpenSearch: () => void;
@@ -807,15 +835,32 @@ function ThreadSettingsTopBar(props: {
     }
   };
 
-  const topPadding = Platform.OS === "ios" ? 18 : insets.top + 10;
+  const topPadding = Platform.OS === "ios" ? 20 : insets.top + 10;
+  const surface = modelSheetSurface(isDarkMode);
+  const activeTabShadow = isDarkMode
+    ? undefined
+    : {
+        shadowColor: "#000000",
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.08,
+        shadowRadius: 3,
+        elevation: 1,
+      };
 
   if (showSearch) {
     return (
       <View
-        className="flex-row items-center gap-2 border-b border-border-subtle px-3.5 pb-2.5"
+        className="flex-row items-center gap-2 px-3.5 pb-2.5"
         style={{ paddingTop: topPadding }}
       >
-        <View className="h-[36px] min-w-0 flex-1 flex-row items-center gap-2 rounded-full bg-subtle px-3">
+        <View
+          className="h-[36px] min-w-0 flex-1 flex-row items-center gap-2 rounded-full px-3"
+          style={{
+            backgroundColor: surface.card,
+            borderWidth: 0.5,
+            borderColor: surface.cardBorder,
+          }}
+        >
           <SymbolView
             name="magnifyingglass"
             size={14}
@@ -869,17 +914,22 @@ function ThreadSettingsTopBar(props: {
 
   return (
     <View
-      className="flex-row items-center justify-between gap-2 border-b border-border-subtle px-3.5 pb-2.5"
+      className="flex-row items-center justify-between gap-2 px-3.5 pb-2.5"
       style={{ paddingTop: topPadding }}
     >
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ alignItems: "center", gap: 6, paddingRight: 4 }}
+        contentContainerStyle={{
+          alignItems: "center",
+          gap: 4,
+          paddingVertical: 2,
+          paddingRight: 4,
+        }}
         className="min-w-0 flex-1"
       >
-        {/* Optically matched Favorites pill */}
+        {/* Optically matched Favorites tab: calm transparent resting icon, elevated pill when active */}
         <Pressable
           accessibilityLabel={gt("Favorites")}
           accessibilityRole="tab"
@@ -890,12 +940,18 @@ function ThreadSettingsTopBar(props: {
           }}
           className={cn(
             "h-[34px] flex-row items-center justify-center rounded-full active:opacity-75",
-            session.activeTab === "favorites"
-              ? isDarkMode
-                ? "gap-1.5 bg-subtle-strong px-3"
-                : "gap-1.5 bg-foreground px-3"
-              : "w-[34px] bg-subtle",
+            session.activeTab === "favorites" ? "gap-1.5 px-3" : "w-[34px]",
           )}
+          style={
+            session.activeTab === "favorites"
+              ? {
+                  backgroundColor: surface.activeTab,
+                  borderWidth: 0.5,
+                  borderColor: surface.activeTabBorder,
+                  ...activeTabShadow,
+                }
+              : undefined
+          }
         >
           <SymbolView
             name="star.fill"
@@ -907,19 +963,12 @@ function ThreadSettingsTopBar(props: {
             type="monochrome"
           />
           {session.activeTab === "favorites" ? (
-            <Text
-              className={cn(
-                "text-xs font-t3-bold",
-                isDarkMode ? "text-foreground" : "text-background",
-              )}
-            >
-              {gt("Favorites")}
-            </Text>
+            <Text className="text-xs font-t3-bold text-foreground">{gt("Favorites")}</Text>
           ) : null}
         </Pressable>
 
         {/* Crisp hairline separator between Favorites and Providers */}
-        <View className="mx-0.5 h-4 w-px bg-border-subtle" />
+        <View className="mx-0.5 h-4 w-px" style={{ backgroundColor: surface.divider }} />
 
         {session.providerGroups.map((group) => {
           const isActive = session.activeTab === group.providerKey;
@@ -937,22 +986,22 @@ function ThreadSettingsTopBar(props: {
               }}
               className={cn(
                 "h-[34px] flex-row items-center justify-center rounded-full active:opacity-75",
-                isActive
-                  ? isDarkMode
-                    ? "gap-1.5 bg-subtle-strong px-3"
-                    : "gap-1.5 bg-foreground px-3"
-                  : "w-[34px] bg-subtle",
+                isActive ? "gap-1.5 px-3" : "w-[34px]",
               )}
+              style={
+                isActive
+                  ? {
+                      backgroundColor: surface.activeTab,
+                      borderWidth: 0.5,
+                      borderColor: surface.activeTabBorder,
+                      ...activeTabShadow,
+                    }
+                  : undefined
+              }
             >
-              <ProviderIcon iconUrl={iconUrl} provider={driver} size={15} />
+              <ProviderIcon iconUrl={iconUrl} provider={driver} size={16} />
               {isActive ? (
-                <Text
-                  className={cn(
-                    "text-xs font-t3-bold",
-                    isDarkMode ? "text-foreground" : "text-background",
-                  )}
-                  numberOfLines={1}
-                >
+                <Text className="text-xs font-t3-bold text-foreground" numberOfLines={1}>
                   {group.providerLabel}
                 </Text>
               ) : null}
@@ -969,7 +1018,8 @@ function ThreadSettingsTopBar(props: {
             void Haptics.selectionAsync();
             props.onOpenSearch();
           }}
-          className="size-[34px] items-center justify-center rounded-full bg-subtle active:opacity-70"
+          className="size-[32px] items-center justify-center rounded-full active:opacity-70"
+          style={{ backgroundColor: surface.actionBtn }}
         >
           <SymbolView
             name="magnifyingglass"
@@ -984,7 +1034,8 @@ function ThreadSettingsTopBar(props: {
             <Pressable
               accessibilityLabel={gt("Model options")}
               accessibilityRole="button"
-              className="size-[34px] items-center justify-center rounded-full bg-subtle active:opacity-70"
+              className="size-[32px] items-center justify-center rounded-full active:opacity-70"
+              style={{ backgroundColor: surface.actionBtn }}
             >
               <SymbolView
                 name="ellipsis"
@@ -1001,7 +1052,8 @@ function ThreadSettingsTopBar(props: {
             accessibilityLabel={gt("Close")}
             accessibilityRole="button"
             onPress={props.onClose}
-            className="size-[34px] items-center justify-center rounded-full bg-subtle active:opacity-70"
+            className="size-[32px] items-center justify-center rounded-full active:opacity-70"
+            style={{ backgroundColor: surface.actionBtn }}
           >
             <SymbolView
               name="xmark"
@@ -1036,6 +1088,7 @@ function MobileSpeedSwitcher(props: {
       )
     : null;
 
+  const surface = modelSheetSurface(isDarkMode);
   const renderPill = (item: {
     readonly key: string;
     readonly label: string;
@@ -1051,9 +1104,7 @@ function MobileSpeedSwitcher(props: {
           ? ""
           : compact && item.speed === "Ultrafast"
             ? "Ultra"
-            : item.speed === "Standard"
-              ? "Std"
-              : item.label;
+            : item.label;
     return (
       <Pressable
         key={item.key}
@@ -1065,10 +1116,21 @@ function MobileSpeedSwitcher(props: {
           item.onPress();
         }}
         className={cn(
-          "h-[24px] flex-row items-center justify-center gap-1 rounded-full",
+          "h-[22px] flex-row items-center justify-center gap-1 rounded-full",
           compact ? "px-2" : "px-2.5",
-          item.checked ? (isDarkMode ? "bg-subtle-strong" : "bg-card shadow-xs") : "bg-transparent",
         )}
+        style={
+          item.checked
+            ? {
+                backgroundColor: surface.speedActive,
+                shadowColor: "#000000",
+                shadowOffset: { width: 0, height: 1 },
+                shadowOpacity: isDarkMode ? 0.35 : 0.1,
+                shadowRadius: 2,
+                elevation: 1,
+              }
+            : undefined
+        }
       >
         {isFast ? (
           <SymbolView
@@ -1099,7 +1161,8 @@ function MobileSpeedSwitcher(props: {
     <View
       accessibilityRole="radiogroup"
       accessibilityLabel={speedSelect?.label ?? fastToggle?.label}
-      className="h-[28px] flex-row items-center gap-0.5 rounded-full bg-subtle p-0.5"
+      className="h-[26px] flex-row items-center gap-0.5 rounded-full p-0.5"
+      style={{ backgroundColor: surface.pill }}
     >
       {speedSelect
         ? choices.map((choice) =>
@@ -1200,188 +1263,240 @@ function ThreadSettingsThumbDeck() {
   const heading =
     reasoning?.descriptor.label ??
     (hasSpeed ? gt("Speed", { $context: "heading for model speed control" }) : null);
+  const reasoningIndex = Math.max(
+    0,
+    reasoningChoices.findIndex((choice) => choice.id === reasoningSelectedId),
+  );
+  const surface = modelSheetSurface(isDarkMode);
+  const hasTopControls = Boolean(heading || (reasoning && reasoningChoices.length > 0));
 
   return (
     <View
-      className="border-t border-border-subtle bg-grouped-card px-4 pt-3"
-      style={{ paddingBottom: Math.max(insets.bottom, 10) + 6 }}
+      className="px-3 pt-2.5"
+      style={{
+        backgroundColor: surface.canvas,
+        paddingBottom: Math.max(insets.bottom, 12),
+      }}
     >
-      <ChatGptSharingStatus provider={selectedProvider} />
+      <View
+        className="rounded-[20px] px-3.5 py-3"
+        style={{
+          backgroundColor: surface.card,
+          borderWidth: 0.5,
+          borderColor: surface.cardBorder,
+          ...(isDarkMode
+            ? undefined
+            : {
+                shadowColor: "#000000",
+                shadowOffset: { width: 0, height: 1 },
+                shadowOpacity: 0.05,
+                shadowRadius: 3,
+                elevation: 1,
+              }),
+        }}
+      >
+        <ChatGptSharingStatus provider={selectedProvider} />
 
-      {heading ? (
-        <View className="mb-1.5 flex-row items-center justify-between gap-2">
-          <Text className="text-sm font-t3-medium text-foreground/85">{heading}</Text>
-          <MobileSpeedSwitcher
-            speedSelect={speedSelect}
-            fastToggle={fastToggle}
-            isDarkMode={isDarkMode}
-          />
-        </View>
-      ) : null}
+        {heading ? (
+          <View className="mb-1.5 flex-row items-center justify-between gap-2">
+            <Text className="text-xs font-t3-bold text-foreground/85">{heading}</Text>
+            {hasSpeed ? (
+              <MobileSpeedSwitcher
+                speedSelect={speedSelect}
+                fastToggle={fastToggle}
+                isDarkMode={isDarkMode}
+              />
+            ) : reasoningChoices.length > 1 ? (
+              <Text className="text-xs font-t3-medium tabular-nums text-foreground-muted">
+                {`${reasoningIndex + 1} / ${reasoningChoices.length}`}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
 
-      {reasoning && reasoningChoices.length > 0 ? (
-        <View className="mb-2">
-          {reasoningLocked ? (
-            <Text className="mb-1 text-2xs text-foreground-muted">
-              {gt(
-                'Your prompt contains "ultrathink" in the text. Remove it to change this option.',
-              )}
-            </Text>
-          ) : null}
-          <MobileReasoningPowerSlider
-            ariaLabel={reasoning.descriptor.label}
-            choices={reasoningChoices}
-            selectedId={reasoningSelectedId}
-            isDarkMode={isDarkMode}
-            disabled={reasoningLocked}
-            onSelect={(nextId) => {
-              if (reasoning.kind === "boolean") {
-                session.applyOptionChange(reasoning.descriptor.id, nextId === "true");
-                return;
-              }
-              if (reasoningLocked) {
-                Dialog.alert(
-                  gt("Reasoning controlled by prompt"),
-                  gt(
-                    'Your prompt contains "ultrathink" in the text. Remove it to change this option.',
-                  ),
+        {reasoning && reasoningChoices.length > 0 ? (
+          <View className="mb-1.5">
+            {reasoningLocked ? (
+              <Text className="mb-1 text-2xs text-foreground-muted">
+                {gt(
+                  'Your prompt contains "ultrathink" in the text. Remove it to change this option.',
+                )}
+              </Text>
+            ) : null}
+            <MobileReasoningPowerSlider
+              ariaLabel={reasoning.descriptor.label}
+              choices={reasoningChoices}
+              selectedId={reasoningSelectedId}
+              isDarkMode={isDarkMode}
+              disabled={reasoningLocked}
+              onSelect={(nextId) => {
+                if (reasoning.kind === "boolean") {
+                  session.applyOptionChange(reasoning.descriptor.id, nextId === "true");
+                  return;
+                }
+                if (reasoningLocked) {
+                  Dialog.alert(
+                    gt("Reasoning controlled by prompt"),
+                    gt(
+                      'Your prompt contains "ultrathink" in the text. Remove it to change this option.',
+                    ),
+                  );
+                  return;
+                }
+                session.applyOptionChange(reasoning.descriptor.id, nextId);
+              }}
+            />
+          </View>
+        ) : null}
+
+        {others.length > 0 ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ alignItems: "center", gap: 6, paddingBottom: 8 }}
+          >
+            {others.map((control) => {
+              if (control.kind === "boolean") {
+                const checked = control.descriptor.currentValue === true;
+                return (
+                  <Pressable
+                    key={control.descriptor.id}
+                    accessibilityRole="switch"
+                    accessibilityState={{ checked }}
+                    onPress={() => {
+                      void Haptics.selectionAsync();
+                      session.applyOptionChange(control.descriptor.id, !checked);
+                    }}
+                    className="h-[30px] flex-row items-center gap-1.5 rounded-full px-3 active:opacity-75"
+                    style={{
+                      backgroundColor: checked ? surface.selectedRow : surface.pill,
+                    }}
+                  >
+                    <Text className="text-xs font-t3-medium text-foreground-muted">
+                      {control.descriptor.label}
+                    </Text>
+                    <Text className="text-xs font-t3-bold text-foreground">
+                      {checked
+                        ? gt("On", { $context: "option state" })
+                        : gt("Off", { $context: "option state" })}
+                    </Text>
+                  </Pressable>
                 );
-                return;
               }
-              session.applyOptionChange(reasoning.descriptor.id, nextId);
-            }}
-          />
-        </View>
-      ) : null}
 
-      {/* Bottom 1-Tap Utility Pills: Extra Model Options + Native Runtime Menu */}
-      <View className="flex-row items-center justify-between gap-2 pt-0.5">
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ alignItems: "center", gap: 6 }}
-          className="min-w-0 flex-1"
-        >
-          {others.map((control) => {
-            if (control.kind === "boolean") {
-              const checked = control.descriptor.currentValue === true;
-              return (
-                <Pressable
-                  key={control.descriptor.id}
-                  accessibilityRole="switch"
-                  accessibilityState={{ checked }}
-                  onPress={() => {
-                    void Haptics.selectionAsync();
-                    session.applyOptionChange(control.descriptor.id, !checked);
-                  }}
-                  className={cn(
-                    "h-[34px] flex-row items-center gap-1.5 rounded-xl px-3 active:opacity-75",
-                    checked ? "bg-subtle-strong" : "bg-subtle",
-                  )}
-                >
-                  <Text className="text-xs font-t3-medium text-foreground-muted">
-                    {control.descriptor.label}
-                  </Text>
-                  <Text className="text-xs font-t3-bold text-foreground">
-                    {checked
-                      ? gt("On", { $context: "option state" })
-                      : gt("Off", { $context: "option state" })}
-                  </Text>
-                </Pressable>
-              );
-            }
-
-            const choices = selectableChoices(control.descriptor);
-            const currentValue = getProviderOptionCurrentValue(
-              control.descriptor,
-              session.displayedModelSelection,
-              session.reportedModelSelection,
-            );
-            const currentLabel =
-              getProviderOptionCurrentLabel(
+              const choices = selectableChoices(control.descriptor);
+              const currentValue = getProviderOptionCurrentValue(
                 control.descriptor,
                 session.displayedModelSelection,
                 session.reportedModelSelection,
-              ) ?? "";
-            const actions: MenuAction[] = choices.map((choice) => ({
-              id: choice.id,
-              title: choice.label,
-              subtitle: choice.description,
-              state: choice.id === currentValue ? ("on" as const) : ("off" as const),
-            }));
-            return (
-              <Menu
-                key={control.descriptor.id}
-                title={control.descriptor.label}
-                actions={actions}
-                onPressAction={({ nativeEvent }) => {
-                  void Haptics.selectionAsync();
-                  session.applyOptionChange(control.descriptor.id, nativeEvent.event);
-                }}
-              >
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`${control.descriptor.label}: ${currentLabel}`}
-                  className="h-[34px] flex-row items-center gap-1.5 rounded-xl bg-subtle px-3 active:opacity-75"
+              );
+              const currentLabel =
+                getProviderOptionCurrentLabel(
+                  control.descriptor,
+                  session.displayedModelSelection,
+                  session.reportedModelSelection,
+                ) ?? "";
+              const actions: MenuAction[] = choices.map((choice) => ({
+                id: choice.id,
+                title: choice.label,
+                subtitle: choice.description,
+                state: choice.id === currentValue ? ("on" as const) : ("off" as const),
+              }));
+              return (
+                <Menu
+                  key={control.descriptor.id}
+                  title={control.descriptor.label}
+                  actions={actions}
+                  onPressAction={({ nativeEvent }) => {
+                    void Haptics.selectionAsync();
+                    session.applyOptionChange(control.descriptor.id, nativeEvent.event);
+                  }}
                 >
-                  <SymbolView
-                    name="slider.horizontal.3"
-                    size={12}
-                    tintColorClassName="accent-foreground-muted"
-                    type="monochrome"
-                  />
-                  <Text className="text-xs font-t3-medium text-foreground-muted" numberOfLines={1}>
-                    {control.descriptor.label}
-                  </Text>
-                  <Text className="text-xs font-t3-bold text-foreground" numberOfLines={1}>
-                    {currentLabel}
-                  </Text>
-                  <SymbolView
-                    name="chevron.down"
-                    size={10}
-                    tintColorClassName="accent-icon-subtle"
-                    type="monochrome"
-                  />
-                </Pressable>
-              </Menu>
-            );
-          })}
-        </ScrollView>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`${control.descriptor.label}: ${currentLabel}`}
+                    className="h-[30px] flex-row items-center gap-1.5 rounded-full px-3 active:opacity-75"
+                    style={{ backgroundColor: surface.pill }}
+                  >
+                    <SymbolView
+                      name="slider.horizontal.3"
+                      size={11}
+                      tintColorClassName="accent-foreground-muted"
+                      type="monochrome"
+                    />
+                    <Text
+                      className="text-xs font-t3-medium text-foreground-muted"
+                      numberOfLines={1}
+                    >
+                      {control.descriptor.label}
+                    </Text>
+                    <Text className="text-xs font-t3-bold text-foreground" numberOfLines={1}>
+                      {currentLabel}
+                    </Text>
+                    <SymbolView
+                      name="chevron.down"
+                      size={10}
+                      tintColorClassName="accent-icon-subtle"
+                      type="monochrome"
+                    />
+                  </Pressable>
+                </Menu>
+              );
+            })}
+          </ScrollView>
+        ) : null}
 
-        <Menu
-          title={gt("Runtime", { $context: "agent permission mode setting" })}
-          actions={runtimeMenuActions}
-          onPressAction={({ nativeEvent }) => {
-            const match = session.runtimeModeChoices.find(
-              (choice) => choice.mode === nativeEvent.event && !choice.disabledReason,
-            );
-            if (!match) return;
-            void Haptics.selectionAsync();
-            session.onUpdateRuntimeMode(match.mode);
-          }}
-        >
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={gt("Runtime: {mode}", { mode: currentRuntimeLabel })}
-            className="h-[34px] shrink-0 flex-row items-center gap-1.5 rounded-xl bg-subtle px-3 active:opacity-75"
-          >
+        {hasTopControls ? (
+          <View
+            className="mb-2.5 mt-0.5"
+            style={{ height: 0.5, backgroundColor: surface.divider }}
+          />
+        ) : null}
+
+        {/* Balanced full-width Runtime Permission Row */}
+        <View className="flex-row items-center justify-between gap-3">
+          <View className="min-w-0 flex-row items-center gap-2">
             <SymbolView
               name="shield"
-              size={12}
+              size={14}
               tintColorClassName="accent-foreground-muted"
               type="monochrome"
             />
-            <Text className="text-xs font-t3-bold text-foreground" numberOfLines={1}>
-              {currentRuntimeLabel}
+            <Text className="text-xs font-t3-medium text-foreground-muted" numberOfLines={1}>
+              {gt("Runtime", { $context: "agent permission mode setting" })}
             </Text>
-            <SymbolView
-              name="chevron.down"
-              size={10}
-              tintColorClassName="accent-icon-subtle"
-              type="monochrome"
-            />
-          </Pressable>
-        </Menu>
+          </View>
+
+          <Menu
+            title={gt("Runtime", { $context: "agent permission mode setting" })}
+            actions={runtimeMenuActions}
+            onPressAction={({ nativeEvent }) => {
+              const match = session.runtimeModeChoices.find(
+                (choice) => choice.mode === nativeEvent.event && !choice.disabledReason,
+              );
+              if (!match) return;
+              void Haptics.selectionAsync();
+              session.onUpdateRuntimeMode(match.mode);
+            }}
+          >
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={gt("Runtime: {mode}", { mode: currentRuntimeLabel })}
+              className="h-[30px] shrink-0 flex-row items-center gap-1.5 rounded-full px-3 active:opacity-75"
+              style={{ backgroundColor: surface.pill }}
+            >
+              <Text className="text-xs font-t3-bold text-foreground" numberOfLines={1}>
+                {currentRuntimeLabel}
+              </Text>
+              <SymbolView
+                name="chevron.down"
+                size={10}
+                tintColorClassName="accent-foreground-muted"
+                type="monochrome"
+              />
+            </Pressable>
+          </Menu>
+        </View>
       </View>
     </View>
   );
@@ -1392,6 +1507,7 @@ function ThreadSettingsModelListRow(props: {
   readonly showProviderIcon: boolean;
   readonly isFirst: boolean;
   readonly isLast: boolean;
+  readonly selectedBackgroundColor: string;
 }) {
   const session = useThreadSettingsSession();
   return (
@@ -1411,6 +1527,7 @@ function ThreadSettingsModelListRow(props: {
       hiddenUpdatePending={session.pendingHiddenKeys.has(props.option.key)}
       option={props.option}
       selected={session.isApplied(props.option)}
+      selectedBackgroundColor={props.selectedBackgroundColor}
     />
   );
 }
@@ -1421,10 +1538,9 @@ function ThreadSettingsSheetBody(props: { readonly onClose: () => void }) {
   const locale = useLocale();
   const fadeGradientId = useId();
   const session = useThreadSettingsSession();
-  const { themeVariables } = useAppearancePreferences();
-  const sheetColor = String(
-    themeVariables["--color-sheet-solid"] ?? themeVariables["--color-sheet"] ?? "#17171a",
-  );
+  const { themeAppearance } = useAppearancePreferences();
+  const isDarkMode = themeAppearance === "dark";
+  const surface = modelSheetSurface(isDarkMode);
   const [searchExpanded, setSearchExpanded] = useState(false);
 
   const refreshProvidersCommand = useAtomCommand(serverEnvironment.refreshProviders, {
@@ -1500,6 +1616,7 @@ function ThreadSettingsSheetBody(props: { readonly onClose: () => void }) {
           isLast={item.isLast}
           showProviderIcon={item.showProviderIcon}
           option={item.option}
+          selectedBackgroundColor={surface.selectedRow}
         />
       );
     } else if (item.kind === "notice") {
@@ -1530,7 +1647,7 @@ function ThreadSettingsSheetBody(props: { readonly onClose: () => void }) {
   };
 
   return (
-    <View className="flex-1 bg-sheet">
+    <View className="flex-1" style={{ backgroundColor: surface.canvas }}>
       <ThreadSettingsTopBar
         searchExpanded={searchExpanded}
         onOpenSearch={() => setSearchExpanded(true)}
@@ -1539,17 +1656,38 @@ function ThreadSettingsSheetBody(props: { readonly onClose: () => void }) {
         onClose={props.onClose}
       />
 
-      {/* Independent scrollable model list with bottom half-row peek fade */}
-      <View className="relative min-h-0 flex-1">
+      {/* Elevated grouped model list card with bottom half-row peek fade */}
+      <View
+        className="relative mx-3 min-h-0 flex-1 overflow-hidden rounded-[20px]"
+        style={{
+          backgroundColor: surface.card,
+          borderWidth: 0.5,
+          borderColor: surface.cardBorder,
+          ...(isDarkMode
+            ? undefined
+            : {
+                shadowColor: "#000000",
+                shadowOffset: { width: 0, height: 1 },
+                shadowOpacity: 0.04,
+                shadowRadius: 2,
+                elevation: 1,
+              }),
+        }}
+      >
         {/* oxlint-disable-next-line t3code/require-registered-list-scroll -- Sheet content; sits above the sticky thumb deck. */}
         <AnimatedLegendList
           alwaysBounceVertical
-          className="flex-1 bg-sheet"
-          style={READABLE_WIDTH_STYLE}
-          contentContainerStyle={{ paddingTop: 6, paddingBottom: 26 }}
+          className="flex-1"
+          style={[READABLE_WIDTH_STYLE, { backgroundColor: surface.card }]}
+          contentContainerStyle={{ paddingTop: 5, paddingBottom: 22 }}
           data={listItems}
           estimatedItemSize={ROW_MIN_HEIGHT.item}
-          extraData={[animationsReady, session.activeTab, session.displayedModelSelection?.model]}
+          extraData={[
+            animationsReady,
+            session.activeTab,
+            session.displayedModelSelection?.model,
+            isDarkMode,
+          ]}
           getItemType={(item) => item.kind}
           itemLayoutAnimation={THREAD_SETTINGS_CATALOG_LAYOUT_TRANSITION}
           keyExtractor={(item) => item.key}
@@ -1567,20 +1705,20 @@ function ThreadSettingsSheetBody(props: { readonly onClose: () => void }) {
           showsVerticalScrollIndicator={false}
         />
 
-        {/* Smooth bottom fade hinting scrollability into the sticky thumb deck */}
+        {/* Smooth bottom fade hinting scrollability inside the grouped card */}
         <View
           pointerEvents="none"
-          style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 28 }}
+          style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 24 }}
         >
-          <Svg width="100%" height={28}>
+          <Svg width="100%" height={24}>
             <Defs>
               <LinearGradient id={fadeGradientId} x1="0" y1="0" x2="0" y2="1">
-                <Stop offset="0%" stopColor={sheetColor} stopOpacity={0} />
-                <Stop offset="68%" stopColor={sheetColor} stopOpacity={0.82} />
-                <Stop offset="100%" stopColor={sheetColor} stopOpacity={1} />
+                <Stop offset="0%" stopColor={surface.card} stopOpacity={0} />
+                <Stop offset="70%" stopColor={surface.card} stopOpacity={0.85} />
+                <Stop offset="100%" stopColor={surface.card} stopOpacity={1} />
               </LinearGradient>
             </Defs>
-            <Rect x={0} y={0} width="100%" height={28} fill={`url(#${fadeGradientId})`} />
+            <Rect x={0} y={0} width="100%" height={24} fill={`url(#${fadeGradientId})`} />
           </Svg>
         </View>
       </View>

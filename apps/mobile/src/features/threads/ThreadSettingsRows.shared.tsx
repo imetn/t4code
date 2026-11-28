@@ -10,6 +10,7 @@ import type { ModelOption } from "../../lib/modelOptions";
 export type ModelRowProps = {
   readonly option: ModelOption;
   readonly selected: boolean;
+  readonly selectedBackgroundColor?: string;
   readonly onPress: () => void;
   readonly isFavorite: boolean;
   readonly favoritesLoaded: boolean;
@@ -46,10 +47,19 @@ export function ModelRowContent(
   const gt = useGT();
   return (
     <View
-      style={props.minimumHeight === undefined ? undefined : { minHeight: props.minimumHeight }}
+      style={[
+        props.minimumHeight === undefined ? undefined : { minHeight: props.minimumHeight },
+        props.selected && props.selectedBackgroundColor
+          ? { backgroundColor: props.selectedBackgroundColor }
+          : undefined,
+      ]}
       className={cn(
-        "mx-3 my-0.5 min-h-[46px] flex-row items-center gap-2 rounded-2xl px-3 android:min-h-[48px]",
-        props.selected ? (props.selectedClassName ?? "bg-subtle-strong") : "bg-transparent",
+        "mx-1.5 my-0.5 min-h-[44px] flex-row items-center gap-2 rounded-[14px] px-3 android:min-h-[48px]",
+        props.selected
+          ? props.selectedBackgroundColor
+            ? undefined
+            : (props.selectedClassName ?? "bg-subtle-strong")
+          : "bg-transparent",
       )}
     >
       <Pressable

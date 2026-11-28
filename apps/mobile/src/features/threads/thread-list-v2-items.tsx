@@ -387,13 +387,29 @@ export const ThreadListV2WorkingShelfHeader = memo(function ThreadListV2WorkingS
 export const ThreadListV2StatusSectionHeader = memo(
   function ThreadListV2StatusSectionHeader(props: {
     readonly section: "completed" | "idle";
+    readonly count: number;
+    readonly expanded: boolean;
+    readonly disabled?: boolean;
+    readonly onToggle: () => void;
     readonly pane?: "screen" | "sidebar";
   }) {
+    const gt = useGT();
     const m = useMessages();
+    const label = m(THREAD_LIST_SECTION_META[props.section].dividerLabel);
+    const displayLabel = props.expanded
+      ? label
+      : gt("{label} ({count})", { label, count: props.count });
     return (
       <ThreadListV2Section
-        label={m(THREAD_LIST_SECTION_META[props.section].dividerLabel)}
+        label={displayLabel}
         pane={props.pane}
+        disclosure={{
+          expanded: props.expanded,
+          disabled: props.disabled,
+          onToggle: props.onToggle,
+          accessibilityLabel: displayLabel,
+          accessibilityHint: m(THREAD_LIST_SECTION_META[props.section].description),
+        }}
       />
     );
   },

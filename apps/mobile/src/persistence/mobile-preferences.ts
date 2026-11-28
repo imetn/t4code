@@ -193,6 +193,8 @@ export interface Preferences {
   readonly threadListSettledShelfExpanded?: boolean;
   readonly threadListSnoozedShelfExpanded?: boolean;
   readonly threadListWorkingShelfExpanded?: boolean;
+  readonly threadListCompletedShelfExpanded?: boolean;
+  readonly threadListIdleShelfExpanded?: boolean;
   readonly threadListSortOrder?: ThreadListSortOrder;
   readonly threadListSectionOrder?: readonly ThreadListSection[];
   readonly threadListFilters?: ThreadListFilters;
@@ -289,6 +291,8 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     threadListSettledShelfExpanded?: boolean;
     threadListSnoozedShelfExpanded?: boolean;
     threadListWorkingShelfExpanded?: boolean;
+    threadListCompletedShelfExpanded?: boolean;
+    threadListIdleShelfExpanded?: boolean;
     threadListSortOrder?: ThreadListSortOrder;
     threadListSectionOrder?: readonly ThreadListSection[];
     threadListFilters?: ThreadListFilters;
@@ -481,6 +485,12 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (typeof parsed.threadListWorkingShelfExpanded === "boolean") {
     preferences.threadListWorkingShelfExpanded = parsed.threadListWorkingShelfExpanded;
+  }
+  if (typeof parsed.threadListCompletedShelfExpanded === "boolean") {
+    preferences.threadListCompletedShelfExpanded = parsed.threadListCompletedShelfExpanded;
+  }
+  if (typeof parsed.threadListIdleShelfExpanded === "boolean") {
+    preferences.threadListIdleShelfExpanded = parsed.threadListIdleShelfExpanded;
   }
   if (isThreadListSortOrder(parsed.threadListSortOrder)) {
     preferences.threadListSortOrder = parsed.threadListSortOrder;

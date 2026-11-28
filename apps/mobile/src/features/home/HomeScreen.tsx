@@ -399,11 +399,15 @@ export function HomeScreen(props: HomeScreenProps) {
     snoozedShelfExpanded,
     workingShelfEnabled,
     workingShelfExpanded,
+    completedShelfExpanded,
+    idleShelfExpanded,
     sortOrder,
     sectionOrder,
     toggleSettledShelf,
     toggleSnoozedShelf,
     toggleWorkingShelf,
+    toggleCompletedShelf,
+    toggleIdleShelf,
     setSortOrder,
     setSectionOrder,
   } = useThreadListV2ShelfPreferences();
@@ -448,6 +452,8 @@ export function HomeScreen(props: HomeScreenProps) {
     shelfPreferencesLoaded,
     workingShelfEnabled,
     workingShelfExpanded,
+    completedShelfExpanded,
+    idleShelfExpanded,
     sortOrder,
     sectionOrder,
     snoozedShelfExpanded,
@@ -522,7 +528,15 @@ export function HomeScreen(props: HomeScreenProps) {
       );
     }
     if (item.type === "v2-section-divider") {
-      return <ThreadListV2StatusSectionHeader section={item.section} />;
+      return (
+        <ThreadListV2StatusSectionHeader
+          section={item.section}
+          count={item.count}
+          disabled={item.disabled}
+          expanded={item.expanded}
+          onToggle={item.section === "completed" ? toggleCompletedShelf : toggleIdleShelf}
+        />
+      );
     }
     if (item.type === "v2-snoozed-shelf") {
       return (

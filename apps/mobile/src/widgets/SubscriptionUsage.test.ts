@@ -237,4 +237,45 @@ describe("SubscriptionUsage iOS widget", () => {
     expect(serialized).toContain('"minWidth":34');
     expect(serialized).not.toContain('"width":28');
   });
+
+  it("renders inline uniform 2pt same-color pace markers and light deficit blocks when burning ahead of pace", () => {
+    const codexAhead: SubscriptionUsageSnapshot["providers"][number] = {
+      driver: "codex",
+      name: "Codex",
+      detail: "Subscription remaining",
+      expiresAt: now + 60 * 60_000,
+      totalWindows: 1,
+      windows: [
+        {
+          id: "weekly",
+          kind: "weekly",
+          label: "Weekly",
+          remaining: 49,
+          reset: "Next reset Mon 9:00 AM",
+          shortReset: "Mon",
+          resetsAt: now + 5 * 24 * 60 * 60_000,
+          durationMs: 7 * 24 * 60 * 60_000,
+          pace: "ahead",
+          paceTimeLeft: 71,
+        },
+      ],
+    };
+    const tree = SubscriptionUsage(
+      makeSnapshot([codexAhead, coreProviders[1]!, coreProviders[2]!]),
+      {
+        widgetFamily: "systemMedium",
+        colorScheme: "light",
+        widgetRenderingMode: "fullColor",
+        isLuminanceReduced: false,
+        date: new Date(now),
+        configuration: {},
+      },
+    );
+    const serialized = JSON.stringify(tree);
+
+    // Inline 2pt same-color pace bar (height 8 + 4 = 12) + light 0.28 deficit segments in Codex blue.
+    expect(serialized).toContain('{"$modifier":"frame","value":{"width":2,"height":12}}');
+    expect(serialized).toContain('{"$modifier":"opacity","value":0.28}');
+    expect(serialized).toContain('{"$modifier":"foregroundStyle","value":"#339cff"}');
+  });
 });

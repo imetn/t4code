@@ -1943,6 +1943,7 @@ describe("Working section beta", () => {
     expect(
       defaultItems.map((item) => (item.type === "v2-thread" ? item.item.thread.id : item.key)),
     ).toEqual([
+      "v2-section-divider:completed",
       "done-unread",
       "v2-working-shelf",
       "working",
@@ -1950,30 +1951,30 @@ describe("Working section beta", () => {
       "idle-read",
     ]);
 
-    const collapsedItems = buildThreadListV2ListItems({
-      items: buildThreadListV2Items({
-        threads: [idleRead, workingThread, unreadDone],
-        environmentId: null,
-        searchQuery: "",
-        now: NOW,
-        workingShelfEnabled: true,
-        workingShelfExpanded: false,
-      }).items,
-      sectionHeaders: buildThreadListV2Items({
-        threads: [idleRead, workingThread, unreadDone],
-        environmentId: null,
-        searchQuery: "",
-        now: NOW,
-        workingShelfEnabled: true,
-        workingShelfExpanded: false,
-      }).sectionHeaders,
-      pendingTasks: [],
-      workingCount: 1,
+    const collapsedLayout = buildThreadListV2Items({
+      threads: [idleRead, workingThread, unreadDone],
+      environmentId: null,
+      searchQuery: "",
+      now: NOW,
+      workingShelfEnabled: true,
       workingShelfExpanded: false,
+      completedShelfExpanded: false,
+      idleShelfExpanded: false,
+    });
+    const collapsedItems = buildThreadListV2ListItems({
+      items: collapsedLayout.items,
+      sectionHeaders: collapsedLayout.sectionHeaders,
+      pendingTasks: [],
+      workingCount: collapsedLayout.workingCount,
+      workingShelfExpanded: false,
+      completedCount: collapsedLayout.completedCount,
+      completedShelfExpanded: false,
+      idleCount: collapsedLayout.idleCount,
+      idleShelfExpanded: false,
     });
     expect(
       collapsedItems.map((item) => (item.type === "v2-thread" ? item.item.thread.id : item.key)),
-    ).toEqual(["done-unread", "v2-working-shelf", "v2-section-divider:idle", "idle-read"]);
+    ).toEqual(["v2-section-divider:completed", "v2-working-shelf", "v2-section-divider:idle"]);
 
     const workingFirstLayout = buildThreadListV2Items({
       threads: [idleRead, workingThread, unreadDone],
@@ -2105,6 +2106,7 @@ describe("Working section beta", () => {
       ),
     ).toEqual([
       "queued",
+      "v2-section-divider",
       "active",
       "v2-working-shelf",
       "working",

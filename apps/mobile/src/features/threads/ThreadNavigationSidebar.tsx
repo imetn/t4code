@@ -253,11 +253,15 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
     snoozedShelfExpanded,
     workingShelfEnabled,
     workingShelfExpanded,
+    completedShelfExpanded,
+    idleShelfExpanded,
     sortOrder,
     sectionOrder,
     toggleSettledShelf,
     toggleSnoozedShelf,
     toggleWorkingShelf,
+    toggleCompletedShelf,
+    toggleIdleShelf,
     setSortOrder,
     setSectionOrder,
   } = useThreadListV2ShelfPreferences();
@@ -302,6 +306,8 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
     shelfPreferencesLoaded,
     workingShelfEnabled,
     workingShelfExpanded,
+    completedShelfExpanded,
+    idleShelfExpanded,
     sortOrder,
     sectionOrder,
     snoozedShelfExpanded,
@@ -518,7 +524,16 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
           />
         );
       case "v2-section-divider":
-        return <ThreadListV2StatusSectionHeader section={item.section} pane="sidebar" />;
+        return (
+          <ThreadListV2StatusSectionHeader
+            section={item.section}
+            count={item.count}
+            disabled={item.disabled}
+            expanded={item.expanded}
+            onToggle={item.section === "completed" ? toggleCompletedShelf : toggleIdleShelf}
+            pane="sidebar"
+          />
+        );
       case "v2-snoozed-shelf":
         return (
           <ThreadListV2SnoozedShelfHeader

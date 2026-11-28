@@ -69,6 +69,8 @@ export function useThreadListV2(input: {
   readonly shelfPreferencesLoaded: boolean;
   readonly workingShelfEnabled: boolean;
   readonly workingShelfExpanded: boolean;
+  readonly completedShelfExpanded?: boolean;
+  readonly idleShelfExpanded?: boolean;
   readonly sortOrder?: ThreadListSortOrder;
   readonly sectionOrder?: readonly ThreadListSection[];
   readonly snoozedShelfExpanded: boolean;
@@ -160,6 +162,8 @@ export function useThreadListV2(input: {
         now: layoutTime,
         workingShelfEnabled,
         workingShelfExpanded: input.workingShelfExpanded,
+        completedShelfExpanded: input.completedShelfExpanded,
+        idleShelfExpanded: input.idleShelfExpanded,
         sortOrder,
         sectionOrder,
         inboxReturnAt: inbox.returnedAt,
@@ -194,6 +198,8 @@ export function useThreadListV2(input: {
       layoutTime,
       workingShelfEnabled,
       input.workingShelfExpanded,
+      input.completedShelfExpanded,
+      input.idleShelfExpanded,
       sortOrder,
       sectionOrder,
       inbox.returnedAt,
@@ -235,6 +241,10 @@ export function useThreadListV2(input: {
         workingCount: layout.workingCount,
         workingShelfExpanded: input.workingShelfExpanded,
         workingShelfHeaderIndex: layout.workingShelfHeaderIndex,
+        completedCount: layout.completedCount,
+        completedShelfExpanded: input.completedShelfExpanded,
+        idleCount: layout.idleCount,
+        idleShelfExpanded: input.idleShelfExpanded,
         snoozedCount: layout.snoozedCount,
         snoozedShelfExpanded: input.snoozedShelfExpanded,
         snoozedShelfHeaderIndex: layout.snoozedShelfHeaderIndex,
@@ -252,6 +262,8 @@ export function useThreadListV2(input: {
       layout,
       pendingTasks,
       input.workingShelfExpanded,
+      input.completedShelfExpanded,
+      input.idleShelfExpanded,
       input.snoozedShelfExpanded,
       input.settledShelfExpanded,
       input.now,

@@ -33,6 +33,10 @@ export function useThreadListV2ShelfPreferences() {
     (typeof preferencesResult.value.threadListWorkingShelfExpanded === "boolean"
       ? preferencesResult.value.threadListWorkingShelfExpanded
       : isWorkingSectionPromoted(sectionOrder));
+  const completedShelfExpanded =
+    !loaded || preferencesResult.value.threadListCompletedShelfExpanded !== false;
+  const idleShelfExpanded =
+    !loaded || preferencesResult.value.threadListIdleShelfExpanded !== false;
 
   // Transforms read optimistic state so same-frame presses toggle twice.
   const toggleSnoozedShelf = () => {
@@ -65,6 +69,22 @@ export function useThreadListV2ShelfPreferences() {
       },
     });
   };
+  const toggleCompletedShelf = () => {
+    if (!loaded) return;
+    void savePreferences({
+      transform: (current) => ({
+        threadListCompletedShelfExpanded: current.threadListCompletedShelfExpanded === false,
+      }),
+    });
+  };
+  const toggleIdleShelf = () => {
+    if (!loaded) return;
+    void savePreferences({
+      transform: (current) => ({
+        threadListIdleShelfExpanded: current.threadListIdleShelfExpanded === false,
+      }),
+    });
+  };
   const setSortOrder = (next: ThreadListSortOrder) => {
     if (!loaded) return;
     void savePreferences({ threadListSortOrder: next });
@@ -80,11 +100,15 @@ export function useThreadListV2ShelfPreferences() {
     snoozedShelfExpanded,
     workingShelfEnabled,
     workingShelfExpanded,
+    completedShelfExpanded,
+    idleShelfExpanded,
     sortOrder,
     sectionOrder,
     toggleSettledShelf,
     toggleSnoozedShelf,
     toggleWorkingShelf,
+    toggleCompletedShelf,
+    toggleIdleShelf,
     setSortOrder,
     setSectionOrder,
   } as const;

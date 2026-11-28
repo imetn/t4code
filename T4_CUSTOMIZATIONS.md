@@ -47,8 +47,8 @@ Each entry uses `<!-- t4-lock: <id> -->` and explicit path prefixes/files so `sc
     - No redundant text badge next to `Reasoning` when level labels are already shown beneath the slider.
     - Compact **Standard / Fast** mode toggle positioned inline with the Reasoning header (replacing depth text labels).
   - **Mobile (iOS & Android)**:
-    - Thumb-zone bottom sheet (`ThreadSettingsSheet`) with top pinned Favorites + Provider icon bar, compact scrollable model list, and bottom fixed Reasoning Power Slider + Standard/Fast toggle panel (never requiring scrolling past a giant model list to reach Reasoning/Fast).
-    - Same visual rules: circular dot thumb, no sparkle AI-slop icon, no duplicated Reasoning label text, aligned Favorites & Provider icon sizes.
+    - Thumb-zone bottom sheet (`ThreadSettingsSheet`) on grouped iOS sheet canvas (`#F2F2F7` light / `#111114` dark) with transparent resting provider/favorites icons, high-contrast elevated active provider pill (`#FFFFFF` light / `#252529` dark with `text-foreground` — never dark-on-black), inset rounded-`20px` grouped model list card with clear selected row tint, and bottom elevated control deck card containing the Capsule Reasoning Power Slider + inline Speed switcher + symmetrical full-width Runtime permission row (no orphaned floating permission button).
+    - Same visual rules: circular dot thumb (`28pt` in `36pt` capsule), detent dots hidden behind the filled bar (no dot/label collision), pure circular drifting starfield dots (no sparkle icon or scratch lines), aligned Favorites & Provider icon sizes.
     - Simplified mobile composer toolbar (`521aa66f91`): do not re-bloat `ComposerToolbar` / `ThreadComposer` / `IssueCommentComposer`.
 
 ### 2. Project Todos Center (`/todos`), MCP Tools & Full-Screen Calendar / Timeline
@@ -108,8 +108,8 @@ Each entry uses `<!-- t4-lock: <id> -->` and explicit path prefixes/files so `sc
   - `apps/mobile/src/widgets/subscriptionUsageSnapshot.ts`
   - `apps/mobile/plugins/withWidgetLogoAsset.cjs`
 - **Non-Negotiable Invariants**:
-  - Custom mobile chat list sort/grouping options, toggleable PR tab, centered iOS tab dock (`T3SidebarTabBarView.swift`).
-  - Nowdex-style multi-provider pace-aware iOS widgets with Claude reset countdown, Antigravity own Gemini weekly quota lock, and `100%` non-truncation layout (`521aa66f91`).
+  - Custom mobile chat list sort/grouping options, collapsible headers for every status group (`Completed`, `Working`, `Other`, `Snoozed`, `Settled`) with persisted state, toggleable PR tab, centered iOS tab dock (`T3SidebarTabBarView.swift`).
+  - Nowdex-style multi-provider pace-aware iOS widgets with Claude reset countdown, Antigravity own Gemini weekly quota lock, `100%` non-truncation layout (`521aa66f91`), and inline-slot uniform `2pt` same-color vertical pace marker with soft translucent same-color deficit segments when burning ahead of pace.
 
 ### 6. Compact 2-Column Usage Limits, Pace Curve, Provider Order & Apple HIG T4 Tray
 <!-- t4-lock: usage-and-tray -->

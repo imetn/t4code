@@ -288,6 +288,15 @@ export function SubscriptionUsage(
     </HStack>
   );
 
+  const paceRemainingFor = (win: SnapshotWindow): number | undefined => {
+    if (win.resetsAt !== undefined && win.durationMs !== undefined && win.durationMs > 0) {
+      const leftMs = win.resetsAt - now;
+      if (leftMs <= 0) return 0;
+      return Math.max(0, Math.min(100, (leftMs / win.durationMs) * 100));
+    }
+    return win.paceTimeLeft;
+  };
+
   const renderSegmentedScale = (
     remaining: number,
     barColor: string,
@@ -296,16 +305,30 @@ export function SubscriptionUsage(
     spacing = 2,
     cornerRadius = 1.4,
     monochromeBar = false,
+    paceLeft?: number,
   ) => {
     const clamped = Math.max(0, Math.min(100, remaining));
     const fillColor =
       monochromeBar || monochrome ? primary : clamped <= 10 ? dangerColor : barColor;
     const filled = (clamped / 100) * segments;
+    const showPaceTick = !monochromeBar && paceLeft !== undefined && paceLeft > 3 && paceLeft < 97;
+    const paceSlot = showPaceTick
+      ? Math.max(1, Math.min(segments - 1, Math.round((paceLeft / 100) * segments)))
+      : -1;
+    const tickHeight = height + 4;
     return (
-      <HStack spacing={spacing} modifiers={[frame({ maxWidth: Infinity }), frame({ height })]}>
-        {Array.from({ length: segments }, (_, index) => {
+      <HStack
+        spacing={spacing}
+        alignment="center"
+        modifiers={[
+          frame({ maxWidth: Infinity }),
+          frame({ height: showPaceTick ? tickHeight : height }),
+        ]}
+      >
+        {Array.from({ length: segments }, (_, index) => index).flatMap((index) => {
           const lit = Math.max(0, Math.min(1, filled - index));
-          return (
+          const inDeficit = showPaceTick && index < paceSlot && lit < 1;
+          const segmentNode = (
             <ZStack key={index} modifiers={[frame({ maxWidth: Infinity }), frame({ height })]}>
               <RoundedRectangle
                 cornerRadius={cornerRadius}
@@ -316,12 +339,23 @@ export function SubscriptionUsage(
                   frame({ height }),
                 ]}
               />
+              {inDeficit ? (
+                <RoundedRectangle
+                  cornerRadius={cornerRadius}
+                  modifiers={[
+                    foregroundStyle(fillColor),
+                    opacity(0.28),
+                    frame({ maxWidth: Infinity }),
+                    frame({ height }),
+                  ]}
+                />
+              ) : null}
               {lit > 0 ? (
                 <RoundedRectangle
                   cornerRadius={cornerRadius}
                   modifiers={[
                     foregroundStyle(fillColor),
-                    opacity(lit * (monochromeBar ? 0.92 : 0.88)),
+                    opacity(lit * (monochromeBar ? 0.92 : 0.9)),
                     frame({ maxWidth: Infinity }),
                     frame({ height }),
                   ]}
@@ -329,6 +363,17 @@ export function SubscriptionUsage(
               ) : null}
             </ZStack>
           );
+          if (index === paceSlot) {
+            return [
+              <RoundedRectangle
+                key="pace-tick"
+                cornerRadius={1}
+                modifiers={[foregroundStyle(fillColor), frame({ width: 2, height: tickHeight })]}
+              />,
+              segmentNode,
+            ];
+          }
+          return [segmentNode];
         })}
       </HStack>
     );
@@ -596,7 +641,16 @@ export function SubscriptionUsage(
                       </HStack>
                     </HStack>
                     <Spacer minLength={5} />
-                    {renderSegmentedScale(lead.remaining, color, 16, 10, 2, 1.4)}
+                    {renderSegmentedScale(
+                      lead.remaining,
+                      color,
+                      16,
+                      10,
+                      2,
+                      1.4,
+                      false,
+                      paceRemainingFor(lead),
+                    )}
                     <Spacer minLength={8} />
                     <VStack alignment="leading" spacing={5}>
                       {subRows.map((sub) => (
@@ -611,7 +665,16 @@ export function SubscriptionUsage(
                           >
                             {sub.label.replace(/ Models$/i, "")}
                           </Text>
-                          {renderSegmentedScale(sub.remaining, color, 10, 5.5, 1.5, 1)}
+                          {renderSegmentedScale(
+                            sub.remaining,
+                            color,
+                            10,
+                            5.5,
+                            1.5,
+                            1,
+                            false,
+                            paceRemainingFor(sub),
+                          )}
                           <Text
                             modifiers={[
                               font({ size: 10, weight: "semibold" }),
@@ -692,7 +755,16 @@ export function SubscriptionUsage(
                 </HStack>
               </HStack>
               <Spacer minLength={10} />
-              {renderSegmentedScale(soloWindow.remaining, color, 16, 11, 2, 1.5)}
+              {renderSegmentedScale(
+                soloWindow.remaining,
+                color,
+                16,
+                11,
+                2,
+                1.5,
+                false,
+                paceRemainingFor(soloWindow),
+              )}
               <Spacer minLength={0} />
               {soloPace ? (
                 <VStack alignment="leading" spacing={6}>
@@ -781,7 +853,16 @@ export function SubscriptionUsage(
                           </Text>
                         </HStack>
                       </HStack>
-                      {renderSegmentedScale(win.remaining, color, 16, 10, 2, 1.4)}
+                      {renderSegmentedScale(
+                        win.remaining,
+                        color,
+                        16,
+                        10,
+                        2,
+                        1.4,
+                        false,
+                        paceRemainingFor(win),
+                      )}
                     </VStack>
                   );
                 })}
@@ -862,7 +943,16 @@ export function SubscriptionUsage(
               {target ? `${target.remaining}%` : "-"}
             </Text>
           </HStack>
-          {renderSegmentedScale(target ? target.remaining : 0, color, 16, 5.5, 1.5, 1)}
+          {renderSegmentedScale(
+            target ? target.remaining : 0,
+            color,
+            16,
+            5.5,
+            1.5,
+            1,
+            false,
+            target ? paceRemainingFor(target) : undefined,
+          )}
         </VStack>
       );
     };
@@ -989,7 +1079,16 @@ export function SubscriptionUsage(
               ),
             ]}
           >
-            {renderSegmentedScale(singleWindow.remaining, color, 14, 8, 2, 1.4)}
+            {renderSegmentedScale(
+              singleWindow.remaining,
+              color,
+              14,
+              8,
+              2,
+              1.4,
+              false,
+              paceRemainingFor(singleWindow),
+            )}
             <HStack spacing={4} alignment="center">
               <Text modifiers={[font({ size: 9.5 }), foregroundStyle(secondary), lineLimit(1)]}>
                 {singleWindow.kind === "weekly"
@@ -1029,7 +1128,16 @@ export function SubscriptionUsage(
                 >
                   {shortKindTag(win) || "•"}
                 </Text>
-                {renderSegmentedScale(win.remaining, color, 12, 6.5, 1.8, 1.2)}
+                {renderSegmentedScale(
+                  win.remaining,
+                  color,
+                  12,
+                  6.5,
+                  1.8,
+                  1.2,
+                  false,
+                  paceRemainingFor(win),
+                )}
                 <Text
                   modifiers={[
                     font({ size: 10, weight: "semibold" }),
@@ -1181,7 +1289,16 @@ export function SubscriptionUsage(
                       {`${win.remaining}%`}
                     </Text>
                   </HStack>
-                  {renderSegmentedScale(win.remaining, color, 12, 8, 2, 1.4)}
+                  {renderSegmentedScale(
+                    win.remaining,
+                    color,
+                    12,
+                    8,
+                    2,
+                    1.4,
+                    false,
+                    paceRemainingFor(win),
+                  )}
                 </VStack>
               );
             })}
@@ -1230,7 +1347,16 @@ export function SubscriptionUsage(
                     {`${win.remaining}%`}
                   </Text>
                 </HStack>
-                {renderSegmentedScale(win.remaining, color, 24, 8, 2, 1.4)}
+                {renderSegmentedScale(
+                  win.remaining,
+                  color,
+                  24,
+                  8,
+                  2,
+                  1.4,
+                  false,
+                  paceRemainingFor(win),
+                )}
               </VStack>
             );
           })()
@@ -1300,7 +1426,16 @@ export function SubscriptionUsage(
                       {`${win.remaining}%`}
                     </Text>
                   </HStack>
-                  {renderSegmentedScale(win.remaining, color, 16, 8, 2, 1.4)}
+                  {renderSegmentedScale(
+                    win.remaining,
+                    color,
+                    16,
+                    8,
+                    2,
+                    1.4,
+                    false,
+                    paceRemainingFor(win),
+                  )}
                 </VStack>
               );
             })}
