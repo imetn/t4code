@@ -39,6 +39,7 @@ import {
 } from "../ui/alert-dialog";
 import { Button } from "../ui/button";
 import { stackedThreadToast, toastManager } from "../ui/toast";
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
 import { ThemeImportDialog } from "./ThemeImportDialog";
 import { useSearchableSetting } from "./settingsSearch";
@@ -89,12 +90,7 @@ function downloadThemeFile(filename: string, contents: string): void {
 }
 
 function ThemeVariantTooltip({ label, children }: { label: string; children: ReactElement }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger render={children} />
-      <TooltipPopup>{label}</TooltipPopup>
-    </Tooltip>
-  );
+  return <SharedTooltipTrigger render={children} label={label} />;
 }
 
 function ThemeLibraryCard({
@@ -148,11 +144,10 @@ function ThemeLibraryCard({
     (group) => group.mode === radialModeOpen && group.options.length > 1,
   );
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <div
-            className={cn(
+    <SharedTooltipTrigger
+      render={
+        <div
+          className={cn(
               "cursor-pointer overflow-hidden rounded-xl border border-border/70 bg-card/60 transition-colors hover:bg-accent/10",
               isActive && "bg-accent/30",
             )}
@@ -474,17 +469,16 @@ function ThemeLibraryCard({
             </div>
           </div>
         }
-      />
-      <TooltipPopup>
-        {variantNavigation
+      label={
+        variantNavigation
           ? gt("Use the first variants for light and dark")
           : cardModes.length > 1
             ? gt("Use for both light and dark")
             : cardModes[0] === "light"
               ? gt("Use for light mode only")
-              : gt("Use for dark mode only")}
-      </TooltipPopup>
-    </Tooltip>
+              : gt("Use for dark mode only")
+      }
+    />
   );
 }
 
