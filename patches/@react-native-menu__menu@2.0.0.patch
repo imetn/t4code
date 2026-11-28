@@ -178,10 +178,64 @@ index 6a2a205f95c1001f3fdf6fb835815fa7c4c02c16..4f42b64349966fb1438f72439cec8256
 +
  }
 diff --git a/ios/Shared/MenuViewImplementation.swift b/ios/Shared/MenuViewImplementation.swift
-index 5c4e0da4292b15d3a27b5ea1555f11452a470815..381aa8e2900aeb0d2453dba514360304a79e95f1 100644
+index 5c4e0da..28f7b7c 100644
 --- a/ios/Shared/MenuViewImplementation.swift
 +++ b/ios/Shared/MenuViewImplementation.swift
-@@ -17,7 +17,7 @@ public class MenuViewImplementation: UIButton {
+@@ -6,6 +6,53 @@
+ //
+ 
+ import UIKit
++
++@available(iOS 14.0, *)
++private final class LongPressContextMenuDelegate: NSObject, UIContextMenuInteractionDelegate {
++    weak var owner: MenuViewImplementation?
++
++    init(owner: MenuViewImplementation) {
++        self.owner = owner
++    }
++
++    func contextMenuInteraction(
++        _ interaction: UIContextMenuInteraction,
++        configurationForMenuAtLocation location: CGPoint
++    ) -> UIContextMenuConfiguration? {
++        return owner?.longPressMenuConfiguration(for: interaction, at: location)
++    }
++
++    func contextMenuInteraction(
++        _ interaction: UIContextMenuInteraction,
++        willDisplayMenuFor configuration: UIContextMenuConfiguration,
++        animator: UIContextMenuInteractionAnimating?
++    ) {
++        owner?.handleLongPressMenuWillDisplay()
++    }
++
++    func contextMenuInteraction(
++        _ interaction: UIContextMenuInteraction,
++        willEndFor configuration: UIContextMenuConfiguration,
++        animator: UIContextMenuInteractionAnimating?
++    ) {
++        owner?.handleLongPressMenuWillEnd()
++    }
++
++    func contextMenuInteraction(
++        _ interaction: UIContextMenuInteraction,
++        previewForHighlightingMenuWithConfiguration configuration: UIContextMenuConfiguration
++    ) -> UITargetedPreview? {
++        return owner?.longPressContentPreview()
++    }
++
++    func contextMenuInteraction(
++        _ interaction: UIContextMenuInteraction,
++        previewForDismissingMenuWithConfiguration configuration: UIContextMenuConfiguration
++    ) -> UITargetedPreview? {
++        return owner?.longPressContentPreview()
++    }
++}
++
+ @available(iOS 14.0, *)
+ @objc(MenuViewImplementation)
+ public class MenuViewImplementation: UIButton {
+@@ -17,7 +64,7 @@ public class MenuViewImplementation: UIButton {
              }
              _actions.removeAll()
              actions.forEach { menuAction in
@@ -190,7 +244,7 @@ index 5c4e0da4292b15d3a27b5ea1555f11452a470815..381aa8e2900aeb0d2453dba514360304
              }
              self.setup()
          }
-@@ -60,17 +60,98 @@ public class MenuViewImplementation: UIButton {
+@@ -60,17 +107,98 @@ public class MenuViewImplementation: UIButton {
      }
     
      public override func contextMenuInteraction(_ interaction: UIContextMenuInteraction, configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
@@ -232,8 +286,8 @@ index 5c4e0da4292b15d3a27b5ea1555f11452a470815..381aa8e2900aeb0d2453dba514360304
 +            pendingMenu = nil
 +            self.setup()
 +        }
-+    }
-+
+     }
+ 
 +    public override func contextMenuInteraction(_ interaction: UIContextMenuInteraction, previewForHighlightingMenuWithConfiguration configuration: UIContextMenuConfiguration) -> UITargetedPreview? {
 +        return contentPreview() ?? super.contextMenuInteraction(interaction, previewForHighlightingMenuWithConfiguration: configuration)
 +    }
@@ -244,8 +298,8 @@ index 5c4e0da4292b15d3a27b5ea1555f11452a470815..381aa8e2900aeb0d2453dba514360304
 +        }
 +        // A selection usually re-renders the trigger, so fade instead of landing on its old look.
 +        return didSelectAction ? nil : preview
-     }
- 
++    }
++
 +    // The button is a transparent overlay: morph from the React content so UIKit hides and restores it.
 +    // iOS 26 only, and only for content with its own corner radius; otherwise keep UIButton's default.
 +    private func contentPreview() -> UITargetedPreview? {
@@ -291,7 +345,7 @@ index 5c4e0da4292b15d3a27b5ea1555f11452a470815..381aa8e2900aeb0d2453dba514360304
      func setup () {
          let menu = UIMenu(title: _title,
              identifier: nil,
-@@ -86,8 +167,102 @@ public class MenuViewImplementation: UIButton {
+@@ -86,8 +214,195 @@ public class MenuViewImplementation: UIButton {
              }
          }
  
@@ -364,19 +418,115 @@ index 5c4e0da4292b15d3a27b5ea1555f11452a470815..381aa8e2900aeb0d2453dba514360304
 +    }
 +
 +    private var longPressInteraction: UIContextMenuInteraction?
++    private var longPressDelegate: LongPressContextMenuDelegate?
++    private var richLongPressInteraction: UIContextMenuInteraction?
++    private var longPressUsesRichInteraction = false
++
++    fileprivate func longPressMenuConfiguration(
++        for interaction: UIContextMenuInteraction,
++        at location: CGPoint
++    ) -> UIContextMenuConfiguration? {
++        if pendingMenu != nil {
++            pendingMenu = nil
++            isMenuPresented = false
++            self.setup()
++        }
++        isMenuPresented = true
++        didSelectAction = false
++        sendMenuInteractionStart()
++        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
++            guard let self = self else { return nil }
++            return self.menu
++        }
++    }
++
++    fileprivate func handleLongPressMenuWillDisplay() {
++        sendMenuOpen()
++    }
++
++    fileprivate func handleLongPressMenuWillEnd() {
++        sendMenuClose()
++        isMenuPresented = false
++        if pendingMenu != nil {
++            pendingMenu = nil
++            self.setup()
++        }
++    }
++
++    fileprivate func longPressContentPreview() -> UITargetedPreview? {
++        guard let siblings = self.superview?.subviews.filter({ $0 !== self }),
++              siblings.count == 1,
++              let content = siblings.first,
++              content.window != nil else {
++            return nil
++        }
++        let (target, radius) = previewTarget(content) ?? (content, 0)
++        let bounds = target.bounds
++        guard bounds.width > 0, bounds.height > 0 else {
++            return nil
++        }
++        let parameters = UIPreviewParameters()
++        parameters.backgroundColor = .clear
++        if radius > 0 {
++            parameters.visiblePath = UIBezierPath(
++                roundedRect: bounds,
++                cornerRadius: min(radius, bounds.height / 2, bounds.width / 2)
++            )
++        }
++        return UITargetedPreview(view: target, parameters: parameters)
++    }
++
++    private func shouldUseRichLongPressInteraction(for host: UIView) -> Bool {
++        let size = host.bounds.size
++        // On iOS 26, reusing UIButton's built-in contextMenuInteraction on large
++        // long-press targets (images, videos, tall blocks) renders UIButton's
++        // oversized circular Liquid Glass highlight orb over the content.
++        return size.width >= 60 && size.height >= 60
++    }
++
++    private func detachLongPressInteraction() {
++        guard let existing = longPressInteraction else { return }
++        existing.view?.removeInteraction(existing)
++        if !longPressUsesRichInteraction {
++            self.addInteraction(existing)
++        }
++        longPressInteraction = nil
++        longPressUsesRichInteraction = false
++    }
 +
 +    public override func didMoveToSuperview() {
 +        super.didMoveToSuperview()
 +        self.updateLongPressInteraction()
 +    }
 +
++    public override func layoutSubviews() {
++        super.layoutSubviews()
++        if shouldOpenOnLongPress {
++            self.updateLongPressInteraction()
++        }
++    }
++
 +    private func updateLongPressInteraction() {
++        if isMenuPresented {
++            return
++        }
 +        if shouldOpenOnLongPress, let host = self.superview {
-+            if let existing = longPressInteraction, existing.view === host {
++            let useRich = shouldUseRichLongPressInteraction(for: host)
++            if let existing = longPressInteraction,
++               existing.view === host,
++               longPressUsesRichInteraction == useRich {
 +                return
 +            }
-+            if let existing = longPressInteraction {
-+                existing.view?.removeInteraction(existing)
++            detachLongPressInteraction()
++            if useRich {
++                let delegate = longPressDelegate ?? LongPressContextMenuDelegate(owner: self)
++                longPressDelegate = delegate
++                let interaction = richLongPressInteraction ?? UIContextMenuInteraction(delegate: delegate)
++                richLongPressInteraction = interaction
++                host.addInteraction(interaction)
++                longPressInteraction = interaction
++                longPressUsesRichInteraction = true
++                return
 +            }
 +            // UIControl's built-in interaction presents a compact menu that
 +            // preserves the keyboard; a separate view interaction presents a
@@ -384,17 +534,14 @@ index 5c4e0da4292b15d3a27b5ea1555f11452a470815..381aa8e2900aeb0d2453dba514360304
 +            guard let interaction = self.contextMenuInteraction else { return }
 +            host.addInteraction(interaction)
 +            longPressInteraction = interaction
++            longPressUsesRichInteraction = false
 +            return
 +        }
-+        if let existing = longPressInteraction {
-+            existing.view?.removeInteraction(existing)
-+            self.addInteraction(existing)
-+            longPressInteraction = nil
-+        }
++        detachLongPressInteraction()
      }
  
      public override func reactSetFrame(_ frame: CGRect) {
-@@ -124,4 +299,8 @@ public class MenuViewImplementation: UIButton {
+@@ -124,4 +439,8 @@ public class MenuViewImplementation: UIButton {
      @objc func sendMenuOpen() {
          // NO-OP (should be overriden by parent)
      }
