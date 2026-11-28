@@ -25,7 +25,7 @@ export function UsageDailyChart({ days, daily, metric, height }: UsageDailyChart
   );
 
   return (
-    <Host style={{ height, width: "100%" }}>
+    <Host ignoreSafeArea="all" style={{ height, width: "100%", overflow: "hidden" }}>
       <Chart
         type="bar"
         data={data}
