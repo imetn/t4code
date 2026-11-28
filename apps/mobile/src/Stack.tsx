@@ -225,7 +225,8 @@ const ROUTE_TITLES: Readonly<Record<string, string>> = {
 // rail. The picker stack spans the sheet so its header reaches the rail, and insets its content.
 const THREAD_SETTINGS_ROUTE = {
   ...sheetRoute({
-    detent: 0.78,
+    detent: 0.58,
+    maxDetent: 0.9,
     header: "none",
     android: "card",
     spansRail: true,

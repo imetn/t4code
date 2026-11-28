@@ -49,14 +49,17 @@ export function ModelRowContent(
   return (
     <View
       style={[
-        { borderRadius: 12, borderCurve: "continuous" },
         props.minimumHeight === undefined ? undefined : { minHeight: props.minimumHeight },
         props.selected && props.selectedBackgroundColor
-          ? { backgroundColor: props.selectedBackgroundColor }
+          ? {
+              backgroundColor: props.selectedBackgroundColor,
+              borderRadius: 12,
+              borderCurve: "continuous",
+            }
           : undefined,
       ]}
       className={cn(
-        "mx-1.5 min-h-[40px] flex-row items-center gap-2 px-3 android:min-h-[44px]",
+        "min-h-[38px] flex-row items-center gap-2 px-1 android:min-h-[44px]",
         props.selected && props.selectedClassName ? props.selectedClassName : "bg-transparent",
       )}
     >
@@ -67,7 +70,7 @@ export function ModelRowContent(
           checked: props.selected,
           disabled: props.option.isUnavailable === true || props.option.isHidden === true,
         }}
-        className="min-h-[40px] min-w-0 flex-1 flex-row items-center gap-2.5 active:opacity-65 android:min-h-[44px]"
+        className="min-h-[38px] min-w-0 flex-1 flex-row items-center gap-2.5 active:opacity-60 android:min-h-[44px]"
         disabled={props.option.isUnavailable || props.option.isHidden}
         onPress={props.onPress}
         onLongPress={props.onLongPress}
@@ -78,7 +81,7 @@ export function ModelRowContent(
           <ProviderIcon
             iconUrl={props.option.providerIconUrl}
             provider={props.option.providerDriver}
-            size={15}
+            size={16}
           />
         ) : null}
         <View className="min-w-0 flex-1">
@@ -88,7 +91,7 @@ export function ModelRowContent(
                 "min-w-0 shrink text-[14.5px] leading-[19px]",
                 props.selected
                   ? "font-t3-semibold text-foreground"
-                  : "font-t3-medium text-foreground/85",
+                  : "font-t3-normal text-foreground/75",
               )}
               numberOfLines={props.labelNumberOfLines}
             >
@@ -172,10 +175,12 @@ export function ModelRowContent(
       >
         <SymbolView
           name={props.isFavorite ? "star.fill" : "star"}
-          size={14.5}
+          size={14}
           tintColor={props.isFavorite ? "#f59e0b" : undefined}
           tintColorClassName={props.isFavorite ? undefined : "accent-icon-subtle"}
-          style={props.isFavorite ? undefined : { opacity: 0.4 }}
+          style={
+            props.isFavorite ? (props.selected ? undefined : { opacity: 0.48 }) : { opacity: 0.34 }
+          }
           type="monochrome"
         />
       </Pressable>

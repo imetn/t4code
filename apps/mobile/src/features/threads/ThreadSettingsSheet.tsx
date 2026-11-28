@@ -34,7 +34,6 @@ import {
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { type NativeStackNavigationProp } from "@react-navigation/native-stack";
 import * as Haptics from "expo-haptics";
-import { GlassView } from "expo-glass-effect";
 import { AsyncResult } from "effect/reactivity";
 import {
   createContext,
@@ -55,7 +54,6 @@ import {
   type TextInputInstance,
   View,
 } from "react-native";
-import { withUniwind } from "uniwind";
 import { READABLE_WIDTH_STYLE, ROW_MIN_HEIGHT } from "../../components/ui/listMetrics";
 import { RefreshControl } from "../../components/ui/RefreshControl";
 import Animated, {
@@ -835,14 +833,6 @@ function buildCatalogItemsForTab(
   ];
 }
 
-const SheetGlass = withUniwind(GlassView, {
-  style: { fromClassName: "className" },
-});
-
-// Outer iOS 26 formSheet uses ~38pt continuous corners; with 12pt side/bottom inset,
-// 26pt continuous squircle cards stay concentric at both top and bottom edges.
-const SHEET_CARD_RADIUS = 26;
-
 function modelSheetSurface(isDarkMode: boolean, useNativeGlass = NATIVE_LIQUID_GLASS_SUPPORTED) {
   if (useNativeGlass) {
     return isDarkMode
@@ -975,9 +965,8 @@ function ThreadSettingsTopBar(props: {
     }
   };
 
-  const topPadding = Platform.OS === "ios" ? 18 : insets.top + 8;
+  const topPadding = Platform.OS === "ios" ? 16 : insets.top + 8;
   const surface = modelSheetSurface(isDarkMode);
-  const useNativeGlass = NATIVE_LIQUID_GLASS_SUPPORTED;
   const tabsScrollRef = useRef<ScrollViewInstance>(null);
   const tabLayoutsRef = useRef(new Map<string, { readonly x: number; readonly width: number }>());
   const tabsViewportWidthRef = useRef(0);
@@ -988,409 +977,267 @@ function ThreadSettingsTopBar(props: {
     const targetX = Math.max(0, layout.x + layout.width / 2 - tabsViewportWidthRef.current / 2);
     tabsScrollRef.current?.scrollTo({ x: targetX, animated: true });
   }, [session.activeTab]);
-  const activeTabShadow =
-    isDarkMode || useNativeGlass
-      ? undefined
-      : {
-          shadowColor: "#000000",
-          shadowOffset: { width: 0, height: 1 },
-          shadowOpacity: 0.08,
-          shadowRadius: 3,
-          elevation: 1,
-        };
 
   if (session.reorderFavorites) {
     return (
       <View
-        className="flex-row items-center justify-between gap-2 px-3.5 pb-2.5"
-        style={{ paddingTop: topPadding }}
+        className="px-4 pb-2.5"
+        style={{
+          paddingTop: topPadding,
+          borderBottomWidth: 0.5,
+          borderBottomColor: surface.divider,
+        }}
       >
-        <View className="min-w-0 flex-1 flex-row items-center gap-2 pl-1">
-          <SymbolView name="star.fill" size={16} tintColor="#f59e0b" type="monochrome" />
-          <Text className="text-[15px] font-t3-semibold text-foreground" numberOfLines={1}>
-            {gt("Reorder favorites")}
-          </Text>
+        <View className="h-[34px] flex-row items-center justify-between gap-2">
+          <View className="min-w-0 flex-1 flex-row items-center gap-2">
+            <SymbolView name="star.fill" size={16} tintColor="#f59e0b" type="monochrome" />
+            <Text className="text-[16px] font-t3-semibold text-foreground" numberOfLines={1}>
+              {gt("Reorder favorites")}
+            </Text>
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={gt("Done")}
+            onPress={() => {
+              void Haptics.selectionAsync();
+              session.setReorderFavorites(false);
+            }}
+            className="h-[32px] items-center justify-center rounded-full px-3.5 active:opacity-70"
+            style={{ backgroundColor: surface.activeTab }}
+          >
+            <Text className="text-[13px] font-t3-semibold text-foreground">{gt("Done")}</Text>
+          </Pressable>
         </View>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={gt("Done")}
-          onPress={() => {
-            void Haptics.selectionAsync();
-            session.setReorderFavorites(false);
-          }}
-          className="active:opacity-75"
-        >
-          {useNativeGlass ? (
-            <SheetGlass
-              isInteractive
-              glassEffectStyle="regular"
-              colorScheme={themeAppearance}
-              className="h-[36px] items-center justify-center rounded-full px-4"
-            >
-              <Text className="text-[13.5px] font-t3-semibold text-foreground">{gt("Done")}</Text>
-            </SheetGlass>
-          ) : (
-            <View
-              className="h-[36px] items-center justify-center rounded-full px-4"
-              style={{
-                backgroundColor: surface.activeTab,
-                borderWidth: 0.5,
-                borderColor: surface.activeTabBorder,
-                ...activeTabShadow,
-              }}
-            >
-              <Text className="text-[13.5px] font-t3-semibold text-foreground">{gt("Done")}</Text>
-            </View>
-          )}
-        </Pressable>
       </View>
     );
   }
 
   if (showSearch) {
-    const searchFieldContent = (
-      <>
-        <SymbolView
-          name="magnifyingglass"
-          size={14}
-          tintColorClassName="accent-foreground-muted"
-          type="monochrome"
-        />
-        <TextInput
-          ref={searchRef}
-          autoFocus
-          autoCapitalize="none"
-          autoCorrect={false}
-          returnKeyType="search"
-          placeholder={gt("Find a model")}
-          placeholderTextColorClassName="accent-placeholder"
-          className="min-w-0 flex-1 py-1 font-sans text-sm text-foreground"
-          value={session.searchQuery}
-          onChangeText={session.setSearchQuery}
-        />
-        {session.searchQuery.length > 0 ? (
-          <Pressable
-            accessibilityLabel={gt("Clear model search")}
-            accessibilityRole="button"
-            hitSlop={8}
-            onPress={() => {
-              session.setSearchQuery("");
-              searchRef.current?.focus();
-            }}
+    return (
+      <View
+        className="px-4 pb-2.5"
+        style={{
+          paddingTop: topPadding,
+          borderBottomWidth: 0.5,
+          borderBottomColor: surface.divider,
+        }}
+      >
+        <View className="h-[34px] flex-row items-center gap-2">
+          <View
+            className="h-[34px] min-w-0 flex-1 flex-row items-center gap-2 rounded-full px-3"
+            style={{ backgroundColor: surface.pill }}
           >
             <SymbolView
-              name="xmark.circle.fill"
-              size={16}
+              name="magnifyingglass"
+              size={14}
               tintColorClassName="accent-foreground-muted"
               type="monochrome"
             />
-          </Pressable>
-        ) : null}
-      </>
-    );
-    return (
-      <View
-        className="flex-row items-center gap-2 px-3.5 pb-2.5"
-        style={{ paddingTop: topPadding }}
-      >
-        {useNativeGlass ? (
-          <SheetGlass
-            glassEffectStyle="regular"
-            colorScheme={themeAppearance}
-            className="h-[38px] min-w-0 flex-1 flex-row items-center gap-2 rounded-full px-3.5"
-          >
-            {searchFieldContent}
-          </SheetGlass>
-        ) : (
-          <View
-            className="h-[38px] min-w-0 flex-1 flex-row items-center gap-2 rounded-full px-3.5"
-            style={{
-              backgroundColor: surface.card,
-              borderWidth: 0.5,
-              borderColor: surface.cardBorder,
+            <TextInput
+              ref={searchRef}
+              autoFocus
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="search"
+              placeholder={gt("Find a model")}
+              placeholderTextColorClassName="accent-placeholder"
+              className="min-w-0 flex-1 py-0.5 font-sans text-sm text-foreground"
+              value={session.searchQuery}
+              onChangeText={session.setSearchQuery}
+            />
+            {session.searchQuery.length > 0 ? (
+              <Pressable
+                accessibilityLabel={gt("Clear model search")}
+                accessibilityRole="button"
+                hitSlop={8}
+                onPress={() => {
+                  session.setSearchQuery("");
+                  searchRef.current?.focus();
+                }}
+              >
+                <SymbolView
+                  name="xmark.circle.fill"
+                  size={16}
+                  tintColorClassName="accent-foreground-muted"
+                  type="monochrome"
+                />
+              </Pressable>
+            ) : null}
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            className="h-[34px] items-center justify-center px-1 active:opacity-60"
+            onPress={() => {
+              session.setSearchQuery("");
+              props.onCloseSearch();
             }}
           >
-            {searchFieldContent}
-          </View>
-        )}
-        <Pressable
-          accessibilityRole="button"
-          className="px-1 py-1.5 active:opacity-60"
-          onPress={() => {
-            session.setSearchQuery("");
-            props.onCloseSearch();
-          }}
-        >
-          <Text className="text-sm font-t3-medium text-foreground-muted">{gt("Cancel")}</Text>
-        </Pressable>
+            <Text className="text-sm font-t3-medium text-foreground-muted">{gt("Cancel")}</Text>
+          </Pressable>
+        </View>
       </View>
     );
   }
 
   const favoritesActive = session.activeTab === "favorites";
-  const favoritesInner = (
-    <>
-      <SymbolView
-        name="star.fill"
-        size={18}
-        tintColor={favoritesActive ? "#f59e0b" : undefined}
-        tintColorClassName={favoritesActive ? undefined : "accent-foreground"}
-        style={favoritesActive ? undefined : { opacity: 0.72 }}
-        type="monochrome"
-      />
-      {favoritesActive ? (
-        <Text className="text-[13.5px] font-t3-semibold text-foreground">{gt("Favorites")}</Text>
-      ) : null}
-    </>
-  );
 
   return (
     <View
-      className="flex-row items-center justify-between gap-2 px-3 pb-2.5"
-      style={{ paddingTop: topPadding }}
+      className="px-4 pb-2"
+      style={{
+        paddingTop: topPadding,
+        borderBottomWidth: 0.5,
+        borderBottomColor: surface.divider,
+      }}
     >
-      <View
-        className="h-[40px] min-w-0 flex-1 overflow-hidden rounded-full"
-        style={{
-          backgroundColor: surface.tabTrack,
-          borderWidth: 0.5,
-          borderColor: surface.tabTrackBorder,
-        }}
-      >
-        <ScrollView
-          ref={tabsScrollRef}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          onLayout={(event) => {
-            tabsViewportWidthRef.current = event.nativeEvent.layout.width;
-          }}
-          contentContainerStyle={{
-            alignItems: "center",
-            gap: 3,
-            paddingHorizontal: 3,
-            height: 39,
-          }}
-          className="flex-1"
-        >
+      {/* Row 1: Aligned Title + Bare Action Icons (exact 34pt row height) */}
+      <View className="mb-2 h-[34px] flex-row items-center justify-between gap-2">
+        <Text className="text-[17px] leading-[22px] font-t3-bold text-foreground" numberOfLines={1}>
+          {gt("Choose model")}
+        </Text>
+        <View className="flex-row items-center gap-0.5">
           <Pressable
-            accessibilityLabel={gt("Favorites")}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: favoritesActive }}
-            onLayout={(event) => {
-              tabLayoutsRef.current.set("favorites", {
-                x: event.nativeEvent.layout.x,
-                width: event.nativeEvent.layout.width,
-              });
-            }}
+            accessibilityLabel={gt("Find a model")}
+            accessibilityRole="button"
+            hitSlop={4}
             onPress={() => {
               void Haptics.selectionAsync();
-              session.setActiveTab("favorites");
+              props.onOpenSearch();
             }}
-            className="active:opacity-75"
-          >
-            {favoritesActive && useNativeGlass ? (
-              <SheetGlass
-                isInteractive
-                glassEffectStyle="regular"
-                colorScheme={themeAppearance}
-                className="h-[34px] flex-row items-center justify-center gap-1.5 rounded-full px-3"
-              >
-                {favoritesInner}
-              </SheetGlass>
-            ) : (
-              <View
-                className={cn(
-                  "h-[34px] flex-row items-center justify-center rounded-full",
-                  favoritesActive ? "gap-1.5 px-3" : "w-[36px]",
-                )}
-                style={
-                  favoritesActive
-                    ? {
-                        backgroundColor: surface.activeTab,
-                        borderWidth: 0.5,
-                        borderColor: surface.activeTabBorder,
-                        ...activeTabShadow,
-                      }
-                    : undefined
-                }
-              >
-                {favoritesInner}
-              </View>
-            )}
-          </Pressable>
-
-          <View className="mx-0.5 h-4 w-px" style={{ backgroundColor: surface.divider }} />
-
-          {session.providerGroups.map((group) => {
-            const isActive = session.activeTab === group.providerKey;
-            const driver = group.models[0]?.providerDriver ?? group.providerKey;
-            const iconUrl = group.models[0]?.providerIconUrl;
-            const tabInner = (
-              <>
-                <ProviderIcon iconUrl={iconUrl} provider={driver} size={18} />
-                {isActive ? (
-                  <Text
-                    className="text-[13.5px] font-t3-semibold text-foreground"
-                    numberOfLines={1}
-                  >
-                    {group.providerLabel}
-                  </Text>
-                ) : null}
-              </>
-            );
-            return (
-              <Pressable
-                key={group.providerKey}
-                accessibilityLabel={group.providerLabel}
-                accessibilityRole="tab"
-                accessibilityState={{ selected: isActive }}
-                onLayout={(event) => {
-                  tabLayoutsRef.current.set(group.providerKey, {
-                    x: event.nativeEvent.layout.x,
-                    width: event.nativeEvent.layout.width,
-                  });
-                }}
-                onPress={() => {
-                  void Haptics.selectionAsync();
-                  session.setActiveTab(group.providerKey);
-                }}
-                className="active:opacity-75"
-              >
-                {isActive && useNativeGlass ? (
-                  <SheetGlass
-                    isInteractive
-                    glassEffectStyle="regular"
-                    colorScheme={themeAppearance}
-                    className="h-[34px] flex-row items-center justify-center gap-1.5 rounded-full px-3"
-                  >
-                    {tabInner}
-                  </SheetGlass>
-                ) : (
-                  <View
-                    className={cn(
-                      "h-[34px] flex-row items-center justify-center rounded-full",
-                      isActive ? "gap-1.5 px-3" : "w-[36px]",
-                    )}
-                    style={
-                      isActive
-                        ? {
-                            backgroundColor: surface.activeTab,
-                            borderWidth: 0.5,
-                            borderColor: surface.activeTabBorder,
-                            ...activeTabShadow,
-                          }
-                        : undefined
-                    }
-                  >
-                    {tabInner}
-                  </View>
-                )}
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-      </View>
-
-      <View className="flex-row items-center gap-1.5">
-        <Pressable
-          accessibilityLabel={gt("Find a model")}
-          accessibilityRole="button"
-          onPress={() => {
-            void Haptics.selectionAsync();
-            props.onOpenSearch();
-          }}
-          className="active:opacity-70"
-        >
-          {useNativeGlass ? (
-            <SheetGlass
-              isInteractive
-              glassEffectStyle="regular"
-              colorScheme={themeAppearance}
-              className="size-[38px] items-center justify-center rounded-full"
-            >
-              <SymbolView
-                name="magnifyingglass"
-                size={15}
-                tintColorClassName="accent-foreground"
-                style={{ opacity: 0.85 }}
-                type="monochrome"
-              />
-            </SheetGlass>
-          ) : (
-            <View
-              className="size-[36px] items-center justify-center rounded-full"
-              style={{ backgroundColor: surface.actionBtn }}
-            >
-              <SymbolView
-                name="magnifyingglass"
-                size={15}
-                tintColorClassName="accent-foreground"
-                style={{ opacity: 0.85 }}
-                type="monochrome"
-              />
-            </View>
-          )}
-        </Pressable>
-
-        {moreActions.length > 0 ? (
-          <Menu actions={moreActions} onPressAction={handleMoreAction}>
-            <Pressable
-              accessibilityLabel={gt("Model options")}
-              accessibilityRole="button"
-              className="active:opacity-70"
-            >
-              {useNativeGlass ? (
-                <SheetGlass
-                  isInteractive
-                  glassEffectStyle="regular"
-                  colorScheme={themeAppearance}
-                  className="size-[38px] items-center justify-center rounded-full"
-                >
-                  <SymbolView
-                    name="ellipsis"
-                    size={15}
-                    tintColorClassName="accent-foreground"
-                    style={{ opacity: 0.85 }}
-                    type="monochrome"
-                  />
-                </SheetGlass>
-              ) : (
-                <View
-                  className="size-[36px] items-center justify-center rounded-full"
-                  style={{ backgroundColor: surface.actionBtn }}
-                >
-                  <SymbolView
-                    name="ellipsis"
-                    size={15}
-                    tintColorClassName="accent-foreground"
-                    style={{ opacity: 0.85 }}
-                    type="monochrome"
-                  />
-                </View>
-              )}
-            </Pressable>
-          </Menu>
-        ) : null}
-
-        {Platform.OS === "android" ? (
-          <Pressable
-            accessibilityLabel={gt("Close")}
-            accessibilityRole="button"
-            onPress={props.onClose}
-            className="size-[36px] items-center justify-center rounded-full active:opacity-70"
-            style={{ backgroundColor: surface.actionBtn }}
+            className="size-[34px] items-center justify-center rounded-full active:opacity-60"
           >
             <SymbolView
-              name="xmark"
-              size={15}
+              name="magnifyingglass"
+              size={16}
               tintColorClassName="accent-foreground"
-              style={{ opacity: 0.85 }}
+              style={{ opacity: 0.72 }}
               type="monochrome"
             />
           </Pressable>
-        ) : null}
+
+          {moreActions.length > 0 ? (
+            <Menu actions={moreActions} onPressAction={handleMoreAction}>
+              <Pressable
+                accessibilityLabel={gt("Model options")}
+                accessibilityRole="button"
+                hitSlop={4}
+                className="size-[34px] items-center justify-center rounded-full active:opacity-60"
+              >
+                <SymbolView
+                  name="ellipsis"
+                  size={16}
+                  tintColorClassName="accent-foreground"
+                  style={{ opacity: 0.72 }}
+                  type="monochrome"
+                />
+              </Pressable>
+            </Menu>
+          ) : null}
+
+          {Platform.OS === "android" ? (
+            <Pressable
+              accessibilityLabel={gt("Close")}
+              accessibilityRole="button"
+              hitSlop={4}
+              onPress={props.onClose}
+              className="size-[34px] items-center justify-center rounded-full active:opacity-60"
+            >
+              <SymbolView
+                name="xmark"
+                size={16}
+                tintColorClassName="accent-foreground"
+                style={{ opacity: 0.72 }}
+                type="monochrome"
+              />
+            </Pressable>
+          ) : null}
+        </View>
       </View>
+
+      {/* Row 2: Zero-nesting flat provider tabs (NO outer capsule track) */}
+      <ScrollView
+        ref={tabsScrollRef}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        onLayout={(event) => {
+          tabsViewportWidthRef.current = event.nativeEvent.layout.width;
+        }}
+        contentContainerStyle={{
+          alignItems: "center",
+          gap: 6,
+          paddingVertical: 1,
+        }}
+      >
+        <Pressable
+          accessibilityLabel={gt("Favorites")}
+          accessibilityRole="tab"
+          accessibilityState={{ selected: favoritesActive }}
+          onLayout={(event) => {
+            tabLayoutsRef.current.set("favorites", {
+              x: event.nativeEvent.layout.x,
+              width: event.nativeEvent.layout.width,
+            });
+          }}
+          onPress={() => {
+            void Haptics.selectionAsync();
+            session.setActiveTab("favorites");
+          }}
+          className={cn(
+            "h-[30px] flex-row items-center justify-center rounded-full active:opacity-70",
+            favoritesActive ? "gap-1.5 px-3" : "w-[34px]",
+          )}
+          style={favoritesActive ? { backgroundColor: surface.activeTab } : undefined}
+        >
+          <SymbolView
+            name="star.fill"
+            size={15}
+            tintColor={favoritesActive ? "#f59e0b" : undefined}
+            tintColorClassName={favoritesActive ? undefined : "accent-foreground"}
+            style={favoritesActive ? undefined : { opacity: 0.62 }}
+            type="monochrome"
+          />
+          {favoritesActive ? (
+            <Text className="text-[13px] font-t3-semibold text-foreground">{gt("Favorites")}</Text>
+          ) : null}
+        </Pressable>
+
+        {session.providerGroups.map((group) => {
+          const isActive = session.activeTab === group.providerKey;
+          const driver = group.models[0]?.providerDriver ?? group.providerKey;
+          const iconUrl = group.models[0]?.providerIconUrl;
+          return (
+            <Pressable
+              key={group.providerKey}
+              accessibilityLabel={group.providerLabel}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: isActive }}
+              onLayout={(event) => {
+                tabLayoutsRef.current.set(group.providerKey, {
+                  x: event.nativeEvent.layout.x,
+                  width: event.nativeEvent.layout.width,
+                });
+              }}
+              onPress={() => {
+                void Haptics.selectionAsync();
+                session.setActiveTab(group.providerKey);
+              }}
+              className={cn(
+                "h-[30px] flex-row items-center justify-center rounded-full active:opacity-70",
+                isActive ? "gap-1.5 px-3" : "w-[34px]",
+              )}
+              style={isActive ? { backgroundColor: surface.activeTab } : undefined}
+            >
+              <ProviderIcon iconUrl={iconUrl} provider={driver} size={17} />
+              {isActive ? (
+                <Text className="text-[13px] font-t3-semibold text-foreground" numberOfLines={1}>
+                  {group.providerLabel}
+                </Text>
+              ) : null}
+            </Pressable>
+          );
+        })}
+      </ScrollView>
     </View>
   );
 }
@@ -1594,100 +1441,94 @@ function ThreadSettingsThumbDeck() {
     0,
     reasoningChoices.findIndex((choice) => choice.id === reasoningSelectedId),
   );
+  const activeReasoningLabel = reasoningChoices[reasoningIndex]?.label ?? "";
   const surface = modelSheetSurface(isDarkMode);
-  const hasTopControls = Boolean(heading || (reasoning && reasoningChoices.length > 0));
-
   const bottomInset =
     Platform.OS === "ios"
-      ? Math.max(12, Math.min(insets.bottom > 16 ? insets.bottom - 14 : insets.bottom, 18))
+      ? Math.max(12, Math.min(insets.bottom > 16 ? insets.bottom - 12 : insets.bottom, 18))
       : Math.max(insets.bottom, 12);
 
   return (
     <View
-      className="px-3 pt-2"
+      className="px-4 pt-2.5"
       style={{
         backgroundColor: surface.canvas,
         paddingBottom: bottomInset,
+        borderTopWidth: 0.5,
+        borderTopColor: surface.divider,
       }}
     >
-      <View
-        className="px-3.5 py-2.5"
-        style={{
-          borderRadius: SHEET_CARD_RADIUS,
-          borderCurve: "continuous",
-          backgroundColor: surface.card,
-          borderWidth: 0.5,
-          borderColor: surface.cardBorder,
-          ...(isDarkMode || NATIVE_LIQUID_GLASS_SUPPORTED
-            ? undefined
-            : {
-                shadowColor: "#000000",
-                shadowOffset: { width: 0, height: 1 },
-                shadowOpacity: 0.05,
-                shadowRadius: 3,
-                elevation: 1,
-              }),
-        }}
-      >
-        <ChatGptSharingStatus provider={selectedProvider} />
+      <ChatGptSharingStatus provider={selectedProvider} />
 
-        {heading ? (
-          <View className="mb-1 flex-row items-center justify-between gap-2">
-            <Text className="text-[12px] font-t3-semibold text-foreground/80">{heading}</Text>
-            {hasSpeed ? (
-              <MobileSpeedSwitcher
-                speedSelect={speedSelect}
-                fastToggle={fastToggle}
-                isDarkMode={isDarkMode}
-              />
-            ) : reasoningChoices.length > 1 ? (
-              <Text className="text-xs font-t3-medium tabular-nums text-foreground-muted">
+      {heading ? (
+        <View className="mb-0.5 flex-row items-center justify-between gap-2">
+          <View className="flex-row items-baseline gap-1.5">
+            <Text className="text-[12px] font-t3-semibold text-foreground/70">{heading}</Text>
+            {hasSpeed && reasoningChoices.length > 1 ? (
+              <Text className="text-[11px] font-t3-medium tabular-nums text-foreground-muted">
                 {`${reasoningIndex + 1} / ${reasoningChoices.length}`}
               </Text>
             ) : null}
           </View>
-        ) : null}
-
-        {reasoning && reasoningChoices.length > 0 ? (
-          <View className="mb-0.5">
-            {reasoningLocked ? (
-              <Text className="mb-1 text-2xs text-foreground-muted">
-                {gt(
-                  'Your prompt contains "ultrathink" in the text. Remove it to change this option.',
-                )}
-              </Text>
-            ) : null}
-            <MobileReasoningPowerSlider
-              ariaLabel={reasoning.descriptor.label}
-              choices={reasoningChoices}
-              selectedId={reasoningSelectedId}
+          {hasSpeed ? (
+            <MobileSpeedSwitcher
+              speedSelect={speedSelect}
+              fastToggle={fastToggle}
               isDarkMode={isDarkMode}
-              disabled={reasoningLocked}
-              onSelect={(nextId) => {
-                if (reasoning.kind === "boolean") {
-                  session.applyOptionChange(reasoning.descriptor.id, nextId === "true");
-                  return;
-                }
-                if (reasoningLocked) {
-                  Dialog.alert(
-                    gt("Reasoning controlled by prompt"),
-                    gt(
-                      'Your prompt contains "ultrathink" in the text. Remove it to change this option.',
-                    ),
-                  );
-                  return;
-                }
-                session.applyOptionChange(reasoning.descriptor.id, nextId);
-              }}
             />
-          </View>
-        ) : null}
+          ) : reasoningChoices.length > 1 ? (
+            <Text className="text-[11.5px] font-t3-medium tabular-nums text-foreground-muted">
+              {activeReasoningLabel
+                ? `${activeReasoningLabel} · ${reasoningIndex + 1} / ${reasoningChoices.length}`
+                : `${reasoningIndex + 1} / ${reasoningChoices.length}`}
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
 
+      {reasoning && reasoningChoices.length > 0 ? (
+        <View className="mb-1.5">
+          {reasoningLocked ? (
+            <Text className="mb-1 text-2xs text-foreground-muted">
+              {gt(
+                'Your prompt contains "ultrathink" in the text. Remove it to change this option.',
+              )}
+            </Text>
+          ) : null}
+          <MobileReasoningPowerSlider
+            ariaLabel={reasoning.descriptor.label}
+            choices={reasoningChoices}
+            selectedId={reasoningSelectedId}
+            isDarkMode={isDarkMode}
+            disabled={reasoningLocked}
+            onSelect={(nextId) => {
+              if (reasoning.kind === "boolean") {
+                session.applyOptionChange(reasoning.descriptor.id, nextId === "true");
+                return;
+              }
+              if (reasoningLocked) {
+                Dialog.alert(
+                  gt("Reasoning controlled by prompt"),
+                  gt(
+                    'Your prompt contains "ultrathink" in the text. Remove it to change this option.',
+                  ),
+                );
+                return;
+              }
+              session.applyOptionChange(reasoning.descriptor.id, nextId);
+            }}
+          />
+        </View>
+      ) : null}
+
+      {/* Unified bottom row: extra model options (e.g. Cyber Access) on left, Runtime Permissions on right */}
+      <View className="flex-row items-center justify-between gap-2 pt-0.5">
         {others.length > 0 ? (
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ alignItems: "center", gap: 6, paddingBottom: 8 }}
+            className="min-w-0 flex-1"
+            contentContainerStyle={{ alignItems: "center", gap: 6 }}
           >
             {others.map((control) => {
               if (control.kind === "boolean") {
@@ -1701,15 +1542,15 @@ function ThreadSettingsThumbDeck() {
                       void Haptics.selectionAsync();
                       session.applyOptionChange(control.descriptor.id, !checked);
                     }}
-                    className="h-[30px] flex-row items-center gap-1.5 rounded-full px-3 active:opacity-75"
+                    className="h-[28px] flex-row items-center gap-1.5 rounded-full px-2.5 active:opacity-75"
                     style={{
-                      backgroundColor: checked ? surface.selectedRow : surface.pill,
+                      backgroundColor: checked ? surface.activeTab : surface.pill,
                     }}
                   >
-                    <Text className="text-xs font-t3-medium text-foreground-muted">
+                    <Text className="text-[11.5px] font-t3-medium text-foreground-muted">
                       {control.descriptor.label}
                     </Text>
-                    <Text className="text-xs font-t3-bold text-foreground">
+                    <Text className="text-[11.5px] font-t3-semibold text-foreground">
                       {checked
                         ? gt("On", { $context: "option state" })
                         : gt("Off", { $context: "option state" })}
@@ -1749,28 +1590,25 @@ function ThreadSettingsThumbDeck() {
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel={`${control.descriptor.label}: ${currentLabel}`}
-                    className="h-[30px] flex-row items-center gap-1.5 rounded-full px-3 active:opacity-75"
+                    className="h-[28px] flex-row items-center gap-1.5 rounded-full px-2.5 active:opacity-75"
                     style={{ backgroundColor: surface.pill }}
                   >
-                    <SymbolView
-                      name="slider.horizontal.3"
-                      size={11}
-                      tintColorClassName="accent-foreground-muted"
-                      type="monochrome"
-                    />
                     <Text
-                      className="text-xs font-t3-medium text-foreground-muted"
+                      className="text-[11.5px] font-t3-medium text-foreground-muted"
                       numberOfLines={1}
                     >
                       {control.descriptor.label}
                     </Text>
-                    <Text className="text-xs font-t3-bold text-foreground" numberOfLines={1}>
+                    <Text
+                      className="text-[11.5px] font-t3-semibold text-foreground"
+                      numberOfLines={1}
+                    >
                       {currentLabel}
                     </Text>
                     <SymbolView
                       name="chevron.down"
                       size={10}
-                      tintColorClassName="accent-icon-subtle"
+                      tintColorClassName="accent-foreground-muted"
                       type="monochrome"
                     />
                   </Pressable>
@@ -1778,15 +1616,8 @@ function ThreadSettingsThumbDeck() {
               );
             })}
           </ScrollView>
-        ) : null}
-
-        {hasTopControls ? (
-          <View className="my-2" style={{ height: 0.5, backgroundColor: surface.divider }} />
-        ) : null}
-
-        {/* Balanced full-width Runtime Permission Row */}
-        <View className="flex-row items-center justify-between gap-3">
-          <View className="min-w-0 flex-row items-center gap-2">
+        ) : (
+          <View className="min-w-0 flex-row items-center gap-1.5">
             <SymbolView
               name="shield"
               size={13}
@@ -1797,60 +1628,45 @@ function ThreadSettingsThumbDeck() {
               {gt("Runtime", { $context: "agent permission mode setting" })}
             </Text>
           </View>
+        )}
 
-          <Menu
-            title={gt("Runtime", { $context: "agent permission mode setting" })}
-            actions={runtimeMenuActions}
-            onPressAction={({ nativeEvent }) => {
-              const match = session.runtimeModeChoices.find(
-                (choice) => choice.mode === nativeEvent.event && !choice.disabledReason,
-              );
-              if (!match) return;
-              void Haptics.selectionAsync();
-              session.onUpdateRuntimeMode(match.mode);
-            }}
+        <Menu
+          title={gt("Runtime", { $context: "agent permission mode setting" })}
+          actions={runtimeMenuActions}
+          onPressAction={({ nativeEvent }) => {
+            const match = session.runtimeModeChoices.find(
+              (choice) => choice.mode === nativeEvent.event && !choice.disabledReason,
+            );
+            if (!match) return;
+            void Haptics.selectionAsync();
+            session.onUpdateRuntimeMode(match.mode);
+          }}
+        >
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={gt("Runtime: {mode}", { mode: currentRuntimeLabel })}
+            className="h-[28px] shrink-0 flex-row items-center gap-1.5 rounded-full px-2.5 active:opacity-70"
+            style={{ backgroundColor: surface.pill }}
           >
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={gt("Runtime: {mode}", { mode: currentRuntimeLabel })}
-              className="shrink-0 active:opacity-75"
-            >
-              {NATIVE_LIQUID_GLASS_SUPPORTED ? (
-                <SheetGlass
-                  isInteractive
-                  glassEffectStyle="regular"
-                  colorScheme={themeAppearance}
-                  className="h-[28px] flex-row items-center gap-1.5 rounded-full px-2.5"
-                >
-                  <Text className="text-[12px] font-t3-semibold text-foreground" numberOfLines={1}>
-                    {currentRuntimeLabel}
-                  </Text>
-                  <SymbolView
-                    name="chevron.down"
-                    size={10}
-                    tintColorClassName="accent-foreground-muted"
-                    type="monochrome"
-                  />
-                </SheetGlass>
-              ) : (
-                <View
-                  className="h-[28px] flex-row items-center gap-1.5 rounded-full px-2.5"
-                  style={{ backgroundColor: surface.pill }}
-                >
-                  <Text className="text-[12px] font-t3-semibold text-foreground" numberOfLines={1}>
-                    {currentRuntimeLabel}
-                  </Text>
-                  <SymbolView
-                    name="chevron.down"
-                    size={10}
-                    tintColorClassName="accent-foreground-muted"
-                    type="monochrome"
-                  />
-                </View>
-              )}
-            </Pressable>
-          </Menu>
-        </View>
+            {others.length > 0 ? (
+              <SymbolView
+                name="shield"
+                size={12}
+                tintColorClassName="accent-foreground-muted"
+                type="monochrome"
+              />
+            ) : null}
+            <Text className="text-[12px] font-t3-semibold text-foreground" numberOfLines={1}>
+              {currentRuntimeLabel}
+            </Text>
+            <SymbolView
+              name="chevron.down"
+              size={10}
+              tintColorClassName="accent-foreground-muted"
+              type="monochrome"
+            />
+          </Pressable>
+        </Menu>
       </View>
     </View>
   );
@@ -2210,23 +2026,6 @@ function ThreadSettingsSheetBody(props: { readonly onClose: () => void }) {
     );
   };
 
-  const cardSurfaceStyle = {
-    borderRadius: SHEET_CARD_RADIUS,
-    borderCurve: "continuous" as const,
-    backgroundColor: surface.card,
-    borderWidth: 0.5,
-    borderColor: surface.cardBorder,
-    ...(isDarkMode || NATIVE_LIQUID_GLASS_SUPPORTED
-      ? undefined
-      : {
-          shadowColor: "#000000",
-          shadowOffset: { width: 0, height: 1 },
-          shadowOpacity: 0.04,
-          shadowRadius: 2,
-          elevation: 1,
-        }),
-  };
-
   const favoriteOrderSignature = session.favoriteOrderKeys.join(",");
 
   const renderCardList = (tab: ActiveTab) => {
@@ -2234,16 +2033,16 @@ function ThreadSettingsSheetBody(props: { readonly onClose: () => void }) {
     const data: ReadonlyArray<ThreadSettingsCatalogItem> =
       items.length === 0 ? [{ kind: "empty", key: `empty:${tab}` }] : items;
     return (
-      <View className="relative min-h-0 flex-1 overflow-hidden" style={cardSurfaceStyle}>
+      <View className="relative min-h-0 flex-1 overflow-hidden">
         {/* oxlint-disable-next-line t3code/require-registered-list-scroll -- Sheet content; sits above the sticky thumb deck. */}
         <AnimatedLegendList
           alwaysBounceVertical
           nestedScrollEnabled
           className="flex-1"
           style={[READABLE_WIDTH_STYLE, { backgroundColor: "transparent" }]}
-          contentContainerStyle={{ paddingTop: 5, paddingBottom: 16 }}
+          contentContainerStyle={{ paddingTop: 4, paddingBottom: 10 }}
           data={data}
-          estimatedItemSize={41}
+          estimatedItemSize={39}
           extraData={[
             animationsReady,
             tab,
@@ -2271,17 +2070,17 @@ function ThreadSettingsSheetBody(props: { readonly onClose: () => void }) {
         {!NATIVE_LIQUID_GLASS_SUPPORTED ? (
           <View
             pointerEvents="none"
-            style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 24 }}
+            style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 20 }}
           >
-            <Svg width="100%" height={24}>
+            <Svg width="100%" height={20}>
               <Defs>
                 <LinearGradient id={fadeGradientId} x1="0" y1="0" x2="0" y2="1">
-                  <Stop offset="0%" stopColor={surface.card} stopOpacity={0} />
-                  <Stop offset="70%" stopColor={surface.card} stopOpacity={0.85} />
-                  <Stop offset="100%" stopColor={surface.card} stopOpacity={1} />
+                  <Stop offset="0%" stopColor={surface.canvas} stopOpacity={0} />
+                  <Stop offset="70%" stopColor={surface.canvas} stopOpacity={0.85} />
+                  <Stop offset="100%" stopColor={surface.canvas} stopOpacity={1} />
                 </LinearGradient>
               </Defs>
-              <Rect x={0} y={0} width="100%" height={24} fill={`url(#${fadeGradientId})`} />
+              <Rect x={0} y={0} width="100%" height={20} fill={`url(#${fadeGradientId})`} />
             </Svg>
           </View>
         ) : null}
@@ -2306,16 +2105,14 @@ function ThreadSettingsSheetBody(props: { readonly onClose: () => void }) {
       />
 
       {session.reorderFavorites ? (
-        <View className="mx-3 min-h-0 flex-1">
-          <View className="relative min-h-0 flex-1 overflow-hidden" style={cardSurfaceStyle}>
-            <FavoritesReorderList
-              models={reorderableFavoriteModels}
-              dragBackgroundColor={surface.dragRow}
-            />
-          </View>
+        <View className="min-h-0 flex-1 px-3">
+          <FavoritesReorderList
+            models={reorderableFavoriteModels}
+            dragBackgroundColor={surface.dragRow}
+          />
         </View>
       ) : isSearching ? (
-        <View className="mx-3 min-h-0 flex-1">{renderCardList(session.activeTab)}</View>
+        <View className="min-h-0 flex-1 px-3">{renderCardList(session.activeTab)}</View>
       ) : (
         <View
           className="min-h-0 flex-1"
@@ -2346,7 +2143,7 @@ function ThreadSettingsSheetBody(props: { readonly onClose: () => void }) {
               ))}
             </ScrollView>
           ) : (
-            <View className="mx-3 min-h-0 flex-1">{renderCardList(session.activeTab)}</View>
+            <View className="min-h-0 flex-1 px-3">{renderCardList(session.activeTab)}</View>
           )}
         </View>
       )}
