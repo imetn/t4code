@@ -6,7 +6,7 @@ import * as Context from "effect/Context";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 
-import { listensOnLoopback } from "./hostClassification.ts";
+import { listensOnLoopback, normalizeHostname } from "./hostClassification.ts";
 
 export class NetError extends Schema.TaggedError<NetError>()("NetError", {
   message: Schema.String,
@@ -21,6 +21,11 @@ const isErrnoExceptionWithCode = (
   Predicate.isObject(cause) &&
   Predicate.hasProperty(cause, "code") &&
   Predicate.isString(cause.code);
+
+const isOptionalIpv6ProbeHost = (host: string): boolean => {
+  const normalized = normalizeHostname(host);
+  return normalized === "::1" || normalized === "::";
+};
 
 const closeServer = (server: NodeNet.Server) => {
   try {
@@ -63,7 +68,8 @@ export const make = () => {
         // Missing IPv6 addresses or kernel support do not mean the port is occupied.
         if (
           isErrnoExceptionWithCode(cause) &&
-          (cause.code === "EADDRNOTAVAIL" || cause.code === "EAFNOSUPPORT")
+          (cause.code === "EADDRNOTAVAIL" || cause.code === "EAFNOSUPPORT") &&
+          isOptionalIpv6ProbeHost(host)
         ) {
           settle(true);
           return;

@@ -21,7 +21,7 @@ const THREAD_LINK_OUTSIDE_CODE = new RegExp(
     String.raw`(?<fence>(\`{3,}|~{3,})[\s\S]*?(?:\2|$))`,
     String.raw`(?<span>(\`+)[^\n]*?\4)`,
     // A labeled link's destination may be angle-bracketed, as CommonMark allows: [label](<href>).
-    String.raw`\[(?<label>${LABEL})\]\((?:<(?<angleHref>${THREAD_HREF}[^\s<>]+|${HOSTED_LINK})>|(?<href>${THREAD_HREF}[^\s>)]+|${HOSTED_LINK}))\)`,
+    String.raw`\[(?<label>${LABEL})\]\((?:<(?<angleHref>${THREAD_HREF}[^\s<>]+|${HOSTED_LINK})>\)|(?<href>${HOSTED_LINK})\)|(?<customHref>${THREAD_HREF}))`,
     String.raw`\[${LABEL}\]\((?:<[^<>\n]*>|[^\s()]*(?:\([^\s()]*\)[^\s()]*)*)(?:[ \t]+(?:"[^"\n]*"|'[^'\n]*'))?\)`,
     String.raw`<(?<autolink>${THREAD_HREF}[^\s<>]+|${HOSTED_LINK})>`,
     // After a URL character the hosted link is part of a longer URL, such as a redirect target.
@@ -159,6 +159,22 @@ export function hasThreadLinks(markdown: string): boolean {
   return markdown.includes(`${THREAD_LINK_PROTOCOL}://v`) || markdown.includes(HOSTED_PREFIX);
 }
 
+function readDestination(markdown: string, match: RegExpExecArray) {
+  const start = match.index + match[0].length - match.groups!.customHref!.length;
+  for (let i = start, depth = 0; i < markdown.length; i++) {
+    const ch = markdown[i]!;
+    if (ch === "\\" && /[!-/:-@[-`{-~]/.test(markdown[i + 1] ?? "")) i++;
+    else if (ch === "(") depth++;
+    else if (ch === ")" && depth-- === 0)
+      return { href: markdown.slice(start, i).replace(/\\([!-/:-@[-`{-~])/g, "$1"), end: i + 1 };
+    else if (/[\s\p{Cc}]/u.test(ch)) {
+      const skip = depth === 0 ? /^[ \t]+(?:"[^"\n]*"|'[^'\n]*')\)/.exec(markdown.slice(i)) : null;
+      return { href: undefined, end: skip ? i + skip[0].length : match.index + 1 };
+    }
+  }
+  return { href: undefined, end: match.index + 1 };
+}
+
 /** Every thread the markdown's links can name, so their titles are keyed reads. */
 export function threadLinkRefs(
   markdown: string,
@@ -168,8 +184,10 @@ export function threadLinkRefs(
   // Hermes' matchAll yields matches without `groups`; exec keeps them.
   const pattern = new RegExp(THREAD_LINK_OUTSIDE_CODE);
   for (let match = pattern.exec(markdown); match !== null; match = pattern.exec(markdown)) {
-    const href =
+    let href =
       match.groups?.angleHref ?? match.groups?.href ?? match.groups?.autolink ?? match.groups?.bare;
+    if (match.groups?.customHref)
+      ({ href, end: pattern.lastIndex } = readDestination(markdown, match));
     const link = href === undefined ? null : parseThreadLinkHref(href);
     if (link === null) continue;
     for (const ref of threadLinkCandidates(link, messageEnvironmentId)) {
@@ -185,12 +203,19 @@ export function replaceThreadLinks(
   replace: (link: ThreadLink, label: string | undefined) => string | undefined,
 ): string {
   if (!hasThreadLinks(markdown)) return markdown;
-  return markdown.replace(THREAD_LINK_OUTSIDE_CODE, (source, ...args) => {
-    const groups = args.at(-1) as Partial<
-      Record<"angleHref" | "href" | "autolink" | "bare" | "label", string>
-    >;
-    const href = groups.angleHref ?? groups.href ?? groups.autolink ?? groups.bare;
+  const pattern = new RegExp(THREAD_LINK_OUTSIDE_CODE);
+  let result = "";
+  let cursor = 0;
+  for (let match = pattern.exec(markdown); match !== null; match = pattern.exec(markdown)) {
+    let href =
+      match.groups?.angleHref ?? match.groups?.href ?? match.groups?.autolink ?? match.groups?.bare;
+    if (match.groups?.customHref)
+      ({ href, end: pattern.lastIndex } = readDestination(markdown, match));
     const link = href === undefined ? null : parseThreadLinkHref(href);
-    return (link && replace(link, groups.label)) ?? source;
-  });
+    const rewritten = link === null ? undefined : replace(link, match.groups?.label);
+    if (rewritten === undefined) continue;
+    result += markdown.slice(cursor, match.index) + rewritten;
+    cursor = pattern.lastIndex;
+  }
+  return cursor === 0 ? markdown : result + markdown.slice(cursor);
 }
