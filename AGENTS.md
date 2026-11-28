@@ -1,3 +1,15 @@
+# T4 Code (Fork of T3 Code)
+
+> **CRITICAL — T4 Code Locked Customizations Protection:**
+> Read [T4_CUSTOMIZATIONS.md](T4_CUSTOMIZATIONS.md) **before** merging/porting any upstream PR, refactoring shared UI/server modules, or cutting a release.
+> - **Never silently overwrite or regress any `Locked` T4 feature** (especially user-confirmed UI such as the redesigned Web/Mobile model selector, Task Board `/board`, Project Todos `/todos`, synced drafts, mobile tab dock & Nowdex widgets, usage limits, T4 branding, zero-telemetry, and self-hosted relay).
+> - Run `vp run check:t4-locks` (or `vp run check:t4-locks <base>..HEAD`) whenever porting upstream PRs to audit every locked module touched.
+> - If an upstream change looks genuinely better than a locked T4 customization, **stop and ask the user with a clear comparison before replacing our implementation**.
+> - **Release rule:** Always cut macOS Desktop and Mobile releases from the latest `main` branch after all user-confirmed changes are landed and verified on `main`.
+> - Whenever a new T4 custom feature or UI redesign is finalized by the user, record it in [T4_CUSTOMIZATIONS.md](T4_CUSTOMIZATIONS.md) in the same commit.
+
+---
+
 # T3 Code
 
 T3 Code is a minimal GUI for coding agents. A Node WebSocket server wraps provider CLIs and agents (Codex, Claude Code, Cursor, Grok, OpenCode, Antigravity, Kiro, Pi, Muse Code, fx) and serves web, desktop, and mobile clients.
