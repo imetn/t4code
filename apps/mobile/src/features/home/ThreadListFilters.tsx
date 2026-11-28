@@ -78,8 +78,7 @@ export function ThreadListFilters(props: {
       ? [
           {
             id: "sort:settings",
-            title: gt("Customize in Settings…"),
-            image: "gearshape",
+            title: gt("Go to Settings"),
           },
         ]
       : []),

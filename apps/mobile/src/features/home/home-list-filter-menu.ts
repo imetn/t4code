@@ -146,7 +146,7 @@ export function buildHomeListFilterMenuItems(
             ? [
                 {
                   id: "sort:settings",
-                  title: resolve(msg("Customize in Settings…")),
+                  title: resolve(msg("Go to Settings")),
                   onPress: sort.onOpenSortSettings,
                 },
               ]
