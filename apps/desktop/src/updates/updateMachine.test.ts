@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  clearDesktopUpdateInstallingFlag,
   createInitialDesktopUpdateState,
   reduceDesktopUpdateStateOnCheckFailure,
   reduceDesktopUpdateStateOnCheckStart,
   reduceDesktopUpdateStateOnDownloadComplete,
   reduceDesktopUpdateStateOnDownloadFailure,
+  reduceDesktopUpdateStateOnDownloadProgress,
+  reduceDesktopUpdateStateOnDownloadStart,
   reduceDesktopUpdateStateOnInstallFailure,
+  reduceDesktopUpdateStateOnInstallStart,
   reduceDesktopUpdateStateOnNoUpdate,
 } from "./updateMachine.ts";
 
@@ -112,5 +116,60 @@ describe("updateMachine", () => {
     expect(state.omittedReleaseCount).toBe(0);
     expect(state.message).toBeNull();
     expect(state.errorContext).toBeNull();
+  });
+
+  it("tracks download speed and byte telemetry and clears them after completion", () => {
+    const started = reduceDesktopUpdateStateOnDownloadStart(
+      {
+        ...createInitialDesktopUpdateState("1.0.0", runtimeInfo, "latest"),
+        enabled: true,
+        status: "available",
+        availableVersion: "1.1.0",
+      },
+      null,
+    );
+    expect(started.status).toBe("downloading");
+    expect(started.downloadPercent).toBeNull();
+    expect(started.downloadBytesPerSecond).toBeNull();
+
+    const progress = reduceDesktopUpdateStateOnDownloadProgress(started, {
+      percent: 42.5,
+      bytesPerSecond: 4_404_019,
+      transferredBytes: 44_040_192,
+      totalBytes: 104_857_600,
+    });
+    expect(progress.downloadPercent).toBe(42.5);
+    expect(progress.downloadBytesPerSecond).toBe(4_404_019);
+    expect(progress.downloadTransferredBytes).toBe(44_040_192);
+    expect(progress.downloadTotalBytes).toBe(104_857_600);
+
+    const downloaded = reduceDesktopUpdateStateOnDownloadComplete(progress, "1.1.0");
+    expect(downloaded.downloadPercent).toBe(100);
+    expect(downloaded.downloadBytesPerSecond).toBeNull();
+    expect(downloaded.downloadTransferredBytes).toBeNull();
+    expect(downloaded.downloadTotalBytes).toBeNull();
+  });
+
+  it("marks installing during restart and clears it on failure or cancellation", () => {
+    const downloaded = {
+      ...createInitialDesktopUpdateState("1.0.0", runtimeInfo, "latest"),
+      enabled: true,
+      status: "downloaded" as const,
+      availableVersion: "1.1.0",
+      downloadedVersion: "1.1.0",
+      downloadPercent: 100,
+    };
+    const installing = reduceDesktopUpdateStateOnInstallStart(downloaded);
+    expect(installing.installing).toBe(true);
+    expect(installing.canRetry).toBe(false);
+
+    const cleared = clearDesktopUpdateInstallingFlag(installing);
+    expect(cleared.installing).toBeUndefined();
+    expect(cleared.canRetry).toBe(true);
+
+    const failed = reduceDesktopUpdateStateOnInstallFailure(installing, "restart refused");
+    expect(failed.installing).toBeUndefined();
+    expect(failed.errorContext).toBe("install");
+    expect(failed.canRetry).toBe(true);
   });
 });

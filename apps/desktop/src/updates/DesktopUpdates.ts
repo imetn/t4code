@@ -13,6 +13,7 @@ import {
 } from "@t3tools/contracts";
 import { errorTag } from "@t3tools/shared/observability";
 import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
@@ -52,6 +53,7 @@ import {
 import { desktopUpdateChannelOf } from "@t3tools/shared/cliRelease";
 import { compareSemverVersions } from "@t3tools/shared/semver";
 import {
+  clearDesktopUpdateInstallingFlag,
   createInitialDesktopUpdateState,
   reduceDesktopUpdateStateOnCheckFailure,
   reduceDesktopUpdateStateOnCheckStart,
@@ -61,6 +63,7 @@ import {
   reduceDesktopUpdateStateOnDownloadProgress,
   reduceDesktopUpdateStateOnDownloadStart,
   reduceDesktopUpdateStateOnInstallFailure,
+  reduceDesktopUpdateStateOnInstallStart,
   reduceDesktopUpdateStateOnNoUpdate,
   reduceDesktopUpdateStateOnUpdateAvailable,
   resolveNotAppliedInstallVersion,
@@ -75,6 +78,7 @@ export const AUTO_INSTALL_IDLE_THRESHOLD_SECONDS = 10 * 60;
 export const AUTO_INSTALL_IDLE_POLL_INTERVAL = "1 minute";
 export const AUTO_INSTALL_DEADLINE = Duration.hours(2);
 const UPDATE_CHECK_WAIT = Duration.seconds(90);
+const DOWNLOAD_PROGRESS_BROADCAST_INTERVAL_MS = 500;
 
 type UpdateAction = "check" | "download" | "install" | "install-recovery" | "channel";
 
@@ -96,7 +100,14 @@ const UpdateInfo = Schema.Struct({
 
 const DownloadProgressInfo = Schema.Struct({
   percent: Schema.Number,
+  bytesPerSecond: Schema.optional(Schema.Number),
+  transferred: Schema.optional(Schema.Number),
+  total: Schema.optional(Schema.Number),
 });
+
+function normalizeNonNegativeFinite(value: number | undefined): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+}
 export const DESKTOP_UPDATE_INSTALL_RECORD_FILE = "desktop-update-install.json";
 const DesktopUpdateInstallRecord = Schema.fromJsonString(
   Schema.Struct({ fromVersion: Schema.String, targetVersion: Schema.String }),
@@ -353,6 +364,8 @@ function isOffered(state: DesktopUpdateState): boolean {
 function shouldBroadcastDownloadProgress(
   currentState: DesktopUpdateState,
   nextPercent: number,
+  nowMs: number,
+  lastBroadcastAtMs: number,
 ): boolean {
   if (currentState.status !== "downloading") {
     return true;
@@ -363,9 +376,15 @@ function shouldBroadcastDownloadProgress(
     return true;
   }
 
-  const previousStep = Math.floor(currentPercent / 10);
-  const nextStep = Math.floor(nextPercent / 10);
-  return nextStep !== previousStep || nextPercent === 100;
+  if (nextPercent >= 100 && currentPercent < 100) {
+    return true;
+  }
+
+  if (Math.floor(nextPercent) !== Math.floor(currentPercent)) {
+    return true;
+  }
+
+  return nowMs - lastBroadcastAtMs >= DOWNLOAD_PROGRESS_BROADCAST_INTERVAL_MS;
 }
 
 function getAutoUpdateDisabledReason(args: {
@@ -432,6 +451,7 @@ export const make = Effect.gen(function* () {
   const finishedUpdateActions = yield* PubSub.unbounded<UpdateAction>();
   const updaterConfiguredRef = yield* Ref.make(false);
   const lastLoggedDownloadMilestoneRef = yield* Ref.make(-1);
+  const lastProgressBroadcastAtRef = yield* Ref.make(0);
   const notAppliedVersionRef = yield* Ref.make(Option.none<string>());
   const downloadedFileRef = yield* Ref.make(Option.none<string>());
   const autoUpdateModeRef = yield* Ref.make<DesktopAutoUpdateMode>(
@@ -726,8 +746,12 @@ export const make = Effect.gen(function* () {
     }
 
     const offered = yield* Ref.get(updateStateRef);
-    let state = offered;
+    let restoreState = offered;
     return yield* Effect.gen(function* () {
+      yield* Ref.set(lastLoggedDownloadMilestoneRef, -1);
+      yield* Ref.set(lastProgressBroadcastAtRef, 0);
+      // Enter downloading immediately so renderers show connecting feedback during the refresh check.
+      yield* setState(reduceDesktopUpdateStateOnDownloadStart(offered, refresh ? null : 0));
       if (refresh) {
         // electron-updater downloads what its last check found, which can be hours old.
         yield* logUpdaterInfo("checking for updates", { reason: "download" });
@@ -744,11 +768,24 @@ export const make = Effect.gen(function* () {
           }),
         );
       }
-      state = yield* Ref.get(updateStateRef);
-      if (state.status !== "available") {
+      const current = yield* Ref.get(updateStateRef);
+      if (current.status !== "downloading" && current.status !== "available") {
         return { accepted: true, completed: false };
       }
-      yield* setState(reduceDesktopUpdateStateOnDownloadStart(state));
+      restoreState =
+        current.status === "available"
+          ? current
+          : {
+              ...current,
+              status: "available",
+              downloadPercent: null,
+              downloadBytesPerSecond: null,
+              downloadTransferredBytes: null,
+              downloadTotalBytes: null,
+            };
+      if (current.status !== "downloading") {
+        yield* setState(reduceDesktopUpdateStateOnDownloadStart(restoreState, 0));
+      }
       yield* electronUpdater.setDisableDifferentialDownload(
         isArm64HostRunningIntelBuild(environment.runtimeInfo),
       );
@@ -773,7 +810,7 @@ export const make = Effect.gen(function* () {
         ),
       }),
       Effect.onInterrupt(() =>
-        updateState((current) => (current.status === "downloading" ? state : current)).pipe(
+        updateState((current) => (current.status === "downloading" ? restoreState : current)).pipe(
           Effect.asVoid,
         ),
       ),
@@ -903,6 +940,7 @@ export const make = Effect.gen(function* () {
       finishUpdateAction("install"),
       Ref.set(desktopState.quitting, false),
       Ref.set(installRunningBackendsRef, []),
+      updateState(clearDesktopUpdateInstallingFlag).pipe(Effect.asVoid),
       removeUpdateRestartMarker,
       removeUpdateInProgressMarker,
       removeInstallRecord,
@@ -983,6 +1021,7 @@ export const make = Effect.gen(function* () {
 
         yield* Ref.set(desktopState.quitting, true);
         yield* Ref.set(installRunningBackendsRef, []);
+        yield* updateState(reduceDesktopUpdateStateOnInstallStart);
 
         return yield* Effect.gen(function* () {
           yield* writeUpdateRestartMarker;
@@ -1395,7 +1434,15 @@ export const make = Effect.gen(function* () {
             yield* Ref.set(lastLoggedDownloadMilestoneRef, -1);
             return;
           }
-          if (isOffered(state) && state.availableVersion === info.version) {
+          const activeAction = yield* activeUpdateAction;
+          const isRefreshingForDownload =
+            Option.isSome(activeAction) &&
+            activeAction.value === "download" &&
+            state.status === "downloading";
+          if (
+            (isOffered(state) || isRefreshingForDownload) &&
+            state.availableVersion === info.version
+          ) {
             if (state.status === "available") {
               yield* maybeStartAutoDownload(info.version);
             }
@@ -1413,14 +1460,17 @@ export const make = Effect.gen(function* () {
             state.channel,
             info.releaseDate,
           );
+          const nextAvailable = reduceDesktopUpdateStateOnUpdateAvailable(
+            state,
+            info.version,
+            checkedAt,
+            releaseNotes,
+            omittedReleaseCount,
+          );
           yield* setState(
-            reduceDesktopUpdateStateOnUpdateAvailable(
-              state,
-              info.version,
-              checkedAt,
-              releaseNotes,
-              omittedReleaseCount,
-            ),
+            isRefreshingForDownload
+              ? reduceDesktopUpdateStateOnDownloadStart(nextAvailable, null)
+              : nextAvailable,
           );
           yield* Ref.set(lastLoggedDownloadMilestoneRef, -1);
           yield* logUpdaterInfo("update available", {
@@ -1502,8 +1552,21 @@ export const make = Effect.gen(function* () {
         Effect.fn("desktop.updates.applyDownloadProgress")(function* (progress) {
           const state = yield* Ref.get(updateStateRef);
           const percent = Math.floor(progress.percent);
-          if (shouldBroadcastDownloadProgress(state, progress.percent) || state.message !== null) {
-            yield* setState(reduceDesktopUpdateStateOnDownloadProgress(state, progress.percent));
+          const nowMs = yield* Clock.currentTimeMillis;
+          const lastBroadcastAtMs = yield* Ref.get(lastProgressBroadcastAtRef);
+          if (
+            shouldBroadcastDownloadProgress(state, progress.percent, nowMs, lastBroadcastAtMs) ||
+            state.message !== null
+          ) {
+            yield* Ref.set(lastProgressBroadcastAtRef, nowMs);
+            yield* setState(
+              reduceDesktopUpdateStateOnDownloadProgress(state, {
+                percent: progress.percent,
+                bytesPerSecond: normalizeNonNegativeFinite(progress.bytesPerSecond),
+                transferredBytes: normalizeNonNegativeFinite(progress.transferred),
+                totalBytes: normalizeNonNegativeFinite(progress.total),
+              }),
+            );
           }
           const milestone = percent - (percent % 10);
           const lastLoggedMilestone = yield* Ref.get(lastLoggedDownloadMilestoneRef);

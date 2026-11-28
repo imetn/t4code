@@ -3,13 +3,14 @@ import { m as resolveMessage } from "~/i18n/messages";
 import { useAtomValue } from "@effect/atom-react";
 import { NotificationSettings } from "./NotificationSettings";
 import { PRIVACY_POLICY_URL } from "../../legalLinks";
-import { CheckIcon } from "lucide-react";
+import { CheckCircle2Icon, CheckIcon, DownloadIcon, RotateCwIcon } from "lucide-react";
 import { msg, T, useGT, useMessages } from "gt-react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import {
   type DesktopAutoUpdateMode,
   type DesktopUpdateChannel,
+  EnvironmentId,
   IDLE_COMPACTION_MODES,
   type IdleCompactionMode,
   globalIdleCompaction,
@@ -36,6 +37,7 @@ import { desktopUpdateChannelOf } from "@t3tools/shared/cliRelease";
 import { createModelSelection, pickModelSelection } from "@t3tools/shared/model";
 import { resolvePastedPath } from "@t3tools/shared/path";
 import * as Equal from "effect/Equal";
+import { Atom } from "effect/reactivity";
 import * as Schema from "effect/Schema";
 import { APP_VERSION, HOSTED_APP_CHANNEL, HOSTED_APP_CHANNEL_LABEL } from "../../branding";
 import { AboutVersionTitle } from "./AboutVersionTitle";
@@ -48,6 +50,8 @@ import {
   getDesktopUpdateAboutDescription,
   getDesktopUpdateActionError,
   getDesktopUpdateButtonTooltip,
+  getDesktopUpdateDownloadProgressMeta,
+  getDesktopUpdateDownloadedVersion,
   getDesktopUpdateInstallConfirmationMessage,
   installDesktopUpdate,
   isDesktopUpdateButtonDisabled,
@@ -95,6 +99,7 @@ import { Button } from "../ui/button";
 import { DraftInput } from "../ui/draft-input";
 import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
+import { Spinner } from "../ui/spinner";
 import { Switch } from "../ui/switch";
 import { ScopedSwitch } from "./ScopedSwitch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
@@ -131,6 +136,7 @@ import { StorageCleanupSections } from "./StorageSettings";
 import { UpdateTrackSwitchDialog } from "./UpdateTrackSwitchDialog";
 import { environmentIdsKey } from "~/state/environmentAtomList";
 import { environmentSessionStatesAtom } from "~/state/session";
+import { environmentThreadShells } from "~/state/threads";
 import { useCheckProviderUpdates } from "../ProviderUpdatesAction";
 import { canUpdateServer } from "../ServerUpdateAction";
 import { downloadLocalUpdate } from "../sidebar/SidebarUpdatePill";
@@ -173,19 +179,39 @@ const QUIT_CONFIRMATION_MODE_LABELS: Record<QuitConfirmationMode, string> = {
 };
 
 const DEFAULT_DRIVER_KIND = ProviderDriverKind.make("codex");
+
+const isAboutThreadRunning = (status: string) =>
+  status === "preparing" || status === "starting" || status === "running";
+
+const aboutRunningThreadCountAtom = Atom.family((environmentIds: string) =>
+  Atom.make((get) =>
+    environmentIds
+      .split("\n")
+      .filter((id) => id !== "")
+      .reduce(
+        (count, id) =>
+          count +
+          get(environmentThreadShells.environmentThreadsAtom(EnvironmentId.make(id))).filter(
+            (thread) => isAboutThreadRunning(thread.status),
+          ).length,
+        0,
+      ),
+  ).pipe(Atom.withLabel(`about-update-running-threads:${environmentIds}`)),
+);
+
+type PendingAboutUpdateAction = "check" | "download" | "confirm-install" | "install" | null;
+
 function AboutVersionSection() {
   const setting = useSearchableSetting();
   const gt = useGT();
   const messages = useMessages();
   const updateState = useDesktopUpdateState();
   const [switchChannel, setSwitchChannel] = useState<DesktopUpdateChannel | null>(null);
-  const [isUpdateActionPending, setIsUpdateActionPending] = useState(false);
+  const [pendingAction, setPendingAction] = useState<PendingAboutUpdateAction>(null);
   const { environments } = useEnvironments();
-  const sessionStates = useAtomValue(
-    environmentSessionStatesAtom(
-      environmentIdsKey(environments.map(({ environmentId }) => environmentId)),
-    ),
-  );
+  const environmentIds = environmentIdsKey(environments.map(({ environmentId }) => environmentId));
+  const sessionStates = useAtomValue(environmentSessionStatesAtom(environmentIds));
+  const runningThreadCount = useAtomValue(aboutRunningThreadCountAtom(environmentIds));
   // A second run would replace the first run's progress and local download.
   const updateRun = useUpdateEverythingRun();
   const checkProviderUpdates = useCheckProviderUpdates();
@@ -225,44 +251,49 @@ function AboutVersionSection() {
 
   const handleButtonClick = async () => {
     const bridge = window.desktopBridge;
-    if (!bridge) return;
+    if (!bridge || pendingAction !== null) return;
 
     const action = updateState ? resolveDesktopUpdateButtonAction(updateState) : "none";
 
     if (action === "download") {
-      void downloadLocalUpdate(bridge, { notifyDownloaded: false });
+      setPendingAction("download");
+      void downloadLocalUpdate(bridge, { notifyDownloaded: false }).finally(() =>
+        setPendingAction(null),
+      );
       return;
     }
 
     if (action === "install") {
-      if (isUpdateActionPending) return;
-      setIsUpdateActionPending(true);
-      let confirmed = false;
-      try {
-        confirmed = await ensureLocalApi().dialogs.confirm(
-          getDesktopUpdateInstallConfirmationMessage(
-            updateState ?? { availableVersion: null, downloadedVersion: null },
-          ),
-          { initialFocus: "confirm" },
-        );
-      } catch (error) {
-        setIsUpdateActionPending(false);
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: gt("Could not confirm update"),
-            description:
-              error instanceof Error
-                ? (thrownErrorMessage(error, resolveMessage) ?? error.message)
-                : gt("Update confirmation failed."),
-          }),
-        );
-        return;
+      if (runningThreadCount > 0) {
+        setPendingAction("confirm-install");
+        let confirmed = false;
+        try {
+          confirmed = await ensureLocalApi().dialogs.confirm(
+            getDesktopUpdateInstallConfirmationMessage(
+              updateState ?? { availableVersion: null, downloadedVersion: null },
+            ),
+            { initialFocus: "confirm" },
+          );
+        } catch (error) {
+          setPendingAction(null);
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: gt("Could not confirm update"),
+              description:
+                error instanceof Error
+                  ? (thrownErrorMessage(error, resolveMessage) ?? error.message)
+                  : gt("Update confirmation failed."),
+            }),
+          );
+          return;
+        }
+        if (!confirmed) {
+          setPendingAction(null);
+          return;
+        }
       }
-      if (!confirmed) {
-        setIsUpdateActionPending(false);
-        return;
-      }
+      setPendingAction("install");
       void installDesktopUpdate(bridge)
         .then((result) => {
           const actionError = getDesktopUpdateActionError(result);
@@ -287,13 +318,14 @@ function AboutVersionSection() {
             }),
           );
         })
-        .finally(() => setIsUpdateActionPending(false));
+        .finally(() => setPendingAction(null));
       return;
     }
 
     if (typeof bridge.checkForUpdate !== "function") return;
-    void checkProviderUpdates();
-    void bridge
+    setPendingAction("check");
+    const providersChecked = checkProviderUpdates();
+    const appCheck = bridge
       .checkForUpdate()
       .then((result) => {
         if (!result.checked) {
@@ -321,6 +353,7 @@ function AboutVersionSection() {
           }),
         );
       });
+    void Promise.allSettled([appCheck, providersChecked]).finally(() => setPendingAction(null));
   };
 
   const handleAutoUpdateModeChange = (nextMode: DesktopAutoUpdateMode) => {
@@ -344,22 +377,142 @@ function AboutVersionSection() {
   };
 
   const action = updateState ? resolveDesktopUpdateButtonAction(updateState) : "none";
+  const isRestarting = updateState?.installing === true || pendingAction === "install";
+  const isStartingDownload =
+    pendingAction === "download" &&
+    updateState?.status !== "downloading" &&
+    updateState?.status !== "downloaded";
+  const isDownloading = updateState?.status === "downloading" || isStartingDownload;
+  const isChecking = updateState?.status === "checking" || pendingAction === "check";
+  const isConfirmingInstall = pendingAction === "confirm-install";
+  const downloadProgress = isDownloading
+    ? (getDesktopUpdateDownloadProgressMeta(updateState) ?? {
+        percent: null,
+        transferredLabel: null,
+        totalLabel: null,
+        speedLabel: null,
+      })
+    : null;
   const buttonTooltip = updateState ? getDesktopUpdateButtonTooltip(updateState, messages) : null;
   const buttonDisabled =
-    action === "none"
+    isRestarting ||
+    isDownloading ||
+    isChecking ||
+    isConfirmingInstall ||
+    (action === "none"
       ? !canCheckForUpdate(updateState)
-      : isDesktopUpdateButtonDisabled(updateState);
+      : isDesktopUpdateButtonDisabled(updateState));
 
-  const actionLabel: Record<string, string> = { download: gt("Download"), install: gt("Install") };
-  const statusLabel: Record<string, string> = {
-    checking: gt("Checking…"),
-    downloading: gt("Downloading…"),
-    // Off its track, "up to date" only means no switch is pending; Review moves it.
-    ...(appOffTrack ? {} : { "up-to-date": gt("Up to Date") }),
-  };
-  const buttonLabel =
-    actionLabel[action] ?? statusLabel[updateState?.status ?? ""] ?? gt("Check for Updates");
-  const description = getDesktopUpdateAboutDescription(updateState, updatesDenial, messages);
+  const isDownloadRetry =
+    action === "download" &&
+    (updateState?.errorContext === "download" ||
+      (updateState?.notAppliedVersion !== undefined &&
+        updateState.availableVersion === updateState.notAppliedVersion));
+  const isInstallRetry =
+    action === "install" &&
+    (updateState?.errorContext === "install" ||
+      (updateState?.notAppliedVersion !== undefined &&
+        getDesktopUpdateDownloadedVersion(updateState) === updateState.notAppliedVersion));
+
+  const buttonVariant =
+    isRestarting ||
+    (!isDownloading && !isChecking && (action === "download" || action === "install"))
+      ? "default"
+      : "outline";
+
+  const buttonLabel = isRestarting
+    ? gt("Restarting…")
+    : isDownloading
+      ? downloadProgress?.percent !== null && downloadProgress?.percent !== undefined
+        ? gt("Downloading {percent}%", { percent: downloadProgress.percent })
+        : gt("Starting…")
+      : isChecking
+        ? gt("Checking…")
+        : action === "install"
+          ? isInstallRetry
+            ? gt("Retry Restart")
+            : gt("Restart to Update")
+          : action === "download"
+            ? isDownloadRetry
+              ? gt("Retry Download")
+              : gt("Download")
+            : !appOffTrack && updateState?.status === "up-to-date"
+              ? gt("Up to Date")
+              : gt("Check for Updates");
+
+  const buttonIcon =
+    isRestarting || isDownloading || isChecking ? (
+      <Spinner aria-hidden />
+    ) : action === "install" || isDownloadRetry ? (
+      <RotateCwIcon aria-hidden />
+    ) : action === "download" ? (
+      <DownloadIcon aria-hidden />
+    ) : null;
+
+  const description = isRestarting
+    ? getDesktopUpdateAboutDescription(
+        updateState ? { ...updateState, installing: true } : null,
+        updatesDenial,
+        messages,
+      )
+    : isStartingDownload
+      ? updateState?.availableVersion
+        ? gt("Starting download for {version}…", { version: updateState.availableVersion })
+        : gt("Starting download…")
+      : getDesktopUpdateAboutDescription(updateState, updatesDenial, messages);
+
+  const versionStatus =
+    isDownloading && downloadProgress !== null ? (
+      <div className="mt-1 flex max-w-md flex-col gap-1.5" data-slot="update-download-progress">
+        <div
+          role="progressbar"
+          aria-label={gt("Update download progress")}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={downloadProgress.percent ?? undefined}
+          className="relative h-1.5 w-full overflow-hidden rounded-full bg-muted"
+        >
+          {downloadProgress.percent !== null ? (
+            <div
+              className="h-full rounded-full bg-primary transition-[width] duration-200 ease-out motion-reduce:transition-none"
+              style={{ width: `${Math.max(2, downloadProgress.percent)}%` }}
+            />
+          ) : (
+            <div className="h-full w-1/4 rounded-full bg-primary/45" />
+          )}
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 text-2xs tabular-nums text-muted-foreground">
+          <span className="inline-flex items-center gap-1.5">
+            {downloadProgress.percent === null ? (
+              <>
+                <Spinner size="xs" aria-hidden />
+                <span>{gt("Connecting to release server…")}</span>
+              </>
+            ) : downloadProgress.transferredLabel && downloadProgress.totalLabel ? (
+              <span>{`${downloadProgress.transferredLabel} / ${downloadProgress.totalLabel}`}</span>
+            ) : (
+              <span>{gt("Downloading…")}</span>
+            )}
+          </span>
+          <span className="inline-flex items-center gap-2">
+            {downloadProgress.speedLabel ? <span>{downloadProgress.speedLabel}</span> : null}
+            {downloadProgress.percent !== null ? (
+              <span className="font-medium text-foreground">{`${downloadProgress.percent}%`}</span>
+            ) : null}
+          </span>
+        </div>
+      </div>
+    ) : isRestarting ? (
+      <div className="inline-flex items-center gap-1.5 text-foreground">
+        <Spinner size="xs" aria-hidden />
+        <span>{gt("Stopping services and restarting T4 Code…")}</span>
+      </div>
+    ) : action === "install" && !isInstallRetry ? (
+      <div className="inline-flex items-center gap-1.5 text-success-foreground">
+        <CheckCircle2Icon className="size-3.5 shrink-0" aria-hidden />
+        <span>{gt("Downloaded and ready to restart")}</span>
+      </div>
+    ) : undefined;
 
   return (
     <>
@@ -367,6 +520,7 @@ function AboutVersionSection() {
         id={setting("app-version").id}
         title={<AboutVersionTitle />}
         description={description}
+        status={versionStatus}
         managed={updatesDenial}
         control={
           <Tooltip>
@@ -374,10 +528,11 @@ function AboutVersionSection() {
               render={
                 <Button
                   size="sm"
-                  variant="outline"
-                  disabled={buttonDisabled || isUpdateActionPending}
+                  variant={buttonVariant}
+                  disabled={buttonDisabled}
                   onClick={handleButtonClick}
                 >
+                  {buttonIcon}
                   {buttonLabel}
                 </Button>
               }

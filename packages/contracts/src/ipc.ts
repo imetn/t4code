@@ -315,6 +315,11 @@ export interface DesktopUpdateState {
   releaseNotes: ReadonlyArray<DesktopUpdateReleaseNote>;
   omittedReleaseCount: number;
   downloadPercent: number | null;
+  downloadBytesPerSecond?: number | null;
+  downloadTransferredBytes?: number | null;
+  downloadTotalBytes?: number | null;
+  /** True while the desktop app is stopping services and restarting to apply a downloaded update. */
+  installing?: true;
   checkedAt: string | null;
   message: string | null;
   errorContext: "check" | "download" | "install" | null;
@@ -366,6 +371,10 @@ export const DesktopUpdateStateSchema = Schema.Struct({
   releaseNotes: Schema.Array(DesktopUpdateReleaseNoteSchema),
   omittedReleaseCount: Schema.Number,
   downloadPercent: Schema.NullOr(Schema.Number),
+  downloadBytesPerSecond: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+  downloadTransferredBytes: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+  downloadTotalBytes: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+  installing: Schema.optionalKey(Schema.Literal(true)),
   checkedAt: Schema.NullOr(Schema.String),
   message: Schema.NullOr(Schema.String),
   errorContext: Schema.NullOr(Schema.Literals(["check", "download", "install"])),

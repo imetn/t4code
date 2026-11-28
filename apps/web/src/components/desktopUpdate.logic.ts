@@ -79,7 +79,67 @@ export function shouldShowArm64IntelBuildWarning(state: DesktopUpdateState | nul
 }
 
 export function isDesktopUpdateButtonDisabled(state: DesktopUpdateState | null): boolean {
-  return state?.status === "downloading";
+  return state?.status === "downloading" || state?.installing === true;
+}
+
+export interface DesktopUpdateDownloadProgressMeta {
+  readonly percent: number | null;
+  readonly transferredLabel: string | null;
+  readonly totalLabel: string | null;
+  readonly speedLabel: string | null;
+}
+
+export function formatDesktopUpdateBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return "0 B";
+  if (bytes < 1024) return `${Math.round(bytes)} B`;
+  if (bytes < 1024 * 1024) {
+    const kb = bytes / 1024;
+    return `${kb < 10 ? kb.toFixed(1) : Math.round(kb)} KB`;
+  }
+  if (bytes < 1024 * 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+export function formatDesktopUpdateSpeed(bytesPerSecond: number | null | undefined): string | null {
+  if (
+    typeof bytesPerSecond !== "number" ||
+    !Number.isFinite(bytesPerSecond) ||
+    bytesPerSecond <= 0
+  ) {
+    return null;
+  }
+  return `${formatDesktopUpdateBytes(bytesPerSecond)}/s`;
+}
+
+export function getDesktopUpdateDownloadProgressMeta(
+  state: DesktopUpdateState | null,
+): DesktopUpdateDownloadProgressMeta | null {
+  if (state?.status !== "downloading") return null;
+  const percent =
+    typeof state.downloadPercent === "number" && Number.isFinite(state.downloadPercent)
+      ? Math.min(100, Math.max(0, Math.floor(state.downloadPercent)))
+      : null;
+  const total =
+    typeof state.downloadTotalBytes === "number" &&
+    Number.isFinite(state.downloadTotalBytes) &&
+    state.downloadTotalBytes > 0
+      ? state.downloadTotalBytes
+      : null;
+  const transferred =
+    total !== null &&
+    typeof state.downloadTransferredBytes === "number" &&
+    Number.isFinite(state.downloadTransferredBytes) &&
+    state.downloadTransferredBytes >= 0
+      ? Math.min(total, state.downloadTransferredBytes)
+      : null;
+  return {
+    percent,
+    transferredLabel: transferred !== null ? formatDesktopUpdateBytes(transferred) : null,
+    totalLabel: total !== null ? formatDesktopUpdateBytes(total) : null,
+    speedLabel: formatDesktopUpdateSpeed(state.downloadBytesPerSecond),
+  };
 }
 
 export function getArm64IntelBuildWarningDescription(
@@ -116,6 +176,12 @@ export function getDesktopUpdateButtonTooltip(
   state: DesktopUpdateState,
   resolve: MessageResolver = m,
 ): string {
+  if (state.installing === true) {
+    const version = getDesktopUpdateDownloadedVersion(state);
+    return version
+      ? resolve(msg("Restarting to install update {version}…", { version }))
+      : resolve(msg("Restarting to install update…"));
+  }
   if (
     state.notAppliedVersion !== undefined &&
     (state.status === "available" || state.status === "downloaded") &&
@@ -142,19 +208,32 @@ export function getDesktopUpdateButtonTooltip(
   if (state.status === "downloading") {
     const percent =
       typeof state.downloadPercent === "number" ? Math.floor(state.downloadPercent) : null;
+    const speed = formatDesktopUpdateSpeed(state.downloadBytesPerSecond);
     if (state.availableVersion) {
-      return percent !== null
-        ? resolve(
-            msg("Downloading update {version} ({percent}%)", {
-              version: state.availableVersion,
-              percent,
-            }),
-          )
-        : resolve(msg("Downloading update {version}", { version: state.availableVersion }));
+      if (percent !== null) {
+        return speed !== null
+          ? resolve(
+              msg("Downloading update {version} ({percent}% · {speed})", {
+                version: state.availableVersion,
+                percent,
+                speed,
+              }),
+            )
+          : resolve(
+              msg("Downloading update {version} ({percent}%)", {
+                version: state.availableVersion,
+                percent,
+              }),
+            );
+      }
+      return resolve(msg("Downloading update {version}", { version: state.availableVersion }));
     }
-    return percent !== null
-      ? resolve(msg("Downloading update ({percent}%)", { percent }))
-      : resolve(msg("Downloading update"));
+    if (percent !== null) {
+      return speed !== null
+        ? resolve(msg("Downloading update ({percent}% · {speed})", { percent, speed }))
+        : resolve(msg("Downloading update ({percent}%)", { percent }));
+    }
+    return resolve(msg("Downloading update"));
   }
   if (state.status === "downloaded") {
     if (state.errorContext === "install" && state.downloadedVersion) {
@@ -265,7 +344,7 @@ export function shouldToastDesktopUpdateActionResult(result: DesktopUpdateAction
 }
 
 export function canCheckForUpdate(state: DesktopUpdateState | null): boolean {
-  if (!state || !state.enabled) return false;
+  if (!state || !state.enabled || state.installing === true) return false;
   return (
     state.status !== "checking" && state.status !== "downloading" && state.status !== "disabled"
   );
@@ -336,6 +415,13 @@ export function getDesktopUpdateAboutDescription(
   const disabledReason = getDesktopUpdateDisabledReason(state, managedDenial, resolve);
   if (disabledReason !== null) return disabledReason;
   if (!state) return resolve(msg("Current version of the application."));
+
+  if (state.installing === true) {
+    const version = getDesktopUpdateDownloadedVersion(state);
+    return version
+      ? resolve(msg("Restarting to install update {version}…", { version }))
+      : resolve(msg("Restarting to install update…"));
+  }
 
   if (state.status === "downloading") {
     const percent =

@@ -3,14 +3,18 @@ import type { DesktopUpdateState } from "@t3tools/contracts";
 
 import {
   canCheckForUpdate,
+  formatDesktopUpdateBytes,
+  formatDesktopUpdateSpeed,
   getDesktopAutoUpdateModeDescription,
   getDesktopAutoUpdateModeLabel,
   getDesktopUpdateAboutDescription,
   getDesktopUpdateButtonTooltip,
+  getDesktopUpdateDownloadProgressMeta,
   getDesktopUpdateReleaseHistoryUrl,
   getDesktopUpdateActionError,
   getDesktopUpdateReleaseUrl,
   installDesktopUpdate,
+  isDesktopUpdateButtonDisabled,
   resolveDesktopUpdateButtonAction,
 } from "./desktopUpdate.logic";
 
@@ -167,6 +171,72 @@ describe("desktop update button state", () => {
         downloadPercent: 18,
       }),
     ).toBe("Downloading update (18%)");
+    expect(
+      getDesktopUpdateButtonTooltip({
+        ...baseState,
+        status: "downloading",
+        availableVersion: "0.1.12-t4.18",
+        downloadPercent: 42.9,
+        downloadBytesPerSecond: 4.2 * 1024 * 1024,
+      }),
+    ).toBe("Downloading update 0.1.12-t4.18 (42% · 4.2 MB/s)");
+    expect(
+      getDesktopUpdateButtonTooltip({
+        ...baseState,
+        status: "downloaded",
+        availableVersion: "0.1.12-t4.18",
+        downloadedVersion: "0.1.12-t4.18",
+        installing: true,
+      }),
+    ).toBe("Restarting to install update 0.1.12-t4.18…");
+  });
+
+  it("formats download byte totals, speeds, and progress metadata", () => {
+    expect(formatDesktopUpdateBytes(512)).toBe("512 B");
+    expect(formatDesktopUpdateBytes(640 * 1024)).toBe("640 KB");
+    expect(formatDesktopUpdateBytes(52.4 * 1024 * 1024)).toBe("52.4 MB");
+    expect(formatDesktopUpdateSpeed(0)).toBeNull();
+    expect(formatDesktopUpdateSpeed(4.2 * 1024 * 1024)).toBe("4.2 MB/s");
+
+    expect(
+      getDesktopUpdateDownloadProgressMeta({
+        ...baseState,
+        status: "downloading",
+        availableVersion: "0.1.12-t4.18",
+        downloadPercent: 48.6,
+        downloadBytesPerSecond: 4.2 * 1024 * 1024,
+        downloadTransferredBytes: 52.4 * 1024 * 1024,
+        downloadTotalBytes: 109.2 * 1024 * 1024,
+      }),
+    ).toEqual({
+      percent: 48,
+      transferredLabel: "52.4 MB",
+      totalLabel: "109.2 MB",
+      speedLabel: "4.2 MB/s",
+    });
+
+    expect(
+      getDesktopUpdateDownloadProgressMeta({
+        ...baseState,
+        status: "available",
+        availableVersion: "0.1.12-t4.18",
+      }),
+    ).toBeNull();
+  });
+
+  it("disables update actions while restarting to install", () => {
+    const installingState: DesktopUpdateState = {
+      ...baseState,
+      status: "downloaded",
+      availableVersion: "0.1.12-t4.18",
+      downloadedVersion: "0.1.12-t4.18",
+      installing: true,
+    };
+    expect(isDesktopUpdateButtonDisabled(installingState)).toBe(true);
+    expect(canCheckForUpdate(installingState)).toBe(false);
+    expect(getDesktopUpdateAboutDescription(installingState)).toBe(
+      "Restarting to install update 0.1.12-t4.18…",
+    );
   });
 
   it("hides the install action while checking for a newer release", () => {

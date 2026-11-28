@@ -1759,4 +1759,155 @@ describe("DesktopUpdates automatic updates", () => {
       }),
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });
+
+  it.effect("enters downloading state immediately while refreshing the feed before download", () =>
+    Effect.gen(function* () {
+      const checkStarted = yield* Deferred.make<void>();
+      const releaseCheck = yield* Deferred.make<void>();
+      let checks = 0;
+      const harness = makeHarness({
+        autoUpdateMode: "manual",
+        checkForUpdates: Effect.suspend(() => {
+          checks += 1;
+          if (checks === 1) {
+            harness.emit("update-available", { version: "1.2.4" });
+            return Effect.void;
+          }
+          return Deferred.succeed(checkStarted, undefined).pipe(
+            Effect.andThen(Deferred.await(releaseCheck)),
+            Effect.andThen(
+              Effect.sync(() => {
+                harness.emit("update-available", { version: "1.2.5" });
+              }),
+            ),
+          );
+        }),
+        downloadUpdate: Effect.sync(() => {
+          harness.emit("update-downloaded", { version: "1.2.5" });
+        }),
+      });
+
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const updates = yield* DesktopUpdates.DesktopUpdates;
+          yield* updates.configure;
+          yield* updates.check("manual");
+          yield* flushCallbacks;
+          assert.equal((yield* updates.getState).status, "available");
+
+          const downloadFiber = yield* updates.download.pipe(Effect.forkScoped);
+          yield* Deferred.await(checkStarted);
+
+          const pendingState = yield* updates.getState;
+          assert.equal(pendingState.status, "downloading");
+          assert.isNull(pendingState.downloadPercent);
+          assert.equal(pendingState.availableVersion, "1.2.4");
+
+          yield* Deferred.succeed(releaseCheck, undefined);
+          const result = yield* Fiber.join(downloadFiber);
+          yield* flushCallbacks;
+          assert.isTrue(result.completed);
+          assert.equal((yield* updates.getState).downloadedVersion, "1.2.5");
+        }),
+      ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+    }),
+  );
+
+  it.effect("broadcasts fine-grained download progress with speed and byte totals", () => {
+    const harness = makeHarness({ autoUpdateMode: "manual" });
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+        harness.emit("update-available", { version: "1.2.4" });
+        yield* flushCallbacks;
+
+        harness.emit("download-progress", {
+          percent: 12.2,
+          bytesPerSecond: 4_200_000,
+          transferred: 12_200_000,
+          total: 100_000_000,
+        });
+        yield* flushCallbacks;
+        const first = yield* updates.getState;
+        assert.equal(first.status, "downloading");
+        assert.equal(first.downloadPercent, 12.2);
+        assert.equal(first.downloadBytesPerSecond, 4_200_000);
+        assert.equal(first.downloadTransferredBytes, 12_200_000);
+        assert.equal(first.downloadTotalBytes, 100_000_000);
+
+        const countAfterFirst = harness.sentStates.length;
+        // Same integer percent before 500ms stays quiet.
+        harness.emit("download-progress", {
+          percent: 12.6,
+          bytesPerSecond: 3_900_000,
+          transferred: 12_600_000,
+          total: 100_000_000,
+        });
+        yield* flushCallbacks;
+        assert.equal(harness.sentStates.length, countAfterFirst);
+
+        // Next 1% integer step broadcasts immediately.
+        harness.emit("download-progress", {
+          percent: 13.1,
+          bytesPerSecond: 5_100_000,
+          transferred: 13_100_000,
+          total: 100_000_000,
+        });
+        yield* flushCallbacks;
+        const second = yield* updates.getState;
+        assert.equal(second.downloadPercent, 13.1);
+        assert.equal(second.downloadBytesPerSecond, 5_100_000);
+
+        // Advancing 500ms updates speed/bytes even within the same integer percent.
+        yield* TestClock.adjust("500 millis");
+        harness.emit("download-progress", {
+          percent: 13.4,
+          bytesPerSecond: 2_800_000,
+          transferred: 13_400_000,
+          total: 100_000_000,
+        });
+        yield* flushCallbacks;
+        const third = yield* updates.getState;
+        assert.equal(third.downloadBytesPerSecond, 2_800_000);
+        assert.equal(third.downloadTransferredBytes, 13_400_000);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
+  it.effect("broadcasts installing state while restarting and clears it if install fails", () => {
+    let sawInstallingDuringStop = false;
+    const harness = makeHarness({
+      autoUpdateMode: "manual",
+      stopBackend: Effect.sync(() => {
+        sawInstallingDuringStop = harness.sentStates.at(-1)?.installing === true;
+      }),
+      quitAndInstall: Effect.fail(
+        new ElectronUpdater.ElectronUpdaterQuitAndInstallError({
+          channel: "latest",
+          isSilent: true,
+          isForceRunAfter: true,
+          cause: new Error("OSStatus error -60006"),
+        }),
+      ),
+    });
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+        harness.emit("update-downloaded", { version: "1.2.4" });
+        yield* flushCallbacks;
+
+        const result = yield* updates.install;
+        assert.isTrue(result.accepted);
+        assert.isFalse(result.completed);
+        assert.isTrue(sawInstallingDuringStop);
+        const state = yield* updates.getState;
+        assert.isUndefined(state.installing);
+        assert.equal(state.errorContext, "install");
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
 });
