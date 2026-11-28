@@ -4930,6 +4930,7 @@
   "510cb7d39f654dfc": "즐겨찾기에서 제거: {provider}, {model}",
   "39b92bb3a992a452": "즐겨찾기에 추가: {provider}, {model}",
   "cbc2606e931511dd": "{provider}, {count, plural, other {모델 {count}개}}",
+  "057818bcfd07a073": "즐겨찾기 순서 변경",
   "33c68c5151a81e31": "레거시 모델 표시",
   "16839051320ad525": "숨긴 모델 관리",
   "daabeb1c6a74ad29": "모델 새로고침",

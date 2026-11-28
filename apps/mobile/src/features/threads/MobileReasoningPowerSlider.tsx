@@ -28,9 +28,9 @@ const PRISM_LEVEL_IDS = new Set(["max", "ultra", "ultracode", "ultrathink"]);
 const COBALT_LEVEL_IDS = new Set(["high", "xhigh", "extra_high", "extra-high", "extrahigh"]);
 const LOW_LEVEL_IDS = new Set(["none", "off", "minimal", "low"]);
 
-const TRACK_HEIGHT = 34;
-const THUMB_SIZE = 26;
-const THUMB_INSET = 4;
+const TRACK_HEIGHT = 28;
+const THUMB_SIZE = 22;
+const THUMB_INSET = 3;
 
 function resolvePowerVisuals(input: {
   readonly selectedId: string | undefined;
@@ -244,7 +244,7 @@ export function MobileReasoningPowerSlider(props: {
             }
           }
         }}
-        style={{ paddingVertical: 5, opacity: props.disabled ? 0.55 : 1 }}
+        style={{ paddingVertical: 6, opacity: props.disabled ? 0.55 : 1 }}
       >
         <View
           onLayout={(event) => setTrackWidth(event.nativeEvent.layout.width)}
@@ -263,7 +263,7 @@ export function MobileReasoningPowerSlider(props: {
             style={{
               position: "absolute",
               inset: 0,
-              paddingHorizontal: 17,
+              paddingHorizontal: 14,
               flexDirection: "row",
               alignItems: "center",
               justifyContent: "space-between",
@@ -273,8 +273,8 @@ export function MobileReasoningPowerSlider(props: {
               <View
                 key={choice.id}
                 style={{
-                  width: 4,
-                  height: 4,
+                  width: 3.5,
+                  height: 3.5,
                   borderRadius: 999,
                   backgroundColor: dotColor,
                 }}
@@ -385,9 +385,9 @@ export function MobileReasoningPowerSlider(props: {
                   numberOfLines={1}
                   style={{
                     position: "absolute",
-                    left: 14,
+                    left: 12,
                     color: "#ffffff",
-                    fontSize: 12.5,
+                    fontSize: 12,
                     fontWeight: "600",
                   }}
                 >

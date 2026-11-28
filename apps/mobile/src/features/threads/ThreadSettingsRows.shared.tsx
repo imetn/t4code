@@ -12,6 +12,7 @@ export type ModelRowProps = {
   readonly selected: boolean;
   readonly selectedBackgroundColor?: string;
   readonly onPress: () => void;
+  readonly onLongPress?: () => void;
   readonly isFavorite: boolean;
   readonly favoritesLoaded: boolean;
   readonly onToggleFavorite: () => void;
@@ -48,19 +49,15 @@ export function ModelRowContent(
   return (
     <View
       style={[
-        { borderRadius: 16, borderCurve: "continuous" },
+        { borderRadius: 12, borderCurve: "continuous" },
         props.minimumHeight === undefined ? undefined : { minHeight: props.minimumHeight },
         props.selected && props.selectedBackgroundColor
           ? { backgroundColor: props.selectedBackgroundColor }
           : undefined,
       ]}
       className={cn(
-        "mx-2 my-0.5 min-h-[44px] flex-row items-center gap-2 px-3 android:min-h-[48px]",
-        props.selected
-          ? props.selectedBackgroundColor
-            ? undefined
-            : (props.selectedClassName ?? "bg-subtle-strong")
-          : "bg-transparent",
+        "mx-1.5 min-h-[40px] flex-row items-center gap-2 px-3 android:min-h-[44px]",
+        props.selected && props.selectedClassName ? props.selectedClassName : "bg-transparent",
       )}
     >
       <Pressable
@@ -70,9 +67,11 @@ export function ModelRowContent(
           checked: props.selected,
           disabled: props.option.isUnavailable === true || props.option.isHidden === true,
         }}
-        className="min-h-[46px] min-w-0 flex-1 flex-row items-center gap-2.5 active:opacity-70 android:min-h-[48px]"
+        className="min-h-[40px] min-w-0 flex-1 flex-row items-center gap-2.5 active:opacity-65 android:min-h-[44px]"
         disabled={props.option.isUnavailable || props.option.isHidden}
         onPress={props.onPress}
+        onLongPress={props.onLongPress}
+        delayLongPress={320}
       >
         {props.leadingSelection}
         {props.showProviderIcon ? (
@@ -86,10 +85,10 @@ export function ModelRowContent(
           <View className="flex-row items-center gap-2">
             <Text
               className={cn(
-                "min-w-0 shrink text-base",
+                "min-w-0 shrink text-[14.5px] leading-[19px]",
                 props.selected
-                  ? "font-t3-bold text-foreground"
-                  : "font-t3-medium text-foreground/90",
+                  ? "font-t3-semibold text-foreground"
+                  : "font-t3-medium text-foreground/85",
               )}
               numberOfLines={props.labelNumberOfLines}
             >
@@ -139,13 +138,14 @@ export function ModelRowContent(
           }
           accessibilityRole="button"
           accessibilityState={{ disabled: props.hiddenUpdatePending === true }}
-          className="min-h-[40px] min-w-[36px] items-center justify-center"
+          className="min-h-[36px] min-w-[34px] items-center justify-center"
+          hitSlop={4}
           disabled={props.hiddenUpdatePending}
           onPress={props.onToggleHidden}
         >
           <SymbolView
             name={props.option.isHidden ? "eye.slash" : "eye"}
-            size={16}
+            size={15}
             tintColorClassName={props.option.isHidden ? "accent-icon-subtle" : "accent-icon"}
             type="monochrome"
           />
@@ -165,13 +165,14 @@ export function ModelRowContent(
         }
         accessibilityRole="button"
         accessibilityState={{ disabled: !props.favoritesLoaded, selected: props.isFavorite }}
-        className="min-h-[40px] min-w-[36px] items-center justify-center"
+        className="min-h-[36px] min-w-[34px] items-center justify-center"
+        hitSlop={4}
         disabled={!props.favoritesLoaded}
         onPress={props.onToggleFavorite}
       >
         <SymbolView
           name={props.isFavorite ? "star.fill" : "star"}
-          size={15}
+          size={14.5}
           tintColor={props.isFavorite ? "#f59e0b" : undefined}
           tintColorClassName={props.isFavorite ? undefined : "accent-icon-subtle"}
           style={props.isFavorite ? undefined : { opacity: 0.4 }}

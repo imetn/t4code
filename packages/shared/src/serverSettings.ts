@@ -1,4 +1,6 @@
 import type { ModelPreferences } from "@t3tools/contracts/settings";
+
+type ModelFavoriteEntry = ModelPreferences["favorites"][number];
 import {
   DEFAULT_MODEL_BY_PROVIDER,
   DEFAULT_TEXT_GENERATION_MODEL,
@@ -717,4 +719,71 @@ export function modelPreferencesMigrationPatch(
           ...(providerModelPreferences === undefined ? {} : { providerModelPreferences }),
         },
       };
+}
+
+export function modelFavoriteEntryKey(provider: ProviderInstanceId, model: string): string {
+  return `${provider}:${model}`;
+}
+
+export function modelFavoriteListsEqual(
+  left: ReadonlyArray<ModelFavoriteEntry>,
+  right: ReadonlyArray<ModelFavoriteEntry>,
+): boolean {
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    const a = left[index]!;
+    const b = right[index]!;
+    if (a.provider !== b.provider || a.model !== b.model) return false;
+  }
+  return true;
+}
+
+/**
+ * Reorders visible favorite models while preserving the slots of any favorites belonging to
+ * offline, disabled, or locked-out providers.
+ */
+export function reorderModelFavorites(
+  favorites: ReadonlyArray<ModelFavoriteEntry>,
+  visibleKeys: ReadonlyArray<string>,
+  fromKey: string,
+  toKey: string,
+): ReadonlyArray<ModelFavoriteEntry> {
+  if (fromKey === toKey) return favorites;
+  const uniqueFavorites: ModelFavoriteEntry[] = [];
+  const seenKeys = new Set<string>();
+  for (const favorite of favorites) {
+    const key = modelFavoriteEntryKey(favorite.provider, favorite.model);
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
+    uniqueFavorites.push(favorite);
+  }
+  const byKey = new Map(
+    uniqueFavorites.map(
+      (favorite) => [modelFavoriteEntryKey(favorite.provider, favorite.model), favorite] as const,
+    ),
+  );
+  const visibleOrderedKeys = visibleKeys.filter((key) => byKey.has(key));
+  const fromVisibleIndex = visibleOrderedKeys.indexOf(fromKey);
+  const toVisibleIndex = visibleOrderedKeys.indexOf(toKey);
+  if (fromVisibleIndex < 0 || toVisibleIndex < 0 || fromVisibleIndex === toVisibleIndex) {
+    return favorites;
+  }
+  const reorderedVisibleKeys = [...visibleOrderedKeys];
+  const [movedKey] = reorderedVisibleKeys.splice(fromVisibleIndex, 1);
+  reorderedVisibleKeys.splice(toVisibleIndex, 0, movedKey!);
+
+  const visibleKeySet = new Set(visibleOrderedKeys);
+  const nextFavorites = [...uniqueFavorites];
+  let visibleCursor = 0;
+  for (let index = 0; index < nextFavorites.length; index += 1) {
+    const entry = nextFavorites[index]!;
+    const key = modelFavoriteEntryKey(entry.provider, entry.model);
+    if (!visibleKeySet.has(key)) continue;
+    const replacementKey = reorderedVisibleKeys[visibleCursor++];
+    if (replacementKey !== undefined) {
+      const replacement = byKey.get(replacementKey);
+      if (replacement) nextFavorites[index] = replacement;
+    }
+  }
+  return nextFavorites;
 }

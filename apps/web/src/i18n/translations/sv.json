@@ -3360,10 +3360,7 @@
     {
       "t": "span",
       "i": 2,
-      "c": [
-        " ",
-        "på datorn som öppnade den här sidan"
-      ]
+      "c": [" ", "på datorn som öppnade den här sidan"]
     }
   ],
   "b2d53b4d1d48fbef": [
@@ -3375,10 +3372,7 @@
     {
       "t": "span",
       "i": 2,
-      "c": [
-        " ",
-        "· den som kör den får den här åtkomsten"
-      ]
+      "c": [" ", "· den som kör den får den här åtkomsten"]
     }
   ],
   "c54cc9c75db9dc58": "Godkänn bara en inloggning som du själv precis har startat.",
@@ -4133,6 +4127,7 @@
   "34c4569cfaf5e87f": "Modell {label}",
   "e302fe085e879637": "Konfigurera {provider}",
   "eca2c02ebf4a171c": "Öppna leverantörskonfiguration",
+  "bad2594c3a0857ec": "Dra för att ändra ordning på {name}",
   "4314e052a3524c51": "Favoriter",
   "cb2476679502d798": "Modell: {name}",
   "1889823ac6b01f7b": "{provider} är inte tillgänglig i den här tråden. Starta en ny tråd för att byta leverantör.",

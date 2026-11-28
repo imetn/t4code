@@ -13,6 +13,7 @@ import {
 } from "../../state/use-model-option-memory";
 import {
   canCommitPendingModel,
+  orderFavoriteCatalogModels,
   pendingModelAfterPress,
   visibleCatalogModels,
 } from "./thread-settings-sheet-state";
@@ -180,5 +181,18 @@ describe("thread settings sheet state", () => {
     expect(visible("")).toEqual(["gpt-next"]);
     expect(visible("   ")).toEqual(["gpt-next"]);
     expect(visible("Claude Opus 4.8")).toEqual(["Claude Opus 4.8"]);
+  });
+
+  it("orders favorite catalog models according to the user's saved favorite sequence", () => {
+    const first = modelOption("gpt-a");
+    const second = { ...modelOption("opus-5"), key: "claudeAgent:opus-5" };
+    const third = { ...modelOption("gemini-4"), key: "antigravity:gemini-4" };
+
+    expect(
+      orderFavoriteCatalogModels(
+        [first, second, third],
+        ["antigravity:gemini-4", "claudeAgent:opus-5", "codex:gpt-a"],
+      ).map((item) => item.key),
+    ).toEqual(["antigravity:gemini-4", "claudeAgent:opus-5", "codex:gpt-a"]);
   });
 });

@@ -65,7 +65,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
 
   return (
     <Toolbar.Root
-      className="flex h-11 w-full shrink-0 items-center justify-between gap-1.5 border-b border-border/60 px-2.5"
+      className="flex h-11 w-full shrink-0 items-center justify-between gap-1.5 border-b border-border/70 bg-muted/35 px-2.5"
       data-model-picker-sidebar="true"
       aria-label={m(msg("Providers"))}
       orientation="horizontal"
@@ -86,10 +86,10 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                   render={
                     <Toolbar.Button
                       className={cn(
-                        "relative isolate flex h-7 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground focus-visible:bg-foreground/10 focus-visible:outline-none",
+                        "relative isolate flex h-7.5 shrink-0 cursor-pointer items-center justify-center rounded-full text-foreground/70 transition-colors hover:bg-foreground/10 hover:text-foreground focus-visible:bg-foreground/10 focus-visible:outline-none",
                         props.selectedInstanceId === "favorites"
-                          ? "gap-1.5 bg-foreground/10 px-2.5 text-foreground"
-                          : "w-7",
+                          ? "gap-1.5 bg-background px-2.5 text-foreground shadow-2xs ring-1 ring-border/75 dark:bg-foreground/14 dark:ring-foreground/12"
+                          : "w-7.5",
                       )}
                       onClick={() => handleSelect("favorites")}
                       type="button"
@@ -104,7 +104,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                         aria-hidden
                       />
                       {props.selectedInstanceId === "favorites" ? (
-                        <span className="text-xs font-medium leading-none">
+                        <span className="text-xs font-semibold leading-none">
                           <T>Favorites</T>
                         </span>
                       ) : null}
@@ -120,7 +120,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                 </TooltipPopup>
               </Tooltip>
             </div>
-            <div className="mx-1 h-3.5 w-px shrink-0 bg-border/80" aria-hidden="true" />
+            <div className="mx-1 h-4 w-px shrink-0 bg-border/80" aria-hidden="true" />
           </>
         ) : null}
 
@@ -143,8 +143,10 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
           const button = (
             <Toolbar.Button
               className={cn(
-                "relative isolate flex h-7 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground focus-visible:bg-foreground/10 focus-visible:outline-none",
-                isSelected ? "gap-1.5 bg-foreground/10 px-2.5 text-foreground" : "w-7",
+                "relative isolate flex h-7.5 shrink-0 cursor-pointer items-center justify-center rounded-full text-foreground/70 transition-colors hover:bg-foreground/10 hover:text-foreground focus-visible:bg-foreground/10 focus-visible:outline-none",
+                isSelected
+                  ? "gap-1.5 bg-background px-2.5 text-foreground shadow-2xs ring-1 ring-border/75 dark:bg-foreground/14 dark:ring-foreground/12"
+                  : "w-7.5",
                 isDisabled && "cursor-not-allowed opacity-45 hover:bg-transparent",
               )}
               data-provider-accent-color={entry.accentColor}
@@ -163,14 +165,14 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                 acpRegistryIconUrl={entry.acpRegistryIconUrl}
                 showBadge={showInstanceBadge}
                 className="z-30 size-4"
-                iconClassName="size-3.5"
+                iconClassName="size-4"
                 indicatorBackground={isSelected ? "var(--accent)" : "var(--popover)"}
                 {...(entry.accentColor
                   ? { badgeClassName: "h-2.5 min-w-2.5 px-0.5 text-5xs" }
                   : {})}
               />
               {isSelected ? (
-                <span className="max-w-24 truncate text-xs font-medium leading-none">
+                <span className="max-w-24 truncate text-xs font-semibold leading-none">
                   {entry.displayName}
                 </span>
               ) : null}

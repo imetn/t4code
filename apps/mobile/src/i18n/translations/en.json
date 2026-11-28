@@ -4954,6 +4954,7 @@
   "510cb7d39f654dfc": "Remove from favorites: {provider}, {model}",
   "39b92bb3a992a452": "Add to favorites: {provider}, {model}",
   "cbc2606e931511dd": "{provider}, {count, plural, one {{count} model} other {{count} models}}",
+  "057818bcfd07a073": "Reorder favorites",
   "33c68c5151a81e31": "Show legacy models",
   "16839051320ad525": "Manage hidden models",
   "daabeb1c6a74ad29": "Refresh models",

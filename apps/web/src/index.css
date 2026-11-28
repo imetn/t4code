@@ -2729,7 +2729,7 @@ code {
 
 .model-picker-power-track {
   position: relative;
-  height: 28px;
+  height: 26px;
   border-radius: 9999px;
   overflow: hidden;
   display: flex;
@@ -2749,7 +2749,7 @@ code {
   position: relative;
   z-index: 2;
   height: 100%;
-  min-width: 28px;
+  min-width: 26px;
   border-radius: 9999px;
   overflow: hidden;
   display: flex;
@@ -2792,8 +2792,8 @@ code {
 .model-picker-power-thumb {
   position: relative;
   z-index: 4;
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   border-radius: 9999px;
   background: #ffffff;
   flex-shrink: 0;

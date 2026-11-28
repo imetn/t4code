@@ -11,8 +11,7 @@ export function ModelRow(props: ModelRowProps) {
     <ModelRowContent
       {...props}
       labelNumberOfLines={2}
-      minimumHeight={56}
-      selectedClassName={props.selected ? "bg-secondary" : undefined}
+      minimumHeight={48}
       leadingSelection={<RadioIndicator selected={props.selected} />}
     />
   );

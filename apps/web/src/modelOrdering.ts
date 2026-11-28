@@ -59,11 +59,13 @@ export function sortProviderModelItems<T extends ProviderModelItem>(
   items: ReadonlyArray<T>,
   options?: {
     readonly favoriteModelKeys?: ReadonlySet<string> | ReadonlyArray<string>;
+    readonly favoriteOrderKeys?: ReadonlyArray<string>;
     readonly groupFavorites?: boolean;
     readonly instanceOrder?: ReadonlyArray<ProviderInstanceId>;
   },
 ): T[] {
   const favoriteModelKeys = toSet(options?.favoriteModelKeys);
+  const favoriteOrder = rankByValue(options?.favoriteOrderKeys ?? []);
   const instanceOrder = new Map(
     Arr.map(options?.instanceOrder ?? [], (instanceId, index) => [instanceId, index] as const),
   );
@@ -75,6 +77,13 @@ export function sortProviderModelItems<T extends ProviderModelItem>(
       ? [
           byTrueFirst<T>((item) =>
             favoriteModelKeys.has(providerModelKey(item.instanceId, item.slug)),
+          ),
+        ]
+      : []),
+    ...(favoriteOrder.size > 0
+      ? [
+          byOptionalRank<T>((item) =>
+            favoriteOrder.get(providerModelKey(item.instanceId, item.slug)),
           ),
         ]
       : []),

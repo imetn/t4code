@@ -19,7 +19,10 @@ import { resolveProjectScripts } from "./projectScripts.ts";
 import {
   applyServerSettingsPatch,
   fallbackTextGenerationModelSelection,
+  modelFavoriteEntryKey,
+  modelFavoriteListsEqual,
   modelPreferencesMigrationPatch,
+  reorderModelFavorites,
   resolveModelPreferences,
   isModelSelectionProviderEnabled,
   parsePersistedServerObservabilitySettings,
@@ -1093,5 +1096,58 @@ describe("resolveSpeechPostProcessingModelSelection", () => {
       applyServerSettingsPatch(pinned, { speechPostProcessingModelSelection: null })
         .speechPostProcessingModelSelection,
     ).toBeNull();
+  });
+});
+
+describe("reorderModelFavorites", () => {
+  it("reorders visible favorites across providers while preserving offline favorite slots", () => {
+    const codex = ProviderInstanceId.make("codex");
+    const claude = ProviderInstanceId.make("claudeAgent");
+    const offline = ProviderInstanceId.make("cursor");
+    const gemini = ProviderInstanceId.make("antigravity");
+
+    const initial = [
+      { provider: codex, model: "gpt-6" },
+      { provider: offline, model: "composer-2" },
+      { provider: claude, model: "opus-5" },
+      { provider: gemini, model: "gemini-4" },
+    ];
+    const visibleKeys = [
+      modelFavoriteEntryKey(codex, "gpt-6"),
+      modelFavoriteEntryKey(claude, "opus-5"),
+      modelFavoriteEntryKey(gemini, "gemini-4"),
+    ];
+
+    const movedUp = reorderModelFavorites(
+      initial,
+      visibleKeys,
+      modelFavoriteEntryKey(gemini, "gemini-4"),
+      modelFavoriteEntryKey(codex, "gpt-6"),
+    );
+    expect(movedUp).toEqual([
+      { provider: gemini, model: "gemini-4" },
+      { provider: offline, model: "composer-2" },
+      { provider: codex, model: "gpt-6" },
+      { provider: claude, model: "opus-5" },
+    ]);
+    expect(modelFavoriteListsEqual(initial, movedUp)).toBe(false);
+    expect(modelFavoriteListsEqual(movedUp, [...movedUp])).toBe(true);
+
+    const movedDown = reorderModelFavorites(
+      movedUp,
+      [
+        modelFavoriteEntryKey(gemini, "gemini-4"),
+        modelFavoriteEntryKey(codex, "gpt-6"),
+        modelFavoriteEntryKey(claude, "opus-5"),
+      ],
+      modelFavoriteEntryKey(gemini, "gemini-4"),
+      modelFavoriteEntryKey(claude, "opus-5"),
+    );
+    expect(movedDown).toEqual([
+      { provider: codex, model: "gpt-6" },
+      { provider: offline, model: "composer-2" },
+      { provider: claude, model: "opus-5" },
+      { provider: gemini, model: "gemini-4" },
+    ]);
   });
 });

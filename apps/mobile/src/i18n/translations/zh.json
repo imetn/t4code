@@ -4934,6 +4934,7 @@
   "510cb7d39f654dfc": "从收藏中移除：{provider}，{model}",
   "39b92bb3a992a452": "添加到收藏：{provider}，{model}",
   "cbc2606e931511dd": "{provider}，{count, plural, other {{count} 个模型}}",
+  "057818bcfd07a073": "排序收藏模型",
   "33c68c5151a81e31": "显示旧版模型",
   "16839051320ad525": "管理隐藏的模型",
   "daabeb1c6a74ad29": "刷新模型",

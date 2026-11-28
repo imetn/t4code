@@ -43,14 +43,16 @@ Each entry uses `<!-- t4-lock: <id> -->` and explicit path prefixes/files so `sc
   - `apps/mobile/src/components/ComposerToolbar.tsx`
 - **Non-Negotiable Invariants**:
   - **Web / Desktop**:
-    - Top horizontal icon-only provider & favorites bar; Favorites star icon size must visually match provider logos (never tiny/misaligned).
-    - Favorite star toggle on every model row in Desktop/Web model list.
+    - Grounded top horizontal provider & favorites bar (`bg-muted/35`, elevated active pill with `text-xs font-semibold` and `size-4` icons matching the Favorites star).
+    - Selected model rows show a crisp checkmark and semibold label with **NO persistent gray background fill** (`selectedFill={false}`); compact `min-h-8` / `13px` row density balanced against the anchored top header and slim `26px` reasoning slider.
+    - Favorite star toggle on every model row, plus cross-provider Favorites tab ordered by `ServerSettings.favorites` with direct `@dnd-kit` drag-to-reorder handles synced across devices.
     - Inline compact **Capsule Reasoning Power Slider** with circular dot thumb (NOT vertical bar), drifting white starfield dots whose density & speed scale with reasoning level, and **NO sparkle/star AI-slop icon** in front of the Reasoning label (even on Ultra/Max).
     - No redundant text badge next to `Reasoning` when level labels are already shown beneath the slider.
     - Compact **Standard / Fast** mode toggle positioned inline with the Reasoning header (replacing depth text labels).
   - **Mobile (iOS & Android)**:
-    - Thumb-zone bottom sheet (`ThreadSettingsSheet`) on grouped iOS sheet canvas (`#F2F2F7` light / `#111114` dark) with transparent resting provider/favorites icons, high-contrast elevated active provider pill (`#FFFFFF` light / `#252529` dark with `text-foreground` — never dark-on-black), inset rounded-`20px` grouped model list card with clear selected row tint, and bottom elevated control deck card containing the Capsule Reasoning Power Slider + inline Speed switcher + symmetrical full-width Runtime permission row (no orphaned floating permission button).
-    - Same visual rules: circular dot thumb (`28pt` in `36pt` capsule), detent dots hidden behind the filled bar (no dot/label collision), pure circular drifting starfield dots (no sparkle icon or scratch lines), aligned Favorites & Provider icon sizes.
+    - Thumb-zone bottom sheet (`ThreadSettingsSheet`) with grounded `40pt` top provider pill tray (`18pt` icons, high-contrast elevated active pill with `13.5px` semibold label, matching search/`...` buttons), compact grouped model list card (`40pt` rows, `14.5px` typography) where the selected row uses a **crisp checkmark + semibold label with NO gray selected background box**, and a slimmed-down bottom deck card containing the `28pt` Capsule Reasoning Power Slider (`22pt` circular thumb) + inline Speed switcher + symmetrical full-width Runtime permission row.
+    - Cross-provider Favorites tab follows `ServerSettings.favorites` order with drag-to-reorder mode (`Reorder favorites` in `...` menu or long-press on any favorite row, using `SettingsDragHandle` + Reanimated smooth shift + haptics) synced live with Desktop/Web.
+    - Same visual rules: circular dot thumb (`22pt` in `28pt` capsule), detent dots hidden behind the filled bar (no dot/label collision), pure circular drifting starfield dots (no sparkle icon or scratch lines), aligned Favorites & Provider icon sizes.
     - Simplified mobile composer toolbar (`521aa66f91`): do not re-bloat `ComposerToolbar` / `ThreadComposer` / `IssueCommentComposer`.
 
 ### 2. Project Todos Center (`/todos`), MCP Tools & Full-Screen Calendar / Timeline

@@ -343,3 +343,70 @@ it("keeps the touch keyboard down while choosing a provider", async () => {
   await expect.element(page.getByRole("option", { name: /Claude model/ })).toBeVisible();
   await expect.element(search).not.toHaveFocus();
 });
+
+it("displays Favorites in the saved cross-provider order without a selected background fill", async () => {
+  const entries = deriveProviderInstanceEntries(
+    ["Codex", "Claude", "Antigravity"].map((name) => ({
+      instanceId: ProviderInstanceId.make(name.toLowerCase()),
+      driver: ProviderDriverKind.make(name === "Claude" ? "claudeAgent" : name.toLowerCase()),
+      enabled: true,
+      installed: true,
+      version: null,
+      status: "ready" as const,
+      auth: { status: "authenticated" as const },
+      checkedAt: "2026-01-01T00:00:00.000Z",
+      models: [
+        {
+          slug: `${name.toLowerCase()}-model`,
+          name: `${name} model`,
+          isCustom: false,
+          capabilities: {},
+        },
+      ],
+      slashCommands: [],
+      skills: [],
+    })),
+  );
+  const [codex, claude, antigravity] = entries;
+  __setClientSettingsForTests({
+    ...DEFAULT_CLIENT_SETTINGS,
+    favorites: [
+      { provider: antigravity!.instanceId, model: "antigravity-model" },
+      { provider: claude!.instanceId, model: "claude-model" },
+      { provider: codex!.instanceId, model: "codex-model" },
+    ],
+  });
+  using _settings = {
+    [Symbol.dispose]: () => __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS),
+  };
+
+  await using screen = await render(
+    <ProviderModelPicker
+      environmentId={null}
+      activeInstanceId={claude!.instanceId}
+      model="claude-model"
+      lockedProvider={null}
+      instanceEntries={entries}
+      modelOptionsByInstance={new Map(entries.map((entry) => [entry.instanceId, entry.models]))}
+      triggerAriaLabel="Choose model"
+      onInstanceModelChange={() => {}}
+    />,
+  );
+  await screen.getByRole("button", { name: "Choose model" }).click();
+  await page.getByRole("button", { name: /^Favorites/ }).click();
+
+  await vi.waitFor(() => {
+    const names = page
+      .getByRole("option")
+      .elements()
+      .map((element) => element.textContent?.trim() ?? "");
+    expect(names.map((text) => text.split(",")[0])).toEqual([
+      "Antigravity model",
+      "Claude model",
+      "Codex model",
+    ]);
+  });
+
+  const selectedOption = page.getByRole("option", { name: /Claude model/ }).element();
+  expect(selectedOption.className).not.toContain("data-selected:bg-");
+});

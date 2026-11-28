@@ -4946,6 +4946,7 @@
   "510cb7d39f654dfc": "Retirer des favoris : {provider}, {model}",
   "39b92bb3a992a452": "Ajouter aux favoris : {provider}, {model}",
   "cbc2606e931511dd": "{provider}, {count, plural, one {{count} modèle} other {{count} modèles}}",
+  "057818bcfd07a073": "Réorganiser les favoris",
   "33c68c5151a81e31": "Afficher les anciens modèles",
   "16839051320ad525": "Gérer les modèles masqués",
   "daabeb1c6a74ad29": "Actualiser les modèles",

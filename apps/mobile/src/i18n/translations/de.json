@@ -4952,6 +4952,7 @@
   "510cb7d39f654dfc": "Aus Favoriten entfernen: {provider}, {model}",
   "39b92bb3a992a452": "Zu Favoriten hinzufügen: {provider}, {model}",
   "cbc2606e931511dd": "{provider}, {count, plural, one {{count} Modell} other {{count} Modelle}}",
+  "057818bcfd07a073": "Favoriten neu anordnen",
   "33c68c5151a81e31": "Veraltete Modelle anzeigen",
   "16839051320ad525": "Ausgeblendete Modelle verwalten",
   "daabeb1c6a74ad29": "Modelle aktualisieren",

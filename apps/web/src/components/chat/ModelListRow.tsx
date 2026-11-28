@@ -1,6 +1,6 @@
 import { type ProviderDriverKind, type ProviderInstanceId } from "@t3tools/contracts";
 import { T, useGT } from "gt-react";
-import { memo } from "react";
+import { memo, type ReactNode } from "react";
 import { CheckIcon, StarIcon } from "lucide-react";
 import { getDisplayModelName } from "./providerIconUtils";
 import { ComboboxItem } from "../ui/combobox";
@@ -32,6 +32,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
   unavailable?: boolean;
   jumpLabel?: string | null;
   disabledReason?: string | null;
+  leadingAccessory?: ReactNode;
   onToggleFavorite: (instanceId: ProviderInstanceId, slug: string) => void;
 }) {
   const gt = useGT();
@@ -45,7 +46,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
   const row = (
     <ComboboxItem
       hideIndicator
-      selectedFill
+      selectedFill={false}
       variant="picker"
       index={props.index}
       value={modelPickerModelKey(props.instanceId, props.slug)}
@@ -56,6 +57,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
           "data-disabled:pointer-events-auto data-disabled:cursor-not-allowed",
       )}
     >
+      {props.leadingAccessory}
       {showProviderIcon ? (
         <ProviderInstanceIcon
           driverKind={props.driverKind}
@@ -73,8 +75,8 @@ export const ModelListRow = memo(function ModelListRow(props: {
       <div className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
         <div
           className={cn(
-            "min-w-0 truncate text-sm leading-snug",
-            props.isSelected ? "font-medium text-foreground" : "font-normal text-foreground/85",
+            "min-w-0 truncate leading-snug",
+            props.isSelected ? "font-semibold text-foreground" : "font-normal text-foreground/85",
           )}
           onPointerEnter={(event) => {
             const name = event.currentTarget;

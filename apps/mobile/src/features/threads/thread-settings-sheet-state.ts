@@ -5,6 +5,19 @@ export function modelFavoriteKey(provider: ProviderInstanceId, model: string): s
   return `${provider}:${model}`;
 }
 
+export function orderFavoriteCatalogModels(
+  models: ReadonlyArray<ModelOption>,
+  favoriteOrderKeys: ReadonlyArray<string>,
+): ReadonlyArray<ModelOption> {
+  if (favoriteOrderKeys.length === 0 || models.length <= 1) return models;
+  const rank = new Map(favoriteOrderKeys.map((key, index) => [key, index] as const));
+  return [...models].sort((left, right) => {
+    const leftRank = rank.get(left.key) ?? Number.POSITIVE_INFINITY;
+    const rightRank = rank.get(right.key) ?? Number.POSITIVE_INFINITY;
+    return leftRank - rightRank;
+  });
+}
+
 export function favoritesFirst(
   models: ReadonlyArray<ModelOption>,
   favoriteKeys: ReadonlySet<string>,

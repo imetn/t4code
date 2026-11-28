@@ -813,12 +813,12 @@ function EffortSectionContent(props: { traits: TraitsSelectionInput }) {
 
   return (
     <div
-      className="flex flex-col gap-2.5 border-t border-border/60 bg-muted/20 px-3.5 py-2.5"
+      className="flex flex-col gap-2 border-t border-border/60 bg-muted/15 px-3 py-2"
       onKeyDownCapture={moveBetweenRows}
     >
       {effort || hasSpeed ? (
         <div className="flex items-center justify-between gap-2">
-          <span className="text-xs font-medium text-foreground/80">{heading}</span>
+          <span className="text-xs font-medium text-muted-foreground">{heading}</span>
           <SpeedControl traits={traits} />
         </div>
       ) : null}
@@ -913,7 +913,7 @@ export function ComposerPickerFooter(props: {
   onRuntimeModeChange: (mode: RuntimeMode) => void;
 }) {
   return (
-    <div className="flex min-h-9 flex-wrap items-center gap-2 border-t border-border/60 bg-muted/30 px-3 py-1">
+    <div className="flex min-h-8.5 flex-wrap items-center gap-2 border-t border-border/60 bg-muted/20 px-2.5 py-1">
       {props.traits ? <UltracodeControl traits={props.traits} /> : null}
       <PermissionsMenu
         runtimeMode={props.runtimeMode}
