@@ -296,12 +296,14 @@ function UsageScreen(props: {
       {
         id: "all",
         title: gt("All environments"),
+        icon: "square.stack",
         selected: selectedEnvironmentIds === null,
         onPress: () => selectEnvironment("all"),
       },
       ...environments.map((environment) => ({
         id: environment.environmentId,
         title: environment.label,
+        icon: "desktopcomputer",
         subtitle: usageEnvironmentStatus(environment, refreshingUsage, m),
         selected:
           selectedEnvironmentIds === null || selectedEnvironmentIds.has(environment.environmentId),

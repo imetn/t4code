@@ -76,11 +76,13 @@ export function buildHomeListFilterMenuItems(
     {
       id: "environment",
       title: resolve(msg("Environment", { $context: "filter menu heading" })),
+      icon: "server.rack",
       items: [
         {
           id: "environment:all",
           title: resolve(msg("All environments")),
           subtitle: resolve(msg("Show threads from every environment")),
+          icon: "square.stack",
           selected: props.selectedEnvironmentId === null,
           onPress: () => props.onEnvironmentChange(null),
         },
@@ -101,17 +103,20 @@ export function buildHomeListFilterMenuItems(
     items.push({
       id: "project",
       title: resolve(msg("Project", { $context: "filter menu heading" })),
+      icon: "folder",
       items: [
         {
           id: "project:all",
           title: resolve(msg("All projects")),
           subtitle: resolve(msg("Show threads from every project")),
+          icon: "folder",
           selected: props.selectedProjectKey === null,
           onPress: () => props.onProjectChange(null),
         },
         ...props.projects.map((project) => ({
           id: `project:${project.key}`,
           title: project.label,
+          icon: project.icon ?? "folder",
           selected: props.selectedProjectKey === project.key,
           onPress: () => props.onProjectChange(project.key),
         })),
@@ -124,6 +129,7 @@ export function buildHomeListFilterMenuItems(
     items.push({
       id: "sort",
       title: resolve(msg("Sort by", { $context: "chat list sort menu heading" })),
+      icon: "arrow.up.arrow.down",
       items: THREAD_LIST_SORT_OPTIONS.map((option) => ({
         id: `sort:${option.order}`,
         title: resolve(option.label),
@@ -135,6 +141,7 @@ export function buildHomeListFilterMenuItems(
       items.push({
         id: "section-order",
         title: resolve(msg("Group order", { $context: "chat list status group order heading" })),
+        icon: "rectangle.3.group",
         items: [
           ...THREAD_LIST_SECTION_PRESETS.map((preset) => ({
             id: `preset:${preset.id}`,
@@ -147,6 +154,7 @@ export function buildHomeListFilterMenuItems(
                 {
                   id: "sort:settings",
                   title: resolve(msg("Go to Settings")),
+                  icon: "gearshape",
                   onPress: sort.onOpenSortSettings,
                 },
               ]

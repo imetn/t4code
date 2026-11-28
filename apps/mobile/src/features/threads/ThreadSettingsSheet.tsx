@@ -1441,6 +1441,14 @@ function ThreadSettingsThumbDeck() {
     id: choice.mode,
     title: m(choice.label),
     subtitle: choice.disabledReason ?? m(choice.description),
+    image:
+      Platform.OS === "ios"
+        ? choice.mode === "full-access"
+          ? "bolt.shield"
+          : choice.mode === "approval-required"
+            ? "hand.raised"
+            : "shield"
+        : undefined,
     state: choice.mode === session.runtimeMode ? ("on" as const) : ("off" as const),
     attributes: choice.disabledReason ? { disabled: true } : undefined,
   }));

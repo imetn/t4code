@@ -21,12 +21,14 @@ function toNativeHeaderMenuItems(items: ReadonlyArray<AppBarMenuItem>): NativeHe
       ? {
           type: "submenu" as const,
           label: item.title ?? "",
+          icon: item.icon ? sfSymbolIcon(item.icon) : undefined,
           items: toNativeHeaderMenuItems(item.items),
         }
       : {
           type: "action" as const,
           label: item.title,
           description: item.subtitle,
+          icon: item.icon ? sfSymbolIcon(item.icon) : undefined,
           onPress: item.onPress,
           state: item.selected ? ("on" as const) : undefined,
         },

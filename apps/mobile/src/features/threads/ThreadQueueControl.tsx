@@ -330,6 +330,7 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
                       id: "remove",
                       title: gt("Remove", { $context: "verb, menu action" }),
                       attributes: { disabled: !controls.canDismiss, destructive: true },
+                      image: "trash",
                     },
                   ]}
                   onPressAction={({ nativeEvent }) =>

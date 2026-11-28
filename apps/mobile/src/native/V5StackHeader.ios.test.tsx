@@ -74,3 +74,54 @@ it.each(["leadingItems", "trailingItems", "toolbarItems"] as const)(
     }
   },
 );
+
+it("forwards submenu icons to native iOS header menus", () => {
+  bridge.ios = undefined;
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const root = createRoot(document.createElement("div"));
+  const onPress = () => {};
+  try {
+    const items: NativeStackHeaderItem[] = [
+      {
+        type: "menu",
+        label: "More actions",
+        icon: { type: "sfSymbol", name: "ellipsis" },
+        menu: {
+          title: "More actions",
+          items: [
+            {
+              type: "action",
+              label: "Open files",
+              icon: { type: "sfSymbol", name: "folder" },
+              onPress,
+            },
+            {
+              type: "submenu",
+              label: "Terminal",
+              icon: { type: "sfSymbol", name: "terminal" },
+              items: [{ type: "action", label: "Open new terminal", onPress }],
+            },
+          ],
+        },
+      },
+    ];
+    act(() =>
+      root.render(
+        <V5StackHeader canGoBack={false} options={{ unstable_headerRightItems: () => items }} />,
+      ),
+    );
+    const trailing = (bridge.ios as StackHeaderConfigProps["ios"])?.trailingItems;
+    const more = trailing?.[0];
+    if (!more || more.type !== "item" || "render" in more) {
+      throw new Error("Expected a native menu item");
+    }
+    const submenu = more.menu?.children[1];
+    expect(submenu?.type).toBe("menu");
+    if (submenu?.type === "menu") {
+      expect(submenu.icon).toEqual({ type: "sfSymbol", name: "terminal" });
+    }
+  } finally {
+    act(() => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});

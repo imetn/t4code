@@ -1,5 +1,5 @@
 import { useGT, useMessages } from "gt-react-native";
-import { Pressable, ScrollView } from "react-native";
+import { Platform, Pressable, ScrollView } from "react-native";
 import type { MenuAction } from "@react-native-menu/menu";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { ENVIRONMENT_MACHINE_SYMBOLS } from "../../components/EnvironmentMachineSymbol";
@@ -79,6 +79,7 @@ export function ThreadListFilters(props: {
           {
             id: "sort:settings",
             title: gt("Go to Settings"),
+            image: Platform.OS === "ios" ? "gearshape" : undefined,
           },
         ]
       : []),

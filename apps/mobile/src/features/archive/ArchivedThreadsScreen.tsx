@@ -75,16 +75,19 @@ function ArchivedThreadsHeader(props: {
             {
               id: "environment",
               title: gt("Environment", { $context: "filter menu heading" }),
+              icon: "server.rack",
               items: [
                 {
                   id: "environment:all",
                   title: gt("All environments"),
+                  icon: "square.stack",
                   selected: props.selectedEnvironmentId === null,
                   onPress: () => props.onEnvironmentChange(null),
                 },
                 ...props.environments.map((environment) => ({
                   id: `environment:${environment.environmentId}`,
                   title: environment.label,
+                  icon: "desktopcomputer",
                   selected: props.selectedEnvironmentId === environment.environmentId,
                   onPress: () => props.onEnvironmentChange(environment.environmentId),
                 })),
@@ -93,6 +96,7 @@ function ArchivedThreadsHeader(props: {
             {
               id: "sort",
               title: gt("Sort by archived date"),
+              icon: "arrow.up.arrow.down",
               items: [
                 {
                   id: "sort:newest",

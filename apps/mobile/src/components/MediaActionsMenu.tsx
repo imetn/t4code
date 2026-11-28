@@ -1,4 +1,5 @@
 import { MenuView } from "@react-native-menu/menu";
+import type { MediaActionId } from "@t3tools/client-runtime/media-actions";
 import { useGT } from "gt-react-native";
 import type { ReactElement } from "react";
 import { Platform, View, type PressableProps, type StyleProp, type ViewStyle } from "react-native";
@@ -6,6 +7,17 @@ import { Platform, View, type PressableProps, type StyleProp, type ViewStyle } f
 import type { useMediaActions } from "../state/mediaActions";
 import { SymbolView } from "./ui/AppSymbol";
 import { Menu } from "./ui/Menu";
+
+const IOS_MEDIA_ACTION_ICONS: Record<MediaActionId, string> = {
+  "quote-image": "quote.bubble",
+  "copy-image": "doc.on.doc",
+  "copy-full-path": "doc.on.doc",
+  "copy-relative-path": "doc.on.doc",
+  "copy-url": "link",
+  "open-file": "doc.text",
+  "save-image": "square.and.arrow.down",
+  save: "square.and.arrow.up",
+};
 
 export function MediaActionsMenu(props: {
   readonly media: ReturnType<typeof useMediaActions>;
@@ -25,6 +37,7 @@ export function MediaActionsMenu(props: {
       actions={props.media.actions.map(({ id, title, disabled }) => ({
         id,
         title,
+        image: Platform.OS === "ios" ? IOS_MEDIA_ACTION_ICONS[id] : undefined,
         attributes: { disabled: disabled ?? false },
       }))}
       onPressAction={({ nativeEvent }) => {

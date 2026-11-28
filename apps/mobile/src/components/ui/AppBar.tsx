@@ -33,10 +33,16 @@ type MailMenu = NonNullable<HeaderBarButtonMailSearchToolbarItem["filterMenu"]>;
 function mailMenuItems(items: ReadonlyArray<AppBarMenuItem>): MailMenu["items"] {
   return items.map((item) =>
     "items" in item
-      ? { type: "submenu", title: item.title ?? "", items: mailMenuItems(item.items) }
+      ? {
+          type: "submenu",
+          title: item.title ?? "",
+          icon: item.icon ? { type: "sfSymbol", name: item.icon as never } : undefined,
+          items: mailMenuItems(item.items),
+        }
       : {
           type: "action",
           title: item.title,
+          icon: item.icon ? { type: "sfSymbol", name: item.icon as never } : undefined,
           state: item.selected ? "on" : "off",
           disabled: item.disabled,
           onPress: item.onPress,
