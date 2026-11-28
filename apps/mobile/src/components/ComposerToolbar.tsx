@@ -119,10 +119,7 @@ export function ComposerInlineControl(props: {
           </Animated.View>
         )}
         {!props.iconOnly && props.suffix ? (
-          <View
-            className={cn("min-w-0", props.suffixWidth === undefined ? "shrink" : "shrink-0")}
-            style={{ width: props.suffixWidth }}
-          >
+          <View className="min-w-0 shrink-0" style={{ width: props.suffixWidth }}>
             {props.suffix}
           </View>
         ) : null}

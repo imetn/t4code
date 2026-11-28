@@ -685,8 +685,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
   ) : null;
 
   const modelControl = (
-    // Only the expanded label can truncate; shrinking the icon-only control clips the icon.
-    <View className={compactEditor.isExpanded ? "min-w-0 shrink" : "shrink-0"}>
+    <View className="min-w-0 shrink">
       <ComposerModelControl
         size={usesLargeControls ? "large" : "regular"}
         modelOption={currentModelOption}
@@ -695,7 +694,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
         reportedSelection={props.reportedModelSelection}
         prompt={draftMessage}
         surfaceColor={composerPanel}
-        iconOnly={!compactEditor.isExpanded}
+        iconOnly={false}
         onPress={openSettings}
       />
     </View>

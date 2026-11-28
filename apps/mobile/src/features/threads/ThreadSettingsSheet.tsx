@@ -789,34 +789,34 @@ function modelSheetSurface(isDarkMode: boolean, useNativeGlass = NATIVE_LIQUID_G
   if (useNativeGlass) {
     return isDarkMode
       ? {
-          canvas: "transparent",
-          card: "rgba(30,30,36,0.48)",
-          cardBorder: "rgba(255,255,255,0.14)",
-          tabTrack: "rgba(255,255,255,0.08)",
-          tabTrackBorder: "rgba(255,255,255,0.14)",
-          activeTab: "rgba(255,255,255,0.18)",
-          activeTabBorder: "rgba(255,255,255,0.22)",
-          actionBtn: "rgba(255,255,255,0.10)",
-          selectedRow: "rgba(255,255,255,0.13)",
-          dragRow: "rgba(44,44,52,0.92)",
-          divider: "rgba(255,255,255,0.11)",
-          pill: "rgba(255,255,255,0.11)",
-          speedActive: "rgba(255,255,255,0.22)",
+          canvas: "rgba(15,15,20,0.68)",
+          card: "rgba(30,30,36,0.56)",
+          cardBorder: "rgba(255,255,255,0.16)",
+          tabTrack: "rgba(255,255,255,0.10)",
+          tabTrackBorder: "rgba(255,255,255,0.16)",
+          activeTab: "rgba(255,255,255,0.22)",
+          activeTabBorder: "rgba(255,255,255,0.26)",
+          actionBtn: "rgba(255,255,255,0.12)",
+          selectedRow: "rgba(255,255,255,0.14)",
+          dragRow: "rgba(44,44,52,0.94)",
+          divider: "rgba(255,255,255,0.13)",
+          pill: "rgba(255,255,255,0.15)",
+          speedActive: "rgba(255,255,255,0.26)",
         }
       : {
-          canvas: "transparent",
-          card: "rgba(255,255,255,0.56)",
-          cardBorder: "rgba(255,255,255,0.78)",
-          tabTrack: "rgba(255,255,255,0.46)",
-          tabTrackBorder: "rgba(255,255,255,0.72)",
-          activeTab: "rgba(255,255,255,0.90)",
-          activeTabBorder: "rgba(255,255,255,0.96)",
-          actionBtn: "rgba(255,255,255,0.56)",
-          selectedRow: "rgba(24,24,27,0.075)",
-          dragRow: "rgba(255,255,255,0.96)",
-          divider: "rgba(0,0,0,0.08)",
-          pill: "rgba(24,24,27,0.065)",
-          speedActive: "rgba(255,255,255,0.92)",
+          canvas: "rgba(248,248,251,0.80)",
+          card: "rgba(255,255,255,0.68)",
+          cardBorder: "rgba(255,255,255,0.84)",
+          tabTrack: "rgba(255,255,255,0.54)",
+          tabTrackBorder: "rgba(255,255,255,0.78)",
+          activeTab: "rgba(255,255,255,0.94)",
+          activeTabBorder: "rgba(255,255,255,0.98)",
+          actionBtn: "rgba(255,255,255,0.64)",
+          selectedRow: "rgba(24,24,27,0.08)",
+          dragRow: "rgba(255,255,255,0.98)",
+          divider: "rgba(0,0,0,0.09)",
+          pill: "rgba(24,24,27,0.085)",
+          speedActive: "rgba(255,255,255,0.96)",
         };
   }
   return isDarkMode
@@ -905,7 +905,7 @@ function ThreadSettingsTopBar(props: {
     }
   };
 
-  const topPadding = Platform.OS === "ios" ? 16 : insets.top + 8;
+  const topPadding = Platform.OS === "ios" ? 20 : insets.top + 8;
   const surface = modelSheetSurface(isDarkMode);
   const tabsScrollRef = useRef<ScrollViewInstance>(null);
   const tabLayoutsRef = useRef(new Map<string, { readonly x: number; readonly width: number }>());
@@ -921,7 +921,7 @@ function ThreadSettingsTopBar(props: {
   if (showSearch) {
     return (
       <View
-        className="px-4 pb-2.5"
+        className="px-[22px] pb-2.5"
         style={{
           paddingTop: topPadding,
           borderBottomWidth: 0.5,
@@ -989,7 +989,7 @@ function ThreadSettingsTopBar(props: {
 
   return (
     <View
-      className="px-4 pb-2"
+      className="px-[22px] pb-2.5"
       style={{
         paddingTop: topPadding,
         borderBottomWidth: 0.5,
@@ -997,7 +997,7 @@ function ThreadSettingsTopBar(props: {
       }}
     >
       {/* Row 1: Aligned Title + Bare Action Icons (exact 34pt row height) */}
-      <View className="mb-2 h-[34px] flex-row items-center justify-between gap-2">
+      <View className="mb-2.5 h-[34px] flex-row items-center justify-between gap-2">
         <Text className="text-[17px] leading-[22px] font-t3-bold text-foreground" numberOfLines={1}>
           {gt("Choose model")}
         </Text>
@@ -1016,7 +1016,7 @@ function ThreadSettingsTopBar(props: {
               name="magnifyingglass"
               size={16}
               tintColorClassName="accent-foreground"
-              style={{ opacity: 0.72 }}
+              style={{ opacity: 0.88 }}
               type="monochrome"
             />
           </Pressable>
@@ -1033,7 +1033,7 @@ function ThreadSettingsTopBar(props: {
                   name="ellipsis"
                   size={16}
                   tintColorClassName="accent-foreground"
-                  style={{ opacity: 0.72 }}
+                  style={{ opacity: 0.88 }}
                   type="monochrome"
                 />
               </Pressable>
@@ -1052,7 +1052,7 @@ function ThreadSettingsTopBar(props: {
                 name="xmark"
                 size={16}
                 tintColorClassName="accent-foreground"
-                style={{ opacity: 0.72 }}
+                style={{ opacity: 0.88 }}
                 type="monochrome"
               />
             </Pressable>
@@ -1100,7 +1100,7 @@ function ThreadSettingsTopBar(props: {
             size={15}
             tintColor={favoritesActive ? "#f59e0b" : undefined}
             tintColorClassName={favoritesActive ? undefined : "accent-foreground"}
-            style={favoritesActive ? undefined : { opacity: 0.62 }}
+            style={favoritesActive ? undefined : { opacity: 0.78 }}
             type="monochrome"
           />
           {favoritesActive ? (
@@ -1351,14 +1351,14 @@ function ThreadSettingsThumbDeck() {
   const surface = modelSheetSurface(isDarkMode);
   const bottomInset =
     Platform.OS === "ios"
-      ? Math.max(12, Math.min(insets.bottom > 16 ? insets.bottom - 12 : insets.bottom, 18))
-      : Math.max(insets.bottom, 12);
+      ? Math.max(18, Math.min(insets.bottom > 16 ? insets.bottom - 6 : insets.bottom + 6, 26))
+      : Math.max(insets.bottom, 14);
 
   return (
     <View
-      className="px-4 pt-2.5"
+      className="px-[22px] pt-3"
       style={{
-        backgroundColor: surface.canvas,
+        backgroundColor: "transparent",
         paddingBottom: bottomInset,
         borderTopWidth: 0.5,
         borderTopColor: surface.divider,
@@ -1367,11 +1367,11 @@ function ThreadSettingsThumbDeck() {
       <ChatGptSharingStatus provider={selectedProvider} />
 
       {heading ? (
-        <View className="mb-0.5 flex-row items-center justify-between gap-2">
+        <View className="mb-1 flex-row items-center justify-between gap-2">
           <View className="flex-row items-baseline gap-1.5">
-            <Text className="text-[12px] font-t3-semibold text-foreground/70">{heading}</Text>
+            <Text className="text-[12.5px] font-t3-semibold text-foreground/90">{heading}</Text>
             {hasSpeed && reasoningChoices.length > 1 ? (
-              <Text className="text-[11px] font-t3-medium tabular-nums text-foreground-muted">
+              <Text className="text-[11.5px] font-t3-medium tabular-nums text-foreground/72">
                 {`${reasoningIndex + 1} / ${reasoningChoices.length}`}
               </Text>
             ) : null}
@@ -1383,7 +1383,7 @@ function ThreadSettingsThumbDeck() {
               isDarkMode={isDarkMode}
             />
           ) : reasoningChoices.length > 1 ? (
-            <Text className="text-[11.5px] font-t3-medium tabular-nums text-foreground-muted">
+            <Text className="text-[12px] font-t3-medium tabular-nums text-foreground/74">
               {activeReasoningLabel
                 ? `${activeReasoningLabel} · ${reasoningIndex + 1} / ${reasoningChoices.length}`
                 : `${reasoningIndex + 1} / ${reasoningChoices.length}`}
@@ -1428,7 +1428,7 @@ function ThreadSettingsThumbDeck() {
       ) : null}
 
       {/* Unified bottom row: extra model options (e.g. Cyber Access) on left, Runtime Permissions on right */}
-      <View className="flex-row items-center justify-between gap-2 pt-0.5">
+      <View className="flex-row items-center justify-between gap-2 pt-1.5">
         {others.length > 0 ? (
           <ScrollView
             horizontal
@@ -1448,15 +1448,15 @@ function ThreadSettingsThumbDeck() {
                       void Haptics.selectionAsync();
                       session.applyOptionChange(control.descriptor.id, !checked);
                     }}
-                    className="h-[28px] flex-row items-center gap-1.5 rounded-full px-2.5 active:opacity-75"
+                    className="h-[30px] flex-row items-center gap-1.5 rounded-full px-3 active:opacity-75"
                     style={{
                       backgroundColor: checked ? surface.activeTab : surface.pill,
                     }}
                   >
-                    <Text className="text-[11.5px] font-t3-medium text-foreground-muted">
+                    <Text className="text-[12px] font-t3-medium text-foreground/78">
                       {control.descriptor.label}
                     </Text>
-                    <Text className="text-[11.5px] font-t3-semibold text-foreground">
+                    <Text className="text-[12px] font-t3-semibold text-foreground">
                       {checked
                         ? gt("On", { $context: "option state" })
                         : gt("Off", { $context: "option state" })}
@@ -1496,17 +1496,17 @@ function ThreadSettingsThumbDeck() {
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel={`${control.descriptor.label}: ${currentLabel}`}
-                    className="h-[28px] flex-row items-center gap-1.5 rounded-full px-2.5 active:opacity-75"
+                    className="h-[30px] flex-row items-center gap-1.5 rounded-full px-3 active:opacity-75"
                     style={{ backgroundColor: surface.pill }}
                   >
                     <Text
-                      className="text-[11.5px] font-t3-medium text-foreground-muted"
+                      className="text-[12px] font-t3-medium text-foreground/78"
                       numberOfLines={1}
                     >
                       {control.descriptor.label}
                     </Text>
                     <Text
-                      className="text-[11.5px] font-t3-semibold text-foreground"
+                      className="text-[12px] font-t3-semibold text-foreground"
                       numberOfLines={1}
                     >
                       {currentLabel}
@@ -1514,7 +1514,8 @@ function ThreadSettingsThumbDeck() {
                     <SymbolView
                       name="chevron.down"
                       size={10}
-                      tintColorClassName="accent-foreground-muted"
+                      tintColorClassName="accent-foreground"
+                      style={{ opacity: 0.78 }}
                       type="monochrome"
                     />
                   </Pressable>
@@ -1527,10 +1528,11 @@ function ThreadSettingsThumbDeck() {
             <SymbolView
               name="shield"
               size={13}
-              tintColorClassName="accent-foreground-muted"
+              tintColorClassName="accent-foreground"
+              style={{ opacity: 0.8 }}
               type="monochrome"
             />
-            <Text className="text-[12px] font-t3-medium text-foreground-muted" numberOfLines={1}>
+            <Text className="text-[12.5px] font-t3-medium text-foreground/82" numberOfLines={1}>
               {gt("Runtime", { $context: "agent permission mode setting" })}
             </Text>
           </View>
@@ -1551,24 +1553,26 @@ function ThreadSettingsThumbDeck() {
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={gt("Runtime: {mode}", { mode: currentRuntimeLabel })}
-            className="h-[28px] shrink-0 flex-row items-center gap-1.5 rounded-full px-2.5 active:opacity-70"
+            className="h-[30px] shrink-0 flex-row items-center gap-1.5 rounded-full px-3 active:opacity-70"
             style={{ backgroundColor: surface.pill }}
           >
             {others.length > 0 ? (
               <SymbolView
                 name="shield"
                 size={12}
-                tintColorClassName="accent-foreground-muted"
+                tintColorClassName="accent-foreground"
+                style={{ opacity: 0.8 }}
                 type="monochrome"
               />
             ) : null}
-            <Text className="text-[12px] font-t3-semibold text-foreground" numberOfLines={1}>
+            <Text className="text-[12.5px] font-t3-semibold text-foreground" numberOfLines={1}>
               {currentRuntimeLabel}
             </Text>
             <SymbolView
               name="chevron.down"
               size={10}
-              tintColorClassName="accent-foreground-muted"
+              tintColorClassName="accent-foreground"
+              style={{ opacity: 0.78 }}
               type="monochrome"
             />
           </Pressable>
@@ -1819,7 +1823,7 @@ function ThreadSettingsSheetBody(props: { readonly onClose: () => void }) {
       />
 
       {isSearching ? (
-        <View className="min-h-0 flex-1 px-3">{renderCardList(session.activeTab)}</View>
+        <View className="min-h-0 flex-1 px-[18px]">{renderCardList(session.activeTab)}</View>
       ) : (
         <View
           className="min-h-0 flex-1"
@@ -1844,13 +1848,13 @@ function ThreadSettingsSheetBody(props: { readonly onClose: () => void }) {
               className="flex-1"
             >
               {tabKeys.map((tab) => (
-                <View key={tab} className="h-full px-3" style={{ width: pagerWidth }}>
+                <View key={tab} className="h-full px-[18px]" style={{ width: pagerWidth }}>
                   {renderCardList(tab)}
                 </View>
               ))}
             </ScrollView>
           ) : (
-            <View className="min-h-0 flex-1 px-3">{renderCardList(session.activeTab)}</View>
+            <View className="min-h-0 flex-1 px-[18px]">{renderCardList(session.activeTab)}</View>
           )}
         </View>
       )}
