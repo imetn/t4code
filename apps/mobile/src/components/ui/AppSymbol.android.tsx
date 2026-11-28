@@ -281,6 +281,7 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   terminal: IconTerminal2,
   "text.alignleft": IconAlignLeft,
   "text.bubble": IconMessage,
+  "quote.bubble": IconMessagePlus,
   "questionmark.bubble": IconMessageCircleQuestion,
   shield: IconLock,
   "exclamationmark.shield": IconShieldQuestion,

@@ -47,6 +47,8 @@ export interface FilePreviewModalProps {
   readonly source: FilePreviewSource | null;
   readonly onRequestClose: () => void;
   readonly onOpenError?: (error: unknown) => void;
+  /** Set false when previewing images already attached to the composer. */
+  readonly quotable?: boolean;
 }
 
 /** A platform's viewer for one presentation, once FilePreviewSession has resolved it. */
@@ -54,6 +56,7 @@ export interface FilePreviewViewerProps {
   readonly source: ResolvedFilePreviewSource;
   readonly onRequestClose: () => void;
   readonly onOpenError?: (error: unknown) => void;
+  readonly quotable?: boolean;
   /** Called once the viewer hands its file to a native presentation, with a check for its close. */
   readonly onPresent?: (isFinished: () => boolean) => void;
 }

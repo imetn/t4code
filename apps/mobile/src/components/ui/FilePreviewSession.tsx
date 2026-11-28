@@ -106,6 +106,7 @@ function ResolvedFilePreview(
     readonly source: FilePreviewSource;
     readonly onRequestClose: () => void;
     readonly onOpenError?: (error: unknown) => void;
+    readonly quotable?: boolean;
     readonly onPresent: (isFinished: () => boolean) => void;
   },
 ) {
@@ -174,6 +175,7 @@ function ResolvedFilePreview(
         source={{ kind: "image", images, selectedIndex }}
         onRequestClose={props.onRequestClose}
         onPresent={props.onPresent}
+        {...(props.quotable !== undefined ? { quotable: props.quotable } : {})}
         {...(props.onOpenError ? { onOpenError: props.onOpenError } : {})}
       />
     );
@@ -273,6 +275,7 @@ export function FilePreviewSession(props: FilePreviewModalProps & FilePreviewSes
       progressiveGallery={props.progressiveGallery}
       Viewer={props.Viewer}
       onPresent={onPresent}
+      {...(props.quotable !== undefined ? { quotable: props.quotable } : {})}
       {...(props.onOpenError ? { onOpenError: props.onOpenError } : {})}
     />
   );

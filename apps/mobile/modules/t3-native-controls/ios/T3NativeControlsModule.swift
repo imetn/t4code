@@ -16,7 +16,7 @@ public final class T3NativeControlsModule: Module {
   private var finishedFilePreview: String?
 
   public func definition() -> ModuleDefinition {
-    Events("videoPlaybackChange")
+    Events("videoPlaybackChange", "imageViewerQuote")
     Constants {
       if #available(iOS 26.0, *) {
         return [
@@ -93,7 +93,7 @@ public final class T3NativeControlsModule: Module {
     }.runOnQueue(.main)
 
     // A nil URL is still resolving in JS and arrives later through updateFile.
-    AsyncFunction("presentFiles") { (urls: [URL?], titles: [String], selectedIndex: Int, sourceIdentifiers: [String], identifier: String, promise: Promise) in
+    AsyncFunction("presentFiles") { (urls: [URL?], titles: [String], selectedIndex: Int, sourceIdentifiers: [String], identifier: String, canQuote: Bool?, quoteTitle: String?, promise: Promise) in
       guard !urls.isEmpty, urls.count == titles.count, urls.count == sourceIdentifiers.count,
         urls.indices.contains(selectedIndex)
       else {
@@ -105,7 +105,20 @@ public final class T3NativeControlsModule: Module {
         let presenter = self.appContext?.utilities?.currentViewController()
       else { throw URLError(.cannotLoadFromNetwork) }
       let viewer = T3NativeImageViewer(
-        identifier: identifier, sources: self.presentationSources, sourceIdentifiers: sourceIdentifiers,
+        identifier: identifier,
+        sources: self.presentationSources,
+        sourceIdentifiers: sourceIdentifiers,
+        canQuote: canQuote ?? false,
+        quoteTitle: quoteTitle ?? "Quote image",
+        onQuote: { [weak self] index, fileURL in
+          let title = titles.indices.contains(index) ? titles[index] : fileURL.lastPathComponent
+          self?.sendEvent("imageViewerQuote", [
+            "identifier": identifier,
+            "index": index,
+            "uri": fileURL.absoluteString,
+            "name": title,
+          ])
+        },
         onFinish: { [weak self] in self?.setFinishedFilePreview(identifier) },
         completion: { [weak self] error in
           if self?.imageViewer?.identifier == identifier { self?.imageViewer = nil }

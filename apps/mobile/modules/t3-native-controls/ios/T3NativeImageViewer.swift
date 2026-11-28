@@ -8,6 +8,9 @@ final class T3NativeImageViewer: NSObject {
   let identifier: String
   private let completion: (Error?) -> Void
   private let onFinish: () -> Void
+  private let onQuote: ((Int, URL) -> Void)?
+  private let canQuote: Bool
+  private let quoteTitle: String
   private weak var sources: T3PresentationSources?
   private let sourceIdentifiers: [String]
   private var titles: [String] = []
@@ -26,10 +29,15 @@ final class T3NativeImageViewer: NSObject {
   private var finished = false
 
   init(identifier: String, sources: T3PresentationSources, sourceIdentifiers: [String],
+       canQuote: Bool = false, quoteTitle: String = "Quote image",
+       onQuote: ((Int, URL) -> Void)? = nil,
        onFinish: @escaping () -> Void, completion: @escaping (Error?) -> Void) {
     self.identifier = identifier
     self.sources = sources
     self.sourceIdentifiers = sourceIdentifiers
+    self.canQuote = canQuote
+    self.quoteTitle = quoteTitle
+    self.onQuote = onQuote
     self.onFinish = onFinish
     self.completion = completion
     super.init()
@@ -40,10 +48,16 @@ final class T3NativeImageViewer: NSObject {
     self.titles = titles
     files = Array(repeating: nil, count: urls.count)
     currentIndex = selectedIndex
-    let viewer = T3ImageViewerController(titles: titles, selectedIndex: selectedIndex)
+    let viewer = T3ImageViewerController(
+      titles: titles,
+      selectedIndex: selectedIndex,
+      canQuote: canQuote,
+      quoteTitle: quoteTitle
+    )
     viewer.sourceView = { [weak self] index in self?.sourceView(index) }
     viewer.fileForPage = { [weak self] index in self?.file(at: index) }
     viewer.onRetry = { [weak self] index in self?.load(index, retry: true) }
+    viewer.onQuote = { [weak self] index, url in self?.onQuote?(index, url) }
     viewer.onDismissed = { [weak self] in self?.finish() }
     viewer.onPageChange = { [weak self] index in self?.show(page: index) }
     controller = viewer
@@ -475,10 +489,13 @@ final class T3ImageViewerController: UIViewController, UIScrollViewDelegate, UIG
   var sourceView: (Int) -> UIView? = { _ in nil }
   var fileForPage: (Int) -> URL? = { _ in nil }
   var onRetry: (Int) -> Void = { _ in }
+  var onQuote: (Int, URL) -> Void = { _, _ in }
   var onPageChange: (Int) -> Void = { _ in }
   var onDismissed: () -> Void = {}
 
   private let titles: [String]
+  private let canQuote: Bool
+  private let quoteTitle: String
   private var currentIndex: Int
   private let backdrop = UIView()
   private let pager = UIScrollView()
@@ -496,6 +513,9 @@ final class T3ImageViewerController: UIViewController, UIScrollViewDelegate, UIG
   private var revealWaiters: [CheckedContinuation<Void, Never>] = []
   private var laidOutSize = CGSize.zero
   private var isLayingOut = false
+  private lazy var quoteItem = UIBarButtonItem(
+    title: quoteTitle, image: UIImage(systemName: "quote.bubble"),
+    primaryAction: UIAction { [weak self] _ in self?.quote() })
   private lazy var saveItem = UIBarButtonItem(
     title: "Save to Photos", image: UIImage(systemName: "square.and.arrow.down"),
     primaryAction: UIAction { [weak self] _ in self?.save() })
@@ -503,8 +523,10 @@ final class T3ImageViewerController: UIViewController, UIScrollViewDelegate, UIG
     systemItem: .action, primaryAction: UIAction { [weak self] _ in self?.share() })
   private static let pageGap: CGFloat = 20
 
-  init(titles: [String], selectedIndex: Int) {
+  init(titles: [String], selectedIndex: Int, canQuote: Bool = false, quoteTitle: String = "Quote image") {
     self.titles = titles
+    self.canQuote = canQuote
+    self.quoteTitle = quoteTitle
     currentIndex = selectedIndex
     super.init(nibName: nil, bundle: nil)
   }
@@ -572,7 +594,9 @@ final class T3ImageViewerController: UIViewController, UIScrollViewDelegate, UIG
       titles.alignment = .center
       navigationItem.titleView = titles
     }
-    toolbarItems = [.flexibleSpace(), saveItem, shareItem]
+    toolbarItems = canQuote
+      ? [.flexibleSpace(), quoteItem, saveItem, shareItem]
+      : [.flexibleSpace(), saveItem, shareItem]
     setContentScrollView(pager, for: .top)
     setContentScrollView(pager, for: .bottom)
   }
@@ -632,9 +656,10 @@ final class T3ImageViewerController: UIViewController, UIScrollViewDelegate, UIG
     updateActions()
   }
 
-  /// Save and Share act on the original, so they wait until the current page shows it.
+  /// Quote, Save and Share act on the original, so they wait until the current page shows it.
   private func updateActions() {
     let ready = pages[safe: currentIndex]?.isFull == true
+    quoteItem.isEnabled = ready
     saveItem.isEnabled = ready
     shareItem.isEnabled = ready
   }
@@ -847,7 +872,42 @@ final class T3ImageViewerController: UIViewController, UIScrollViewDelegate, UIG
     pager.setContentOffset(CGPoint(x: CGFloat(index) * pager.bounds.width, y: 0), animated: !reduceMotion)
   }
 
-  // MARK: Share, keyboard and accessibility
+  // MARK: Quote, share, keyboard and accessibility
+
+  private func quote() {
+    guard canQuote, !closing else { return }
+    let index = currentIndex
+    let page = pages[index]
+    let tempDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("t3-quote-\(UUID().uuidString)")
+    var quotedURL: URL?
+    if let file = fileForPage(index), file.pathExtension.lowercased() != "svg" {
+      let copy = tempDir.appendingPathComponent(file.lastPathComponent)
+      do {
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        try FileManager.default.copyItem(at: file, to: copy)
+        quotedURL = copy
+      } catch {
+        try? FileManager.default.removeItem(at: tempDir)
+      }
+    }
+    if quotedURL == nil, page.isFull, let image = page.image, let data = image.pngData() {
+      let baseName = ((titles[safe: index] ?? "image") as NSString).deletingPathExtension
+      let safeName = (baseName.isEmpty ? "image" : baseName) + ".png"
+      let dest = tempDir.appendingPathComponent(safeName)
+      do {
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        try data.write(to: dest, options: .atomic)
+        quotedURL = dest
+      } catch {
+        try? FileManager.default.removeItem(at: tempDir)
+      }
+    }
+    guard let quotedURL else { return }
+    UINotificationFeedbackGenerator().notificationOccurred(.success)
+    onQuote(index, quotedURL)
+    close()
+  }
 
   private func save() {
     let image = pages[currentIndex].isFull ? pages[currentIndex].image : nil

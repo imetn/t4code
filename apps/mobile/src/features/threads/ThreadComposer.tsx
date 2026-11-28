@@ -1149,7 +1149,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
       </Animated.View>
 
       <VideoPreviewModal source={previewVideo} onRequestClose={closePreview} />
-      <FilePreviewModal source={previewFile} onRequestClose={closePreview} />
+      <FilePreviewModal source={previewFile} onRequestClose={closePreview} quotable={false} />
     </Animated.View>
   );
 };

@@ -1,9 +1,11 @@
+import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
 import * as Dialog from "./Dialog";
 import { requireNativeModule } from "expo";
 import { msg, useGT } from "gt-react-native";
-import { useEffect, useEffectEvent, useId, useRef, useState } from "react";
+import { useContext, useEffect, useEffectEvent, useId, useRef, useState } from "react";
 
 import { m } from "../../i18n/messages";
+import { QuoteMediaContext } from "../../state/mediaActions";
 import type {
   FilePreviewImage,
   FilePreviewModalProps,
@@ -30,11 +32,32 @@ const NativeControls = requireNativeModule<{
     selectedIndex: number,
     sourceIdentifiers: readonly string[],
     identifier: string,
+    canQuote?: boolean,
+    quoteTitle?: string,
   ): Promise<void>;
   updateFile(identifier: string, index: number, uri: string | null): Promise<void>;
   dismissFile(identifier: string): Promise<void>;
   isFilePreviewFinished(identifier: string): boolean;
+  addListener(
+    event: "imageViewerQuote",
+    listener: (event: { identifier: string; index: number; uri: string; name: string }) => void,
+  ): { remove(): void };
 }>("T3NativeControls");
+
+async function cleanupTempQuoteFile(uri: string) {
+  try {
+    const { File } = await import("expo-file-system");
+    const file = new File(uri);
+    const parent = file.parentDirectory;
+    if (parent.name.startsWith("t3-quote-")) {
+      parent.delete();
+    } else if (file.exists) {
+      file.delete();
+    }
+  } catch {
+    // Best-effort cleanup of the native quote copy.
+  }
+}
 
 // Null tells the viewer an image failed; undefined means its URL has not arrived yet.
 const nativeUri = (image: FilePreviewImage) => (image.failed ? null : image.uri);
@@ -42,8 +65,21 @@ const nativeUri = (image: FilePreviewImage) => (image.failed ? null : image.uri)
 function NativeFilePreview(props: FilePreviewViewerProps) {
   const gt = useGT();
   const identifier = useId();
+  const onQuoteImage = useContext(QuoteMediaContext);
   // Later URLs reach the native presentation through updateFile instead of presenting again.
   const [presented] = useState(props.source);
+  const quoteTitle = gt("Quote image", {
+    $context: "verb, context menu item that quotes an image in the composer",
+  });
+  // Freeze quote availability at opening so a brief reconnect never dismisses the viewer.
+  const [initialQuote] = useState(() => ({
+    canQuote:
+      presented.kind === "image" &&
+      onQuoteImage !== null &&
+      props.quotable !== false &&
+      presented.images.some((image) => image.actionsSource?.quotable !== false),
+    title: quoteTitle,
+  }));
   const delivered = useRef<(string | null | undefined)[]>([]);
   const onRequestClose = useEffectEvent(props.onRequestClose);
   const onPresent = useEffectEvent((isFinished: () => boolean) => props.onPresent?.(isFinished));
@@ -55,10 +91,33 @@ function NativeFilePreview(props: FilePreviewViewerProps) {
         gt("The file could not be loaded. Please try again."),
       );
   });
+  const handleNativeQuote = useEffectEvent((uri: string, name: string) => {
+    if (!onQuoteImage) {
+      void cleanupTempQuoteFile(uri);
+      return;
+    }
+    void onQuoteImage({ uri, name })
+      .catch((error: unknown) => {
+        Dialog.alert(
+          gt("Could not quote image"),
+          errorDisplayMessage(error, m) ?? gt("Try again."),
+        );
+      })
+      .finally(() => {
+        void cleanupTempQuoteFile(uri);
+      });
+  });
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- presents the native file preview and dismisses it on cleanup
   useEffect(() => {
     let canceled = false;
+    const quoteSubscription =
+      presented.kind === "image" && initialQuote.canQuote
+        ? NativeControls.addListener("imageViewerQuote", (event) => {
+            if (event.identifier !== identifier) return;
+            handleNativeQuote(event.uri, event.name);
+          })
+        : null;
     let presentation: Promise<void>;
     // Images hand over before every URL resolves; other files must download first so Quick Look can refuse them.
     if (presented.kind === "image") {
@@ -72,6 +131,8 @@ function NativeFilePreview(props: FilePreviewViewerProps) {
         selectedIndex,
         images.map((image) => image.sourceIdentifier ?? ""),
         identifier,
+        initialQuote.canQuote,
+        initialQuote.title,
       );
     } else {
       const { uri, name, sourceIdentifier } = presented;
@@ -92,9 +153,10 @@ function NativeFilePreview(props: FilePreviewViewerProps) {
       });
     return () => {
       canceled = true;
+      quoteSubscription?.remove();
       void NativeControls.dismissFile(identifier).catch(() => undefined);
     };
-  }, [presented, identifier]);
+  }, [identifier, initialQuote, presented]);
 
   const images = props.source.kind === "image" ? props.source.images : undefined;
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- hands image URLs that resolve after opening to the native viewer
