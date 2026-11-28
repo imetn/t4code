@@ -8030,7 +8030,7 @@
   "f818040c75078d53": "Redefinir a nomenclatura de branches para o padrão",
   "2c82cf0bf586ddd8": "Nomes de branch dos worktrees",
   "bff8a0d14cb10f17": "Prefixo do branch",
-  "4e33e869882b8ef3": "Por exemplo, t3 ou t3/ gera t3/add-search. Deixe vazio para não usar prefixo.",
+  "423ce50a52755e23": "Por exemplo, t4 ou t4/ gera t4/add-search. Deixe vazio para não usar prefixo.",
   "fc32aa5738bccb9a": "Redefinir o prefixo de branch para o padrão",
   "452b86cb8c4e0432": "Sem prefixo",
   "abcdead6f7529103": "Instruções para nomear branches",

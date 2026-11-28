@@ -8031,7 +8031,7 @@
   "f818040c75078d53": "Réinitialiser le nommage des branches à la valeur par défaut",
   "2c82cf0bf586ddd8": "Nommage des branches de worktree",
   "bff8a0d14cb10f17": "Préfixe de branche",
-  "4e33e869882b8ef3": "Par exemple, t3 ou t3/ donne t3/add-search. Laissez vide pour ne pas utiliser de préfixe.",
+  "423ce50a52755e23": "Par exemple, t4 ou t4/ donne t4/add-search. Laissez vide pour ne pas utiliser de préfixe.",
   "fc32aa5738bccb9a": "Réinitialiser le préfixe des branches à la valeur par défaut",
   "452b86cb8c4e0432": "Aucun préfixe",
   "abcdead6f7529103": "Instructions de nommage des branches",

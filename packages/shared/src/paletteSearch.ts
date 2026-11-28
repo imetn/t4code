@@ -1103,18 +1103,18 @@ export interface SearchMatchHint {
   readonly ranges: ReadonlyArray<SearchRange>;
 }
 
-// Most threads' branches start with the app's own worktree prefix ("t3/", and
-// "t3code/" before it, "t3-<hex>" when a "t3" branch blocks nested refs), so
-// "t3 connect" would match nearly every thread.
-// Only before more text, so typing "t3/" does not empty the list for a keystroke.
+// Most threads' branches start with the app's own worktree prefix ("t4/", plus
+// legacy "t3/" and "t3code/", and flat "t4-<hex>" / "t3-<hex>" when a plain branch
+// blocks nested refs), so searching "t4 connect" or "t3 connect" won't match every thread.
+// Only before more text, so typing "t4/" does not empty the list for a keystroke.
 const WORKTREE_BRANCH_PREFIX_PATTERN = new RegExp(
-  `^(?:(?:${WORKTREE_BRANCH_PREFIX}|t3code)/(?=\\S)|${WORKTREE_BRANCH_PREFIX}-(?=[0-9a-f]{8}$))`,
+  `^(?:(?:${WORKTREE_BRANCH_PREFIX}|t3|t3code)/(?=\\S)|(?:${WORKTREE_BRANCH_PREFIX}|t3)-(?=[0-9a-f]{8}$))`,
 );
 
 // The flat prefix anywhere in a query, while its hex is still being typed, so
-// "t3-abcd" and "connect t3-abcd1234" still reach the stripped branch field.
+// "t4-abcd" and "connect t4-abcd1234" (and legacy t3-*) still reach the stripped branch field.
 const FLAT_BRANCH_QUERY_PREFIX_PATTERN = new RegExp(
-  `(^| )${WORKTREE_BRANCH_PREFIX}-(?=[0-9a-f]{1,8}(?: |$))`,
+  `(^| )(?:${WORKTREE_BRANCH_PREFIX}|t3)-(?=[0-9a-f]{1,8}(?: |$))`,
   "g",
 );
 

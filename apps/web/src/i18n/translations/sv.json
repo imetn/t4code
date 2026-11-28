@@ -8036,7 +8036,7 @@
   "f818040c75078d53": "Återställ namngivning av grenar till standard",
   "2c82cf0bf586ddd8": "Namngivning av worktree-grenar",
   "bff8a0d14cb10f17": "Grenprefix",
-  "4e33e869882b8ef3": "Till exempel ger t3 eller t3/ resultatet t3/add-search. Lämna tomt för inget prefix.",
+  "423ce50a52755e23": "Till exempel ger t4 eller t4/ resultatet t4/add-search. Lämna tomt för inget prefix.",
   "fc32aa5738bccb9a": "Återställ grenprefix till standard",
   "452b86cb8c4e0432": "Inget prefix",
   "abcdead6f7529103": "Instruktioner för grennamngivning",

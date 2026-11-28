@@ -8037,7 +8037,7 @@
   "f818040c75078d53": "Reset branch naming to default",
   "2c82cf0bf586ddd8": "Worktree branch naming",
   "bff8a0d14cb10f17": "Branch prefix",
-  "4e33e869882b8ef3": "For example, t3 or t3/ produces t3/add-search. Leave empty for no prefix.",
+  "423ce50a52755e23": "For example, t4 or t4/ produces t4/add-search. Leave empty for no prefix.",
   "fc32aa5738bccb9a": "Reset branch prefix to default",
   "452b86cb8c4e0432": "No prefix",
   "abcdead6f7529103": "Branch naming instructions",
