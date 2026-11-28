@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  computeDeckCardPose,
   cycleDeckIndex,
+  mountedDeckItemIndices,
   resolveDeckDimensions,
   resolveExpandedPhotoGrid,
   visibleDeckLayers,
@@ -61,5 +63,37 @@ describe("stacked-photo-deck", () => {
     expect(resolveExpandedPhotoGrid(4)).toEqual({ mode: "two-col", rowHeight: 144 });
     expect(resolveExpandedPhotoGrid(5)).toEqual({ mode: "three-col", rowHeight: 102 });
     expect(resolveExpandedPhotoGrid(9)).toEqual({ mode: "three-col", rowHeight: 102 });
+  });
+
+  it("mounts deduplicated circular shuffle slots including prev and incoming back cards", () => {
+    expect(mountedDeckItemIndices(0, 2)).toEqual([1, 0]);
+    expect(mountedDeckItemIndices(0, 3)).toEqual([2, 1, 0]);
+    expect(mountedDeckItemIndices(0, 7)).toEqual([6, 3, 2, 1, 0]);
+  });
+
+  it("tucks the swiped card behind the deck with full opacity and exact frame continuity on commit", () => {
+    for (const count of [2, 3, 7]) {
+      for (const dir of [-1, 1] as const) {
+        const delta = dir === -1 ? 1 : -1;
+        for (let itemIndex = 0; itemIndex < count; itemIndex += 1) {
+          const endPose = computeDeckCardPose(itemIndex, count, 1, dir, 180);
+          const nextForward = (itemIndex - delta + count) % count;
+          const nextRestPose = computeDeckCardPose(nextForward, count, 0, 0, 180);
+          expect(endPose).toEqual(nextRestPose);
+        }
+      }
+    }
+
+    // Left swipe: stays opaque on top during pull-out, then drops behind the next card past 0.5.
+    const pulled = computeDeckCardPose(0, 7, 0.5, -1, 180);
+    expect(pulled.opacity).toBe(1);
+    expect(pulled.zIndex).toBe(20);
+    expect(pulled.translateX).toBeLessThan(-100);
+
+    const tucking = computeDeckCardPose(0, 7, 0.6, -1, 180);
+    const nextFront = computeDeckCardPose(1, 7, 0.6, -1, 180);
+    expect(tucking.opacity).toBe(1);
+    expect(tucking.zIndex).toBeLessThan(nextFront.zIndex);
+    expect(tucking.translateX).toBeGreaterThan(pulled.translateX);
   });
 });

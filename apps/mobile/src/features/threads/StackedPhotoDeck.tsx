@@ -1,9 +1,10 @@
 import { GlassView } from "expo-glass-effect";
 import * as Haptics from "expo-haptics";
-import { useEffectEvent, useState, type ReactNode } from "react";
+import { useEffectEvent, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
+  Easing,
   Extrapolation,
   interpolate,
   runOnJS,
@@ -21,11 +22,10 @@ import { AppText as Text } from "../../components/ui/AppText";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import {
-  STACKED_DECK_PEEK_STEP,
-  cycleDeckIndex,
+  computeDeckCardPose,
+  mountedDeckItemIndices,
   resolveDeckDimensions,
   resolveExpandedPhotoGrid,
-  visibleDeckLayers,
 } from "./stacked-photo-deck";
 
 const DeckGlassPill = withUniwind(GlassView, {
@@ -33,50 +33,82 @@ const DeckGlassPill = withUniwind(GlassView, {
 });
 
 const CARD_RADIUS = 20;
-const SWIPE_DISTANCE_THRESHOLD = 46;
-const SWIPE_VELOCITY_THRESHOLD = 360;
+const SWIPE_DISTANCE_THRESHOLD = 38;
+const SWIPE_VELOCITY_THRESHOLD = 320;
+const TUCK_SPRING = {
+  damping: 23,
+  stiffness: 310,
+  mass: 0.8,
+} as const;
+const CANCEL_SPRING = {
+  damping: 22,
+  stiffness: 300,
+} as const;
 
 function StackedDeckCard(props: {
-  readonly layer: number;
+  readonly itemIndex: number;
+  readonly count: number;
+  readonly isFront: boolean;
   readonly cardWidth: number;
   readonly cardHeight: number;
-  readonly dragX: SharedValue<number>;
+  readonly activeIndexSV: SharedValue<number>;
+  readonly shuffleProgress: SharedValue<number>;
+  readonly shuffleDir: SharedValue<-1 | 0 | 1>;
   readonly isDarkMode: boolean;
   readonly counterLabel?: string;
   readonly children: ReactNode;
 }) {
-  const { layer, cardWidth, cardHeight, dragX, isDarkMode } = props;
+  const {
+    itemIndex,
+    count,
+    isFront,
+    cardWidth,
+    cardHeight,
+    activeIndexSV,
+    shuffleProgress,
+    shuffleDir,
+    isDarkMode,
+  } = props;
+
   const animatedStyle = useAnimatedStyle(() => {
-    if (layer === 0) {
-      const rotate = interpolate(dragX.value, [-160, 0, 160], [-6.5, 0, 6.5], Extrapolation.CLAMP);
-      const opacity = interpolate(
-        Math.abs(dragX.value),
-        [0, cardWidth * 0.95],
-        [1, 0.72],
-        Extrapolation.CLAMP,
-      );
-      return {
-        opacity,
-        transform: [{ translateX: dragX.value }, { rotateZ: `${rotate}deg` }],
-      };
-    }
-    const progress = interpolate(Math.abs(dragX.value), [0, 120], [0, 1], Extrapolation.CLAMP);
-    const effectiveLayer = Math.max(0, layer - progress);
-    const translateX = effectiveLayer * STACKED_DECK_PEEK_STEP;
-    const scale = 1 - effectiveLayer * 0.06;
-    const opacity = 1 - effectiveLayer * 0.14;
+    const active = activeIndexSV.value;
+    const forward = (((itemIndex - active) % count) + count) % count;
+    const pose = computeDeckCardPose(
+      forward,
+      count,
+      shuffleProgress.value,
+      shuffleDir.value,
+      cardWidth,
+    );
     return {
-      opacity,
-      transform: [{ translateX }, { scale }],
+      opacity: pose.opacity,
+      zIndex: pose.zIndex,
+      elevation: pose.zIndex,
+      transform: [
+        { translateX: pose.translateX },
+        { translateY: pose.translateY },
+        { scale: pose.scale },
+        { rotateZ: `${pose.rotateZ}deg` },
+      ],
     };
   });
 
+  const counterAnimatedStyle = useAnimatedStyle(() => {
+    const active = activeIndexSV.value;
+    const forward = (((itemIndex - active) % count) + count) % count;
+    const dir = shuffleDir.value;
+    const p = shuffleProgress.value;
+    const isVisualFront =
+      dir === 0 || p <= 0.5 ? forward === 0 : dir === -1 ? forward === 1 : forward === count - 1;
+    return { opacity: isVisualFront ? 1 : 0 };
+  });
+
   const borderColor = isDarkMode ? "rgba(255,255,255,0.14)" : "rgba(0,0,0,0.08)";
-  const shadowOpacity = isDarkMode ? (layer === 0 ? 0.34 : 0.22) : layer === 0 ? 0.14 : 0.08;
+  const shadowOpacity = isDarkMode ? (isFront ? 0.34 : 0.22) : isFront ? 0.14 : 0.08;
 
   return (
     <Animated.View
-      pointerEvents={layer === 0 ? "auto" : "none"}
+      pointerEvents={isFront ? "auto" : "none"}
       style={[
         {
           position: "absolute",
@@ -86,10 +118,9 @@ function StackedDeckCard(props: {
           height: cardHeight,
           borderRadius: CARD_RADIUS,
           shadowColor: "#000000",
-          shadowOffset: { width: 0, height: layer === 0 ? 4 : 2 },
+          shadowOffset: { width: 0, height: isFront ? 4 : 2 },
           shadowOpacity,
-          shadowRadius: layer === 0 ? 10 : 5,
-          elevation: Math.max(1, 4 - layer),
+          shadowRadius: isFront ? 10 : 5,
         },
         animatedStyle,
       ]}
@@ -104,10 +135,10 @@ function StackedDeckCard(props: {
       >
         {props.children}
         {props.counterLabel ? (
-          <View
+          <Animated.View
             pointerEvents="none"
             className="absolute bottom-2.5 right-2.5 rounded-full px-2 py-0.5"
-            style={{ backgroundColor: "rgba(0,0,0,0.52)" }}
+            style={[{ backgroundColor: "rgba(0,0,0,0.52)" }, counterAnimatedStyle]}
           >
             <Text
               className="font-t3-semibold tabular-nums"
@@ -115,7 +146,7 @@ function StackedDeckCard(props: {
             >
               {props.counterLabel}
             </Text>
-          </View>
+          </Animated.View>
         ) : null}
       </View>
     </Animated.View>
@@ -207,26 +238,6 @@ export function StackedPhotoDeck(props: {
       ? deckState.activeIndex
       : 0;
 
-  const dragX = useSharedValue(0);
-  const animating = useSharedValue(false);
-
-  const commitStep = useEffectEvent((delta: -1 | 1) => {
-    void Haptics.selectionAsync();
-    setDeckState((current) => {
-      const baseIndex =
-        current.messageId === props.messageId && current.activeIndex < props.count
-          ? current.activeIndex
-          : 0;
-      return {
-        messageId: props.messageId,
-        expanded: false,
-        activeIndex: cycleDeckIndex(baseIndex, props.count, delta),
-      };
-    });
-    dragX.value = 0;
-    animating.value = false;
-  });
-
   const activeAspectRatio =
     props.aspectRatios?.[activeIndex] ??
     props.aspectRatios?.[0] ??
@@ -236,45 +247,169 @@ export function StackedPhotoDeck(props: {
     props.count,
     activeAspectRatio,
   );
-  const exitDistance = 240;
+  const pullDistance = Math.round(cardWidth * 0.68);
 
-  const [panGesture] = useState(() =>
-    Gesture.Pan()
-      .activeOffsetX([-14, 14])
+  const activeIndexSV = useSharedValue(activeIndex);
+  const countSV = useSharedValue(props.count);
+  const pullDistanceSV = useSharedValue(pullDistance);
+  const shuffleProgress = useSharedValue(0);
+  const shuffleDir = useSharedValue<-1 | 0 | 1>(0);
+  const isCompleting = useSharedValue(false);
+  const gestureHandled = useSharedValue(false);
+
+  const lastMessageIdRef = useRef(props.messageId);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- syncs latest deck dimensions and resets UI-thread shuffle state when LegendList recycles this row for another message
+  useLayoutEffect(() => {
+    countSV.value = props.count;
+    pullDistanceSV.value = pullDistance;
+    if (lastMessageIdRef.current !== props.messageId) {
+      lastMessageIdRef.current = props.messageId;
+      activeIndexSV.value = 0;
+      shuffleProgress.value = 0;
+      shuffleDir.value = 0;
+      isCompleting.value = false;
+      gestureHandled.value = false;
+    }
+  }, [
+    activeIndexSV,
+    countSV,
+    gestureHandled,
+    isCompleting,
+    props.count,
+    props.messageId,
+    pullDistance,
+    pullDistanceSV,
+    shuffleDir,
+    shuffleProgress,
+  ]);
+
+  const triggerSwapHaptic = useEffectEvent(() => {
+    void Haptics.selectionAsync();
+  });
+
+  const syncReactActiveIndex = useEffectEvent((nextIndex: number) => {
+    setDeckState((current) => ({
+      messageId: props.messageId,
+      expanded: current.messageId === props.messageId ? current.expanded : false,
+      activeIndex: nextIndex,
+    }));
+  });
+
+  const [panGesture] = useState(() => {
+    const completeTuck = (dir: -1 | 1) => {
+      "worklet";
+      shuffleProgress.value = withSpring(1, TUCK_SPRING, (finished) => {
+        if (finished) {
+          const total = countSV.value;
+          const delta = dir === -1 ? 1 : -1;
+          const nextIndex = total <= 1 ? 0 : (activeIndexSV.value + delta + total) % total;
+          // Update activeIndexSV and reset shuffle state atomically on the UI thread for zero flicker.
+          activeIndexSV.value = nextIndex;
+          shuffleProgress.value = 0;
+          shuffleDir.value = 0;
+          isCompleting.value = false;
+          runOnJS(syncReactActiveIndex)(nextIndex);
+        } else {
+          shuffleProgress.value = 0;
+          shuffleDir.value = 0;
+          isCompleting.value = false;
+        }
+      });
+    };
+
+    return Gesture.Pan()
+      .activeOffsetX([-12, 12])
       .failOffsetY([-12, 12])
+      .onBegin(() => {
+        gestureHandled.value = false;
+      })
       .onUpdate((event) => {
-        if (animating.value) return;
-        dragX.value = event.translationX;
+        if (isCompleting.value || gestureHandled.value || countSV.value <= 1) return;
+        const dx = event.translationX;
+        const clearDist = Math.max(72, pullDistanceSV.value);
+        if (Math.abs(dx) < 2) {
+          shuffleProgress.value = 0;
+          return;
+        }
+        const dir: -1 | 1 = dx < 0 ? -1 : 1;
+        shuffleDir.value = dir;
+        const absDx = Math.abs(dx);
+        if (absDx >= clearDist) {
+          // As the finger keeps sliding past the clear edge, automatically flip behind and tuck into the back.
+          gestureHandled.value = true;
+          isCompleting.value = true;
+          shuffleProgress.value = 0.501;
+          runOnJS(triggerSwapHaptic)();
+          completeTuck(dir);
+          return;
+        }
+        shuffleProgress.value = (absDx / clearDist) * 0.5;
       })
       .onEnd((event) => {
-        if (animating.value) return;
+        if (isCompleting.value || gestureHandled.value || countSV.value <= 1) return;
         const shouldAdvance =
           Math.abs(event.translationX) > SWIPE_DISTANCE_THRESHOLD ||
           Math.abs(event.velocityX) > SWIPE_VELOCITY_THRESHOLD;
         if (shouldAdvance) {
-          animating.value = true;
-          const swipeLeft =
-            Math.abs(event.translationX) > 10 ? event.translationX < 0 : event.velocityX < 0;
-          const delta: -1 | 1 = swipeLeft ? 1 : -1;
-          const targetX = swipeLeft ? -exitDistance : exitDistance;
-          dragX.value = withTiming(targetX, { duration: 165 }, (finished) => {
+          gestureHandled.value = true;
+          isCompleting.value = true;
+          const dir: -1 | 1 =
+            Math.abs(event.translationX) > 10
+              ? event.translationX < 0
+                ? -1
+                : 1
+              : event.velocityX < 0
+                ? -1
+                : 1;
+          shuffleDir.value = dir;
+          const remainingPull = Math.max(0, 0.5 - shuffleProgress.value);
+          const pullDuration = Math.max(45, Math.round(remainingPull * 210));
+          shuffleProgress.value = withTiming(
+            0.501,
+            { duration: pullDuration, easing: Easing.out(Easing.cubic) },
+            (pulled) => {
+              if (!pulled) {
+                shuffleProgress.value = 0;
+                shuffleDir.value = 0;
+                isCompleting.value = false;
+                return;
+              }
+              runOnJS(triggerSwapHaptic)();
+              completeTuck(dir);
+            },
+          );
+        } else {
+          shuffleProgress.value = withSpring(0, CANCEL_SPRING, (finished) => {
             if (finished) {
-              runOnJS(commitStep)(delta);
-            } else {
-              dragX.value = 0;
-              animating.value = false;
+              shuffleDir.value = 0;
             }
           });
-        } else {
-          dragX.value = withSpring(0, { damping: 22, stiffness: 300 });
         }
       })
       .onFinalize((_event, success) => {
-        if (!success && !animating.value) {
-          dragX.value = withSpring(0, { damping: 22, stiffness: 300 });
+        if (!success && !isCompleting.value) {
+          shuffleProgress.value = withSpring(0, CANCEL_SPRING, (finished) => {
+            if (finished) {
+              shuffleDir.value = 0;
+            }
+          });
         }
-      }),
-  );
+      });
+  });
+
+  const expandPillStyle = useAnimatedStyle(() => {
+    const opacity =
+      shuffleDir.value === -1
+        ? interpolate(
+            shuffleProgress.value,
+            [0, 0.25, 0.72, 1],
+            [1, 0.25, 0.25, 1],
+            Extrapolation.CLAMP,
+          )
+        : 1;
+    return { opacity };
+  });
 
   if (expanded) {
     const grid = resolveExpandedPhotoGrid(props.count);
@@ -352,34 +487,40 @@ export function StackedPhotoDeck(props: {
     );
   }
 
-  const layers = visibleDeckLayers(activeIndex, props.count);
+  const mountedIndices = mountedDeckItemIndices(activeIndex, props.count);
 
   return (
     <View className="flex-row items-center justify-end gap-3">
-      <DeckActionPill
-        label={gt("Expand {count}", {
-          count: props.count,
-          $context: "verb with photo count, expands a stacked deck of photos into a grid",
-        })}
-        onPress={() =>
-          setDeckState({
-            messageId: props.messageId,
-            expanded: true,
-            activeIndex,
-          })
-        }
-      />
+      <Animated.View style={[{ zIndex: 1 }, expandPillStyle]}>
+        <DeckActionPill
+          label={gt("Expand {count}", {
+            count: props.count,
+            $context: "verb with photo count, expands a stacked deck of photos into a grid",
+          })}
+          onPress={() =>
+            setDeckState({
+              messageId: props.messageId,
+              expanded: true,
+              activeIndex,
+            })
+          }
+        />
+      </Animated.View>
       <GestureDetector gesture={panGesture}>
-        <View style={{ width: cardWidth + peekTotalWidth, height: cardHeight }}>
-          {layers.map(({ itemIndex, layer }) => (
+        <View style={{ width: cardWidth + peekTotalWidth, height: cardHeight, zIndex: 2 }}>
+          {mountedIndices.map((itemIndex) => (
             <StackedDeckCard
               key={itemIndex}
-              layer={layer}
+              itemIndex={itemIndex}
+              count={props.count}
+              isFront={itemIndex === activeIndex}
               cardWidth={cardWidth}
               cardHeight={cardHeight}
-              dragX={dragX}
+              activeIndexSV={activeIndexSV}
+              shuffleProgress={shuffleProgress}
+              shuffleDir={shuffleDir}
               isDarkMode={isDarkMode}
-              counterLabel={layer === 0 ? `${activeIndex + 1} / ${props.count}` : undefined}
+              counterLabel={`${itemIndex + 1} / ${props.count}`}
             >
               {props.renderCard(itemIndex, cardHeight)}
             </StackedDeckCard>
