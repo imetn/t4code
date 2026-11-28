@@ -72,6 +72,9 @@ interface TaskBoardColumnDef {
   readonly title: string;
   readonly icon: ReactNode;
   readonly accentClass: string;
+  readonly dockedTabActiveClass: string;
+  readonly dockedCardClass: string;
+  readonly dockedSelectedCardClass: string;
   readonly items: ReadonlyArray<TaskBoardCardItem>;
   readonly totalCount: number;
   readonly droppable: boolean;
@@ -342,6 +345,9 @@ export function TaskBoardPage() {
       title: gt("Working"),
       icon: <Loader2Icon className="size-3.5 text-info" />,
       accentClass: "border-info/25 bg-info/5",
+      dockedTabActiveClass: "border-info/45 bg-info/12 text-foreground shadow-2xs",
+      dockedCardClass: "border-info/25 bg-info/6 hover:border-info/45 hover:bg-info/10",
+      dockedSelectedCardClass: "border-info/60 bg-info/12 ring-1 ring-inset ring-info/35",
       items: columns.working,
       totalCount: columns.working.length,
       droppable: false,
@@ -351,6 +357,9 @@ export function TaskBoardPage() {
       title: gt("Needs attention"),
       icon: <AlertCircleIcon className="size-3.5 text-warning" />,
       accentClass: "border-warning/25 bg-warning/5",
+      dockedTabActiveClass: "border-warning/45 bg-warning/12 text-foreground shadow-2xs",
+      dockedCardClass: "border-warning/30 bg-warning/6 hover:border-warning/50 hover:bg-warning/10",
+      dockedSelectedCardClass: "border-warning/65 bg-warning/12 ring-1 ring-inset ring-warning/35",
       items: columns.attention,
       totalCount: columns.attention.length,
       droppable: false,
@@ -360,6 +369,11 @@ export function TaskBoardPage() {
       title: gt("Active"),
       icon: <CircleDotIcon className="size-3.5 text-foreground/70" />,
       accentClass: "border-border/60 bg-muted/20",
+      dockedTabActiveClass: "border-foreground/25 bg-accent/70 text-foreground shadow-2xs",
+      dockedCardClass:
+        "border-border/80 bg-accent/45 hover:border-foreground/25 hover:bg-accent/70",
+      dockedSelectedCardClass:
+        "border-foreground/35 bg-accent/85 ring-1 ring-inset ring-foreground/15",
       items: columns.active,
       totalCount: columns.active.length,
       droppable: true,
@@ -371,6 +385,11 @@ export function TaskBoardPage() {
             title: gt("Settled"),
             icon: <CheckCircle2Icon className="size-3.5 text-success" />,
             accentClass: "border-success/20 bg-success/5",
+            dockedTabActiveClass: "border-success/40 bg-success/12 text-foreground shadow-2xs",
+            dockedCardClass:
+              "border-success/25 bg-success/6 hover:border-success/45 hover:bg-success/10",
+            dockedSelectedCardClass:
+              "border-success/55 bg-success/12 ring-1 ring-inset ring-success/35",
             items: columns.settled.slice(0, settledLimit),
             totalCount: columns.settled.length,
             droppable: true,
@@ -452,7 +471,12 @@ export function TaskBoardPage() {
         <ScrollArea radius="none" hideScrollbars className="min-h-0 flex-1">
           <div className="flex flex-col gap-2 py-0.5">
             {column.items.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-border/60 px-3 py-6 text-center text-xs text-muted-foreground">
+              <div
+                className={cn(
+                  "rounded-lg border border-dashed px-3 py-6 text-center text-xs text-muted-foreground",
+                  docked ? column.accentClass : "border-border/60",
+                )}
+              >
                 <T>No tasks here</T>
               </div>
             ) : (
@@ -489,10 +513,17 @@ export function TaskBoardPage() {
                       }
                     }}
                     className={cn(
-                      "group flex cursor-pointer flex-col gap-2 rounded-lg border bg-card p-3 text-left shadow-2xs transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                      isSelected
-                        ? "border-primary/60 bg-accent/50 ring-1 ring-inset ring-primary/35"
-                        : "border-border/70 hover:border-foreground/25 hover:bg-accent/30",
+                      "group flex cursor-pointer flex-col gap-2 rounded-lg border p-3 text-left shadow-2xs transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                      docked
+                        ? isSelected
+                          ? column.dockedSelectedCardClass
+                          : column.dockedCardClass
+                        : cn(
+                            "bg-card",
+                            isSelected
+                              ? "border-primary/60 bg-accent/50 ring-1 ring-inset ring-primary/35"
+                              : "border-border/70 hover:border-foreground/25 hover:bg-accent/30",
+                          ),
                       draggingKey === item.key && "opacity-50",
                     )}
                   >
@@ -858,7 +889,7 @@ export function TaskBoardPage() {
                             className={cn(
                               "flex min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                               isActive
-                                ? cn("text-foreground shadow-2xs", column.accentClass)
+                                ? column.dockedTabActiveClass
                                 : "border-border/50 bg-background text-muted-foreground hover:border-border hover:bg-accent/40 hover:text-foreground",
                               isDropTarget && "ring-2 ring-inset ring-primary/60",
                             )}

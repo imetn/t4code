@@ -205,9 +205,14 @@ describe("TaskBoardPage", () => {
       expect(viewport.parentElement?.className).toContain("rounded-none");
     }
 
-    // Initially renders full 4-column board with no split view.
+    // Initially renders full 4-column board with no split view; cards sit on crisp bg-card inside tinted column containers.
     expect(document.querySelector('[data-testid="task-board-split-view"]')).toBeNull();
     expect(document.querySelectorAll("[data-task-board-column]").length).toBe(4);
+    expect(
+      document
+        .querySelector<HTMLElement>(`[data-task-board-card="${envId}:t-working"]`)
+        ?.className.split(/\s+/),
+    ).toContain("bg-card");
 
     // Clicking a card in the Active column shifts Active to the left rail and opens the thread inline.
     const activeCard = document.querySelector<HTMLElement>(
@@ -223,32 +228,36 @@ describe("TaskBoardPage", () => {
       '[data-testid="task-board-docked-column"] [data-task-board-column="active"]',
     );
     expect(dockedSection).not.toBeNull();
-    // Docked split-view renders session cards directly without a nested outer column card or duplicate header.
+    // Docked split-view renders session cards directly with status-tinted fills instead of a nested outer column card.
     expect(dockedSection?.className.split(/\s+/)).not.toContain("border");
     expect(dockedSection?.querySelector("h2")).toBeNull();
     expect(dockedSection?.querySelector('[data-slot="scroll-area-scrollbar"]')).toBeNull();
-    expect(
-      document
-        .querySelector(`[data-task-board-card="${envId}:t-active"]`)
-        ?.getAttribute("data-selected"),
-    ).toBe("true");
+    const dockedActiveCard = document.querySelector<HTMLElement>(
+      `[data-task-board-card="${envId}:t-active"]`,
+    );
+    expect(dockedActiveCard?.getAttribute("data-selected")).toBe("true");
+    expect(dockedActiveCard?.className.split(/\s+/)).toContain("bg-accent/85");
+    expect(dockedActiveCard?.className.split(/\s+/)).not.toContain("bg-card");
     const chat = document.querySelector<HTMLElement>('[data-testid="mock-embedded-chat-view"]');
     expect(chat?.dataset.threadId).toBe("t-active");
     expect(mocks.chatViewProps.at(-1)).toEqual({ threadId: "t-active", embedded: "board" });
 
-    // Switching the docked column tab to Working lets the user select a Working session inline.
+    // Switching the docked column tab to Working brings the Working status tint into the docked cards and active tab.
     const workingTab = document.querySelector<HTMLButtonElement>(
       '[data-task-board-column-tab="working"]',
     )!;
     await act(async () => {
       workingTab.click();
     });
+    expect(workingTab.className.split(/\s+/)).toContain("bg-info/12");
     const workingCard = document.querySelector<HTMLElement>(
       `[data-task-board-card="${envId}:t-working"]`,
     )!;
+    expect(workingCard.className.split(/\s+/)).toContain("bg-info/6");
     await act(async () => {
       workingCard.click();
     });
+    expect(workingCard.className.split(/\s+/)).toContain("bg-info/12");
     expect(
       document.querySelector<HTMLElement>('[data-testid="mock-embedded-chat-view"]')?.dataset
         .threadId,
