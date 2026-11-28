@@ -202,15 +202,21 @@ jobs:
     env:
       T3CODE_TELEMETRY_CHANNEL: dev
     steps:
+      # Plain git checkout avoids actions/checkout's credential cleanup running
+      # `git submodule foreach`, which fails on orphaned gitlinks under `.repos/`
+      # in historical release tags.
       - name: Checkout
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-        with:
-          ref: ${{ needs.preflight.outputs.ref }}
-          persist-credentials: false
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
+        shell: bash
+        env:
+          CHECKOUT_REF: ${{ needs.preflight.outputs.ref }}
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "$CHECKOUT_REF"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git -c checkout.workers=0 checkout --detach FETCH_HEAD
 
       - name: Setup dependencies
         uses: ./.github/actions/setup-ci-deps
@@ -244,14 +250,17 @@ jobs:
       T3CODE_DESKTOP_UPDATE_REPOSITORY: imetn/t4code
     steps:
       - name: Checkout
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-        with:
-          ref: ${{ needs.preflight.outputs.ref }}
-          persist-credentials: false
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
+        shell: bash
+        env:
+          CHECKOUT_REF: ${{ needs.preflight.outputs.ref }}
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "$CHECKOUT_REF"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git -c checkout.workers=0 checkout --detach FETCH_HEAD
 
       - name: Setup dependencies
         uses: ./.github/actions/setup-ci-deps
@@ -401,14 +410,17 @@ jobs:
       T3CODE_TELEMETRY_CHANNEL: dev
     steps:
       - name: Checkout
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-        with:
-          ref: ${{ needs.preflight.outputs.ref }}
-          persist-credentials: false
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
+        shell: bash
+        env:
+          CHECKOUT_REF: ${{ needs.preflight.outputs.ref }}
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "$CHECKOUT_REF"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git -c checkout.workers=0 checkout --detach FETCH_HEAD
 
       - name: Setup dependencies
         uses: ./.github/actions/setup-ci-deps
@@ -496,14 +508,22 @@ jobs:
       T3CODE_DESKTOP_UPDATE_REPOSITORY: imetn/t4code
     steps:
       - name: Checkout
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-        with:
-          ref: ${{ needs.preflight.outputs.ref }}
-          persist-credentials: false
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
+        shell: pwsh
+        env:
+          CHECKOUT_REF: ${{ needs.preflight.outputs.ref }}
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          $ErrorActionPreference = "Stop"
+          git init .
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git remote add origin "$($env:GITHUB_SERVER_URL)/$($env:GITHUB_REPOSITORY).git"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git fetch --no-tags --depth=1 origin $env:CHECKOUT_REF
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git -c checkout.workers=0 checkout --detach FETCH_HEAD
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       # setup-vp's own cache restores a Linux-shaped store on Windows, and setup-ci-deps
       # uses Git Bash paths for GITHUB_PATH on cache hits. Set up Vite+ natively and
