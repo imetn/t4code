@@ -44,7 +44,7 @@ Each entry uses `<!-- t4-lock: <id> -->` and explicit path prefixes/files so `sc
 - **Non-Negotiable Invariants**:
   - **Web / Desktop**:
     - Grounded top horizontal provider & favorites bar (`bg-muted/35`, elevated active pill with `text-xs font-semibold` and `size-4` icons matching the Favorites star).
-    - Selected model rows show a crisp checkmark and semibold label with **NO persistent gray background fill** (`selectedFill={false}`); compact `min-h-8` / `13px` row density balanced against the anchored top header and slim `26px` reasoning slider.
+    - Selected model rows show a crisp checkmark and semibold label with **NO persistent gray background fill** (`selectedFill={false}`); compact `min-h-8` / `13px` row density inside a taller `h-80` (`320px`, ~9 visible rows) list balanced against the anchored top header and slim `26px` reasoning slider.
     - Favorite star toggle on every model row, plus cross-provider Favorites tab ordered by `ServerSettings.favorites` with direct `@dnd-kit` drag-to-reorder handles synced across devices.
     - Inline compact **Capsule Reasoning Power Slider** with circular dot thumb (NOT vertical bar), drifting white starfield dots whose density & speed scale with reasoning level, and **NO sparkle/star AI-slop icon** in front of the Reasoning label (even on Ultra/Max).
     - No redundant text badge next to `Reasoning` when level labels are already shown beneath the slider.

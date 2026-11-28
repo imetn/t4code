@@ -320,10 +320,10 @@ function ModelPickerList({
 
   return (
     <div
-      data-scroll-bottom={showBottomScrollFade && itemKeys.length > 5 ? "true" : undefined}
+      data-scroll-bottom={showBottomScrollFade && itemKeys.length > 8 ? "true" : undefined}
       className={cn(
         "model-picker-list-fade relative min-h-0 overflow-hidden",
-        itemKeys.length > 0 ? "h-52 max-h-52 shrink-0" : "h-0",
+        itemKeys.length > 0 ? "h-80 max-h-80 shrink-0" : "h-0",
       )}
     >
       <ComboboxListVirtualized>
@@ -408,7 +408,7 @@ function SortableFavoritesModelList(props: {
   };
 
   return (
-    <div className="relative h-52 max-h-52 min-h-0 shrink-0 overflow-hidden">
+    <div className="relative h-80 max-h-80 min-h-0 shrink-0 overflow-hidden">
       <ComboboxListVirtualized>
         <div className="model-picker-scrollbar-none h-full space-y-0.5 overflow-x-hidden overflow-y-auto overscroll-y-contain px-2 py-1.5">
           <DndContext

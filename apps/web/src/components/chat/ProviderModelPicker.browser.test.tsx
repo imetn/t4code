@@ -410,3 +410,56 @@ it("displays Favorites in the saved cross-provider order without a selected back
   const selectedOption = page.getByRole("option", { name: /Claude model/ }).element();
   expect(selectedOption.className).not.toContain("data-selected:bg-");
 });
+
+it("gives the desktop model list a taller 320px viewport so more models fit without scrolling", async () => {
+  const instanceId = ProviderInstanceId.make("codex");
+  const entries = deriveProviderInstanceEntries([
+    {
+      instanceId,
+      driver: ProviderDriverKind.make("codex"),
+      enabled: true,
+      installed: true,
+      version: null,
+      status: "ready",
+      auth: { status: "authenticated" },
+      checkedAt: "2026-01-01T00:00:00.000Z",
+      models: [],
+      slashCommands: [],
+      skills: [],
+    },
+  ]);
+  const options = new Map([
+    [
+      instanceId,
+      Array.from({ length: 10 }, (_, index) => ({
+        slug: `model-${index + 1}`,
+        name: `Model ${index + 1}`,
+      })),
+    ],
+  ]);
+
+  window.localStorage.clear();
+  await using screen = await render(
+    <ProviderModelPicker
+      environmentId={null}
+      activeInstanceId={instanceId}
+      model="model-1"
+      lockedProvider={null}
+      instanceEntries={entries}
+      modelOptionsByInstance={options}
+      triggerAriaLabel="Choose model"
+      onInstanceModelChange={() => {}}
+      effortColumn={
+        <div className="h-24" data-effort-row>
+          Effort
+        </div>
+      }
+    />,
+  );
+  await screen.getByRole("button", { name: "Choose model" }).click();
+  await expect.element(page.getByRole("option", { name: /Model 9/ })).toBeVisible();
+
+  const list = document.querySelector<HTMLElement>(".model-picker-list-fade");
+  expect(list).not.toBeNull();
+  expect(list!.offsetHeight).toBe(320);
+});
