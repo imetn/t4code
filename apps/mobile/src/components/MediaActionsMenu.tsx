@@ -20,7 +20,6 @@ export function MediaActionsMenu(props: {
   const MediaMenu = nativeAndroidMenu ? MenuView : Menu;
   return (
     <MediaMenu
-      title={props.media.title}
       style={props.style}
       shouldOpenOnLongPress={props.children !== undefined}
       actions={props.media.actions.map(({ id, title, disabled }) => ({
