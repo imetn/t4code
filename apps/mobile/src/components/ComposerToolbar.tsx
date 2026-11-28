@@ -66,7 +66,12 @@ export function ComposerInlineControl(props: {
         accessibilityState={
           props.static ? undefined : { disabled: props.disabled, selected: props.selected }
         }
-        className="h-[44px] flex-row items-center gap-2 rounded-xl px-2 active:bg-subtle"
+        className={cn(
+          "h-[44px] flex-row items-center gap-2 rounded-xl active:bg-subtle",
+          props.iconOnly && props.showChevron === false
+            ? "min-w-[40px] justify-center px-2"
+            : "px-2",
+        )}
         disabled={props.disabled || props.static}
         onPress={props.onPress}
         style={{ opacity: props.disabled ? 0.45 : 1 }}

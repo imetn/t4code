@@ -617,8 +617,9 @@ export function SubscriptionUsage(
                               font({ size: 10, weight: "semibold" }),
                               monospacedDigit(),
                               lineLimit(1),
+                              fixedSize({ horizontal: true, vertical: false }),
                               layoutPriority(1),
-                              frame({ width: 28, alignment: "trailing" }),
+                              frame({ minWidth: 34, alignment: "trailing" }),
                               foregroundStyle(percentColor(sub.remaining)),
                             ]}
                           >
@@ -1034,8 +1035,9 @@ export function SubscriptionUsage(
                     font({ size: 10, weight: "semibold" }),
                     monospacedDigit(),
                     lineLimit(1),
+                    fixedSize({ horizontal: true, vertical: false }),
                     layoutPriority(1),
-                    frame({ width: 28, alignment: "trailing" }),
+                    frame({ minWidth: 34, alignment: "trailing" }),
                     foregroundStyle(percentColor(win.remaining)),
                   ]}
                 >

@@ -87,6 +87,7 @@ export function ComposerModelControl(props: {
       label={providerNameLabel ?? shortLabel}
       labelEllipsizeMode={providerNameLabel ? "middle" : undefined}
       iconOnly={props.iconOnly}
+      showChevron={false}
       suffixWidth={providerNameLabel ? 96 : undefined}
       suffix={
         providerNameLabel ? (

@@ -218,18 +218,23 @@ describe("SubscriptionUsage iOS widget", () => {
         },
       ],
     };
-    const tree = SubscriptionUsage(makeSnapshot([claudeExhausted, coreProviders[1]!]), {
-      widgetFamily: "systemMedium",
-      colorScheme: "light",
-      widgetRenderingMode: "fullColor",
-      isLuminanceReduced: false,
-      date: new Date(now),
-      configuration: {},
-    });
+    const tree = SubscriptionUsage(
+      makeSnapshot([claudeExhausted, coreProviders[1]!, coreProviders[2]!]),
+      {
+        widgetFamily: "systemMedium",
+        colorScheme: "light",
+        widgetRenderingMode: "fullColor",
+        isLuminanceReduced: false,
+        date: new Date(now),
+        configuration: {},
+      },
+    );
     const serialized = JSON.stringify(tree);
 
     expect(serialized).toContain('"3h42m"');
     expect(serialized).toContain('"systemName":"clock"');
     expect(serialized).not.toContain('"systemName":"arrow.clockwise"');
+    expect(serialized).toContain('"minWidth":34');
+    expect(serialized).not.toContain('"width":28');
   });
 });

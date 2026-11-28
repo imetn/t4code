@@ -24,7 +24,6 @@ import {
   ComposerDictationDraftContent,
   ComposerDictationError,
   ComposerDictationPrimaryAction,
-  ComposerDictationStartAction,
   ComposerDictationStatus,
   ComposerDictationToolbar,
 } from "../voice-input/ComposerDictationControl";
@@ -208,14 +207,6 @@ export function IssueCommentComposer(props: {
                       compactEditor.isExpanded ? { flex: 1, justifyContent: "flex-end" } : undefined
                     }
                   >
-                    <ComposerDictationStartAction
-                      size={chrome.controlSize}
-                      state={voiceInput.state}
-                      isAvailable={voiceInput.isAvailable}
-                      disabled={locked}
-                      onStart={voiceInput.start}
-                      onCancel={voiceInput.cancel}
-                    />
                     {sendButton}
                   </View>
                 </ComposerDictationDraftContent>
