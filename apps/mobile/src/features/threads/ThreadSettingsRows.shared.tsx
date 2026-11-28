@@ -88,7 +88,7 @@ export function ModelRowContent(
                 "min-w-0 shrink text-[14.5px] leading-[19px]",
                 props.selected
                   ? "font-t3-semibold text-foreground"
-                  : "font-t3-normal text-foreground/90",
+                  : "font-t3-normal text-foreground/95",
               )}
               numberOfLines={props.labelNumberOfLines}
             >
@@ -176,7 +176,7 @@ export function ModelRowContent(
           tintColor={props.isFavorite ? "#f59e0b" : undefined}
           tintColorClassName={props.isFavorite ? undefined : "accent-icon-subtle"}
           style={
-            props.isFavorite ? (props.selected ? undefined : { opacity: 0.72 }) : { opacity: 0.45 }
+            props.isFavorite ? (props.selected ? undefined : { opacity: 0.84 }) : { opacity: 0.55 }
           }
           type="monochrome"
         />

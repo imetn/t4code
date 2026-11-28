@@ -31,6 +31,7 @@ import {
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { type NativeStackNavigationProp } from "@react-navigation/native-stack";
 import * as Haptics from "expo-haptics";
+import { GlassView } from "expo-glass-effect";
 import { AsyncResult } from "effect/reactivity";
 import {
   createContext,
@@ -51,6 +52,7 @@ import {
   type TextInputInstance,
   View,
 } from "react-native";
+import { withUniwind } from "uniwind";
 import { READABLE_WIDTH_STYLE, ROW_MIN_HEIGHT } from "../../components/ui/listMetrics";
 import { RefreshControl } from "../../components/ui/RefreshControl";
 import Animated, {
@@ -786,38 +788,76 @@ function buildCatalogItemsForTab(
   ];
 }
 
+const PillGlass = withUniwind(GlassView, {
+  style: { fromClassName: "className" },
+});
+
+function NativeGlassCapsule(props: {
+  readonly isDarkMode: boolean;
+  readonly fallbackBackgroundColor: string;
+  readonly interactive?: boolean;
+  readonly className?: string;
+  readonly children: ReactNode;
+}) {
+  if (NATIVE_LIQUID_GLASS_SUPPORTED) {
+    return (
+      <PillGlass
+        glassEffectStyle="regular"
+        isInteractive={props.interactive ?? true}
+        colorScheme={props.isDarkMode ? "dark" : "light"}
+        className={props.className}
+        style={{ borderRadius: 9999, overflow: "hidden" }}
+      >
+        {props.children}
+      </PillGlass>
+    );
+  }
+  return (
+    <View
+      className={props.className}
+      style={{
+        backgroundColor: props.fallbackBackgroundColor,
+        borderRadius: 9999,
+        overflow: "hidden",
+      }}
+    >
+      {props.children}
+    </View>
+  );
+}
+
 function modelSheetSurface(isDarkMode: boolean, useNativeGlass = NATIVE_LIQUID_GLASS_SUPPORTED) {
   if (useNativeGlass) {
     return isDarkMode
       ? {
-          canvas: "rgba(18,18,22,0.88)",
-          card: "rgba(30,30,36,0.62)",
-          cardBorder: "rgba(255,255,255,0.16)",
-          tabTrack: "rgba(255,255,255,0.10)",
-          tabTrackBorder: "rgba(255,255,255,0.16)",
-          activeTab: "rgba(255,255,255,0.20)",
-          activeTabBorder: "rgba(255,255,255,0.24)",
-          actionBtn: "rgba(255,255,255,0.12)",
-          selectedRow: "rgba(255,255,255,0.14)",
-          dragRow: "rgba(44,44,52,0.96)",
-          divider: "rgba(255,255,255,0.11)",
-          pill: "rgba(255,255,255,0.14)",
-          speedActive: "rgba(255,255,255,0.24)",
+          canvas: "transparent",
+          card: "rgba(30,30,36,0.52)",
+          cardBorder: "rgba(255,255,255,0.18)",
+          tabTrack: "rgba(255,255,255,0.12)",
+          tabTrackBorder: "rgba(255,255,255,0.18)",
+          activeTab: "rgba(255,255,255,0.22)",
+          activeTabBorder: "rgba(255,255,255,0.28)",
+          actionBtn: "rgba(255,255,255,0.14)",
+          selectedRow: "rgba(255,255,255,0.15)",
+          dragRow: "rgba(44,44,52,0.92)",
+          divider: "rgba(255,255,255,0.22)",
+          pill: "rgba(255,255,255,0.18)",
+          speedActive: "rgba(255,255,255,0.28)",
         }
       : {
-          canvas: "rgba(250,250,252,0.92)",
-          card: "rgba(255,255,255,0.74)",
-          cardBorder: "rgba(255,255,255,0.88)",
-          tabTrack: "rgba(255,255,255,0.58)",
-          tabTrackBorder: "rgba(255,255,255,0.82)",
-          activeTab: "rgba(255,255,255,0.96)",
+          canvas: "transparent",
+          card: "rgba(255,255,255,0.62)",
+          cardBorder: "rgba(255,255,255,0.84)",
+          tabTrack: "rgba(255,255,255,0.50)",
+          tabTrackBorder: "rgba(255,255,255,0.78)",
+          activeTab: "rgba(255,255,255,0.92)",
           activeTabBorder: "rgba(0,0,0,0.08)",
-          actionBtn: "rgba(255,255,255,0.68)",
+          actionBtn: "rgba(255,255,255,0.62)",
           selectedRow: "rgba(24,24,27,0.08)",
-          dragRow: "rgba(255,255,255,0.98)",
-          divider: "rgba(0,0,0,0.085)",
-          pill: "rgba(24,24,27,0.08)",
-          speedActive: "rgba(255,255,255,0.98)",
+          dragRow: "rgba(255,255,255,0.96)",
+          divider: "rgba(0,0,0,0.12)",
+          pill: "rgba(24,24,27,0.09)",
+          speedActive: "rgba(255,255,255,0.96)",
         };
   }
   return isDarkMode
@@ -1086,34 +1126,44 @@ function ThreadSettingsTopBar(props: {
             });
           }}
         >
-          <Pressable
-            accessibilityLabel={gt("Favorites")}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: favoritesActive }}
-            onPress={() => {
-              void Haptics.selectionAsync();
-              session.setActiveTab("favorites");
-            }}
-            className={cn(
-              "h-[30px] flex-row items-center justify-center rounded-full active:opacity-70",
-              favoritesActive ? "gap-1.5 px-3" : "w-[34px]",
-            )}
-            style={favoritesActive ? { backgroundColor: surface.activeTab } : undefined}
-          >
-            <SymbolView
-              name="star.fill"
-              size={15}
-              tintColor={favoritesActive ? "#f59e0b" : undefined}
-              tintColorClassName={favoritesActive ? undefined : "accent-foreground"}
-              style={favoritesActive ? undefined : { opacity: 0.78 }}
-              type="monochrome"
-            />
-            {favoritesActive ? (
-              <Text className="text-[13px] font-t3-semibold text-foreground">
-                {gt("Favorites")}
-              </Text>
-            ) : null}
-          </Pressable>
+          {favoritesActive ? (
+            <NativeGlassCapsule isDarkMode={isDarkMode} fallbackBackgroundColor={surface.activeTab}>
+              <Pressable
+                accessibilityLabel={gt("Favorites")}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: true }}
+                onPress={() => {
+                  void Haptics.selectionAsync();
+                  session.setActiveTab("favorites");
+                }}
+                className="h-[30px] flex-row items-center justify-center gap-1.5 rounded-full px-3 active:opacity-70"
+              >
+                <SymbolView name="star.fill" size={15} tintColor="#f59e0b" type="monochrome" />
+                <Text className="text-[13px] font-t3-semibold text-foreground">
+                  {gt("Favorites")}
+                </Text>
+              </Pressable>
+            </NativeGlassCapsule>
+          ) : (
+            <Pressable
+              accessibilityLabel={gt("Favorites")}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: false }}
+              onPress={() => {
+                void Haptics.selectionAsync();
+                session.setActiveTab("favorites");
+              }}
+              className="h-[30px] w-[34px] flex-row items-center justify-center rounded-full active:opacity-70"
+            >
+              <SymbolView
+                name="star.fill"
+                size={15}
+                tintColorClassName="accent-foreground"
+                style={{ opacity: 0.84 }}
+                type="monochrome"
+              />
+            </Pressable>
+          )}
         </Animated.View>
 
         <View
@@ -1137,27 +1187,44 @@ function ThreadSettingsTopBar(props: {
                 });
               }}
             >
-              <Pressable
-                accessibilityLabel={group.providerLabel}
-                accessibilityRole="tab"
-                accessibilityState={{ selected: isActive }}
-                onPress={() => {
-                  void Haptics.selectionAsync();
-                  session.setActiveTab(group.providerKey);
-                }}
-                className={cn(
-                  "h-[30px] flex-row items-center justify-center rounded-full active:opacity-70",
-                  isActive ? "gap-1.5 px-3" : "w-[34px]",
-                )}
-                style={isActive ? { backgroundColor: surface.activeTab } : undefined}
-              >
-                <ProviderIcon iconUrl={iconUrl} provider={driver} size={17} />
-                {isActive ? (
-                  <Text className="text-[13px] font-t3-semibold text-foreground" numberOfLines={1}>
-                    {group.providerLabel}
-                  </Text>
-                ) : null}
-              </Pressable>
+              {isActive ? (
+                <NativeGlassCapsule
+                  isDarkMode={isDarkMode}
+                  fallbackBackgroundColor={surface.activeTab}
+                >
+                  <Pressable
+                    accessibilityLabel={group.providerLabel}
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: true }}
+                    onPress={() => {
+                      void Haptics.selectionAsync();
+                      session.setActiveTab(group.providerKey);
+                    }}
+                    className="h-[30px] flex-row items-center justify-center gap-1.5 rounded-full px-3 active:opacity-70"
+                  >
+                    <ProviderIcon iconUrl={iconUrl} provider={driver} size={17} />
+                    <Text
+                      className="text-[13px] font-t3-semibold text-foreground"
+                      numberOfLines={1}
+                    >
+                      {group.providerLabel}
+                    </Text>
+                  </Pressable>
+                </NativeGlassCapsule>
+              ) : (
+                <Pressable
+                  accessibilityLabel={group.providerLabel}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: false }}
+                  onPress={() => {
+                    void Haptics.selectionAsync();
+                    session.setActiveTab(group.providerKey);
+                  }}
+                  className="h-[30px] w-[34px] flex-row items-center justify-center rounded-full active:opacity-70"
+                >
+                  <ProviderIcon iconUrl={iconUrl} provider={driver} size={17} />
+                </Pressable>
+              )}
             </Animated.View>
           );
         })}
@@ -1256,36 +1323,42 @@ function MobileSpeedSwitcher(props: {
   };
 
   return (
-    <View
-      accessibilityRole="radiogroup"
-      accessibilityLabel={speedSelect?.label ?? fastToggle?.label}
-      className="h-[26px] flex-row items-center gap-0.5 rounded-full p-0.5"
-      style={{ backgroundColor: surface.pill }}
+    <NativeGlassCapsule
+      isDarkMode={isDarkMode}
+      fallbackBackgroundColor={surface.pill}
+      interactive={false}
+      className="h-[26px]"
     >
-      {speedSelect
-        ? choices.map((choice) =>
-            renderPill({
-              key: choice.id,
-              label: choice.label,
-              speed: choice.label,
-              checked: choice.id === activeSelectId,
-              onPress: () => session.applyOptionChange(speedSelect.id, choice.id),
-            }),
-          )
-        : fastToggle
-          ? ([false, true] as const).map((value) =>
+      <View
+        accessibilityRole="radiogroup"
+        accessibilityLabel={speedSelect?.label ?? fastToggle?.label}
+        className="h-[26px] flex-row items-center gap-0.5 rounded-full p-0.5"
+      >
+        {speedSelect
+          ? choices.map((choice) =>
               renderPill({
-                key: String(value),
-                label: value
-                  ? gt("Fast", { $context: "response speed" })
-                  : gt("Standard", { $context: "response speed" }),
-                speed: value ? "Fast" : "Standard",
-                checked: (fastToggle.currentValue === true) === value,
-                onPress: () => session.applyOptionChange(fastToggle.id, value),
+                key: choice.id,
+                label: choice.label,
+                speed: choice.label,
+                checked: choice.id === activeSelectId,
+                onPress: () => session.applyOptionChange(speedSelect.id, choice.id),
               }),
             )
-          : null}
-    </View>
+          : fastToggle
+            ? ([false, true] as const).map((value) =>
+                renderPill({
+                  key: String(value),
+                  label: value
+                    ? gt("Fast", { $context: "response speed" })
+                    : gt("Standard", { $context: "response speed" }),
+                  speed: value ? "Fast" : "Standard",
+                  checked: (fastToggle.currentValue === true) === value,
+                  onPress: () => session.applyOptionChange(fastToggle.id, value),
+                }),
+              )
+            : null}
+      </View>
+    </NativeGlassCapsule>
   );
 }
 
@@ -1385,9 +1458,9 @@ function ThreadSettingsThumbDeck() {
       {heading ? (
         <View className="mb-1 flex-row items-center justify-between gap-2">
           <View className="flex-row items-baseline gap-1.5">
-            <Text className="text-[12.5px] font-t3-semibold text-foreground/90">{heading}</Text>
+            <Text className="text-[12.5px] font-t3-semibold text-foreground/95">{heading}</Text>
             {hasSpeed && reasoningChoices.length > 1 ? (
-              <Text className="text-[11.5px] font-t3-medium tabular-nums text-foreground/72">
+              <Text className="text-[11.5px] font-t3-medium tabular-nums text-foreground/80">
                 {`${reasoningIndex + 1} / ${reasoningChoices.length}`}
               </Text>
             ) : null}
@@ -1399,7 +1472,7 @@ function ThreadSettingsThumbDeck() {
               isDarkMode={isDarkMode}
             />
           ) : reasoningChoices.length > 1 ? (
-            <Text className="text-[12px] font-t3-medium tabular-nums text-foreground/74">
+            <Text className="text-[12px] font-t3-medium tabular-nums text-foreground/82">
               {activeReasoningLabel
                 ? `${activeReasoningLabel} · ${reasoningIndex + 1} / ${reasoningChoices.length}`
                 : `${reasoningIndex + 1} / ${reasoningChoices.length}`}
@@ -1456,28 +1529,30 @@ function ThreadSettingsThumbDeck() {
               if (control.kind === "boolean") {
                 const checked = control.descriptor.currentValue === true;
                 return (
-                  <Pressable
+                  <NativeGlassCapsule
                     key={control.descriptor.id}
-                    accessibilityRole="switch"
-                    accessibilityState={{ checked }}
-                    onPress={() => {
-                      void Haptics.selectionAsync();
-                      session.applyOptionChange(control.descriptor.id, !checked);
-                    }}
-                    className="h-[30px] flex-row items-center gap-1.5 rounded-full px-3 active:opacity-75"
-                    style={{
-                      backgroundColor: checked ? surface.activeTab : surface.pill,
-                    }}
+                    isDarkMode={isDarkMode}
+                    fallbackBackgroundColor={checked ? surface.activeTab : surface.pill}
                   >
-                    <Text className="text-[12px] font-t3-medium text-foreground/78">
-                      {control.descriptor.label}
-                    </Text>
-                    <Text className="text-[12px] font-t3-semibold text-foreground">
-                      {checked
-                        ? gt("On", { $context: "option state" })
-                        : gt("Off", { $context: "option state" })}
-                    </Text>
-                  </Pressable>
+                    <Pressable
+                      accessibilityRole="switch"
+                      accessibilityState={{ checked }}
+                      onPress={() => {
+                        void Haptics.selectionAsync();
+                        session.applyOptionChange(control.descriptor.id, !checked);
+                      }}
+                      className="h-[30px] flex-row items-center gap-1.5 rounded-full px-3 active:opacity-75"
+                    >
+                      <Text className="text-[12px] font-t3-medium text-foreground/85">
+                        {control.descriptor.label}
+                      </Text>
+                      <Text className="text-[12px] font-t3-semibold text-foreground">
+                        {checked
+                          ? gt("On", { $context: "option state" })
+                          : gt("Off", { $context: "option state" })}
+                      </Text>
+                    </Pressable>
+                  </NativeGlassCapsule>
                 );
               }
 
@@ -1509,32 +1584,36 @@ function ThreadSettingsThumbDeck() {
                     session.applyOptionChange(control.descriptor.id, nativeEvent.event);
                   }}
                 >
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={`${control.descriptor.label}: ${currentLabel}`}
-                    className="h-[30px] flex-row items-center gap-1.5 rounded-full px-3 active:opacity-75"
-                    style={{ backgroundColor: surface.pill }}
+                  <NativeGlassCapsule
+                    isDarkMode={isDarkMode}
+                    fallbackBackgroundColor={surface.pill}
                   >
-                    <Text
-                      className="text-[12px] font-t3-medium text-foreground/78"
-                      numberOfLines={1}
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`${control.descriptor.label}: ${currentLabel}`}
+                      className="h-[30px] flex-row items-center gap-1.5 rounded-full px-3 active:opacity-75"
                     >
-                      {control.descriptor.label}
-                    </Text>
-                    <Text
-                      className="text-[12px] font-t3-semibold text-foreground"
-                      numberOfLines={1}
-                    >
-                      {currentLabel}
-                    </Text>
-                    <SymbolView
-                      name="chevron.down"
-                      size={10}
-                      tintColorClassName="accent-foreground"
-                      style={{ opacity: 0.78 }}
-                      type="monochrome"
-                    />
-                  </Pressable>
+                      <Text
+                        className="text-[12px] font-t3-medium text-foreground/85"
+                        numberOfLines={1}
+                      >
+                        {control.descriptor.label}
+                      </Text>
+                      <Text
+                        className="text-[12px] font-t3-semibold text-foreground"
+                        numberOfLines={1}
+                      >
+                        {currentLabel}
+                      </Text>
+                      <SymbolView
+                        name="chevron.down"
+                        size={10}
+                        tintColorClassName="accent-foreground"
+                        style={{ opacity: 0.85 }}
+                        type="monochrome"
+                      />
+                    </Pressable>
+                  </NativeGlassCapsule>
                 </Menu>
               );
             })}
@@ -1545,10 +1624,10 @@ function ThreadSettingsThumbDeck() {
               name="shield"
               size={13}
               tintColorClassName="accent-foreground"
-              style={{ opacity: 0.8 }}
+              style={{ opacity: 0.88 }}
               type="monochrome"
             />
-            <Text className="text-[12.5px] font-t3-medium text-foreground/82" numberOfLines={1}>
+            <Text className="text-[12.5px] font-t3-medium text-foreground/90" numberOfLines={1}>
               {gt("Runtime", { $context: "agent permission mode setting" })}
             </Text>
           </View>
@@ -1566,32 +1645,37 @@ function ThreadSettingsThumbDeck() {
             session.onUpdateRuntimeMode(match.mode);
           }}
         >
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={gt("Runtime: {mode}", { mode: currentRuntimeLabel })}
-            className="h-[30px] shrink-0 flex-row items-center gap-1.5 rounded-full px-3 active:opacity-70"
-            style={{ backgroundColor: surface.pill }}
+          <NativeGlassCapsule
+            isDarkMode={isDarkMode}
+            fallbackBackgroundColor={surface.pill}
+            className="shrink-0"
           >
-            {others.length > 0 ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={gt("Runtime: {mode}", { mode: currentRuntimeLabel })}
+              className="h-[30px] shrink-0 flex-row items-center gap-1.5 rounded-full px-3 active:opacity-70"
+            >
+              {others.length > 0 ? (
+                <SymbolView
+                  name="shield"
+                  size={12}
+                  tintColorClassName="accent-foreground"
+                  style={{ opacity: 0.88 }}
+                  type="monochrome"
+                />
+              ) : null}
+              <Text className="text-[12.5px] font-t3-semibold text-foreground" numberOfLines={1}>
+                {currentRuntimeLabel}
+              </Text>
               <SymbolView
-                name="shield"
-                size={12}
+                name="chevron.down"
+                size={10}
                 tintColorClassName="accent-foreground"
-                style={{ opacity: 0.8 }}
+                style={{ opacity: 0.85 }}
                 type="monochrome"
               />
-            ) : null}
-            <Text className="text-[12.5px] font-t3-semibold text-foreground" numberOfLines={1}>
-              {currentRuntimeLabel}
-            </Text>
-            <SymbolView
-              name="chevron.down"
-              size={10}
-              tintColorClassName="accent-foreground"
-              style={{ opacity: 0.78 }}
-              type="monochrome"
-            />
-          </Pressable>
+            </Pressable>
+          </NativeGlassCapsule>
         </Menu>
       </View>
     </View>
