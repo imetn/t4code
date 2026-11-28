@@ -423,7 +423,7 @@ function toClaudeMcpServerEntries(
   return entries;
 }
 
-const CLAUDE_QUERY_ENDED_BEFORE_TURN_DETAIL =
+export const CLAUDE_QUERY_ENDED_BEFORE_TURN_DETAIL =
   "Claude provider query ended before the turn could start.";
 const CLAUDE_AGENT_SDK_QUERY_PROTOCOL = "claude-agent-sdk.query" as const;
 
