@@ -8,12 +8,13 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import {
   AuthProvidersManageScope,
+  AuthSettingsWriteScope,
   isManagedDriverAllowed,
   type ProviderAuthResponse,
   type ServerProvider,
 } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
-import { useRef, useState } from "react";
+import { Fragment, useRef, useState } from "react";
 import { Pressable, ScrollView, TextInput, useWindowDimensions, View } from "react-native";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -37,6 +38,7 @@ import { SettingsScreen } from "./components/SettingsScreen";
 import { SettingsSection } from "./components/SettingsSection";
 import { AddClaudeAccount, ClaudeAccount } from "./ClaudeAccounts";
 import { CLAUDE_DRIVER } from "./claude-accounts";
+import { FavoriteModelsSection } from "./FavoriteModelsSection";
 import { useSettingsEnvironmentFilter, type SettingsTarget } from "./settings-environment-filter";
 
 export function SettingsProviderAccountsRouteScreen() {
@@ -44,12 +46,18 @@ export function SettingsProviderAccountsRouteScreen() {
   const environmentMenu = useSettingsEnvironmentMenu();
   const { selectedTargets } = useSettingsEnvironmentFilter();
   const permittedEnvironments = useEnvironmentsWithScope(selectedTargets, AuthProvidersManageScope);
+  const writableSettingsEnvironments = useEnvironmentsWithScope(
+    selectedTargets,
+    AuthSettingsWriteScope,
+  );
   const providersByEnvironment = useAtomValue(environmentPresentations.providersByEnvironmentAtom);
+  const [draggingFavorites, setDraggingFavorites] = useState(false);
   const insets = useSafeAreaInsets();
   return (
     <SettingsScreen title={gt("Providers")} menus={[environmentMenu]}>
       <ScreenScrollView
         className="flex-1"
+        scrollEnabled={!draggingFavorites}
         contentInsetAdjustmentBehavior="automatic"
         contentContainerClassName="gap-6 px-5 pt-4"
         contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
@@ -59,28 +67,39 @@ export function SettingsProviderAccountsRouteScreen() {
             <T>Select a connected environment.</T>
           </Text>
         ) : (
-          selectedTargets.map((environment) => (
-            <SettingsSection key={environment.environmentId} title={environment.label}>
-              {!permittedEnvironments.has(environment.environmentId) ? (
-                <View className="gap-1 p-4">
-                  <Text className="text-base text-foreground">
-                    <T>Limited permissions</T>
-                  </Text>
-                  <Text className="text-sm text-foreground-muted">
-                    {gt(
-                      "This session can view {environment}''s providers but can't change their settings.",
-                      { environment: environment.label },
-                    )}
-                  </Text>
-                </View>
-              ) : (
-                <EnvironmentProviders
+          selectedTargets.map((environment) => {
+            const environmentProviders = managedProviders(environment, providersByEnvironment);
+            return (
+              <Fragment key={environment.environmentId}>
+                <SettingsSection title={environment.label}>
+                  {!permittedEnvironments.has(environment.environmentId) ? (
+                    <View className="gap-1 p-4">
+                      <Text className="text-base text-foreground">
+                        <T>Limited permissions</T>
+                      </Text>
+                      <Text className="text-sm text-foreground-muted">
+                        {gt(
+                          "This session can view {environment}''s providers but can't change their settings.",
+                          { environment: environment.label },
+                        )}
+                      </Text>
+                    </View>
+                  ) : (
+                    <EnvironmentProviders
+                      environment={environment}
+                      providers={environmentProviders}
+                    />
+                  )}
+                </SettingsSection>
+                <FavoriteModelsSection
                   environment={environment}
-                  providers={managedProviders(environment, providersByEnvironment)}
+                  providers={environmentProviders}
+                  canWriteSettings={writableSettingsEnvironments.has(environment.environmentId)}
+                  onDraggingChange={setDraggingFavorites}
                 />
-              )}
-            </SettingsSection>
-          ))
+              </Fragment>
+            );
+          })
         )}
       </ScreenScrollView>
     </SettingsScreen>

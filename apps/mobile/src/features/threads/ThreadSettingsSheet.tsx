@@ -8,12 +8,9 @@ import { useGT, useLocale, useMessages } from "gt-react-native";
 import * as Dialog from "../../components/ui/Dialog";
 import { DEFAULT_SERVER_SETTINGS, ProviderInstanceId } from "@t3tools/contracts";
 import {
-  modelFavoriteListsEqual,
   modelPreferencesMigrationPatch,
-  reorderModelFavorites,
   resolveModelPreferences,
 } from "@t3tools/shared/serverSettings";
-import type { ModelPreferences } from "@t3tools/contracts/settings";
 import type {
   EnvironmentId,
   ModelSelection,
@@ -60,10 +57,7 @@ import Animated, {
   FadeIn,
   FadeOut,
   LinearTransition,
-  ReduceMotion,
-  useAnimatedStyle,
   useReducedMotion,
-  withTiming,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
@@ -119,7 +113,6 @@ import {
   createProviderCatalogRefreshRunner,
   providerCatalogRefreshError,
 } from "./provider-catalog-refresh";
-import { SettingsDragHandle } from "../settings/components/SettingsDragHandle";
 import { ModelRow } from "./ThreadSettingsRows";
 import { MobileReasoningPowerSlider, type MobileSliderChoice } from "./MobileReasoningPowerSlider";
 import {
@@ -279,13 +272,6 @@ type ThreadSettingsSessionValue = {
   readonly favoriteKeys: ReadonlySet<string>;
   readonly favoriteOrderKeys: ReadonlyArray<string>;
   readonly favoritesLoaded: boolean;
-  readonly reorderFavorites: boolean;
-  readonly setReorderFavorites: (value: boolean) => void;
-  readonly moveFavorite: (
-    visibleKeys: ReadonlyArray<string>,
-    fromKey: string,
-    toKey: string,
-  ) => void;
   readonly toggleFavorite: (option: ModelOption) => void;
   readonly toggleHidden: (option: ModelOption) => void;
   readonly pendingHiddenKeys: ReadonlySet<string>;
@@ -329,10 +315,6 @@ function ThreadSettingsSessionProvider(
   ).data;
   const connectionGeneration = connection?.phase === "connected" ? connection.generation : null;
   const [manageHidden, setManageHidden] = useState(false);
-  const [reorderFavorites, setReorderFavorites] = useState(false);
-  const [pendingFavoriteOrder, setPendingFavoriteOrder] = useState<
-    ModelPreferences["favorites"] | null
-  >(null);
   const pendingHidden = useRef(new Set<string>());
   const pendingFavorites = useRef(
     new Map<string, { favorite: boolean; settings: ServerSettings; pending: boolean }>(),
@@ -355,16 +337,9 @@ function ThreadSettingsSessionProvider(
     : EMPTY_MODEL_FAVORITES;
   const favoritesLoaded =
     settings !== undefined && (settings.favorites !== null || AsyncResult.isSuccess(preferences));
-  const savedModelFavorites = resolveModelPreferences(settings ?? DEFAULT_SERVER_SETTINGS, {
+  const modelFavorites = resolveModelPreferences(settings ?? DEFAULT_SERVER_SETTINGS, {
     favorites: legacyFavorites,
   }).favorites;
-  if (
-    pendingFavoriteOrder !== null &&
-    modelFavoriteListsEqual(pendingFavoriteOrder, savedModelFavorites)
-  ) {
-    setPendingFavoriteOrder(null);
-  }
-  const modelFavorites = pendingFavoriteOrder ?? savedModelFavorites;
   const saveSettings = useAtomCommand(serverEnvironment.updateSettings, "model favorites update");
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- writes the one-time legacy model favorites migration to server settings once per connection
   useEffect(() => {
@@ -392,27 +367,7 @@ function ThreadSettingsSessionProvider(
     modelFavoriteKey(favorite.provider, favorite.model),
   );
   const favoriteKeys = new Set(favoriteOrderKeys);
-  const moveFavorite = (visibleKeys: ReadonlyArray<string>, fromKey: string, toKey: string) => {
-    const environmentId = props.environmentId;
-    if (!favoritesLoaded || !environmentId) return;
-    const nextFavorites = reorderModelFavorites(modelFavorites, visibleKeys, fromKey, toKey);
-    if (modelFavoriteListsEqual(nextFavorites, modelFavorites)) return;
-    setPendingFavoriteOrder(nextFavorites);
-    void saveSettings({
-      environmentId,
-      input: {
-        patch: {
-          favorites: nextFavorites,
-        },
-      },
-    }).then((result) => {
-      if (result._tag === "Failure") {
-        setPendingFavoriteOrder(null);
-      }
-    });
-  };
   const toggleFavorite = async (option: ModelOption) => {
-    setPendingFavoriteOrder(null);
     const environmentId = props.environmentId;
     if (!favoritesLoaded || !environmentId) return;
     const currentSettings = registry.get(environmentServerConfigsAtom).get(environmentId)?.settings;
@@ -638,9 +593,6 @@ function ThreadSettingsSessionProvider(
     favoriteKeys,
     favoriteOrderKeys,
     favoritesLoaded,
-    reorderFavorites: reorderFavorites && favoriteKeys.size > 1 && searchQuery.trim().length === 0,
-    setReorderFavorites,
-    moveFavorite,
     providerExpansionOverrides,
     hasLegacyModels,
     activeTab: effectiveTab,
@@ -916,15 +868,6 @@ function ThreadSettingsTopBar(props: {
   const showSearch = props.searchExpanded || session.searchQuery.trim().length > 0;
 
   const moreActions: MenuAction[] = [
-    ...(session.environmentId && session.favoriteKeys.size > 1
-      ? [
-          {
-            id: "reorder-favorites",
-            title: gt("Reorder favorites"),
-            image: Platform.OS === "ios" ? "arrow.up.arrow.down" : undefined,
-          },
-        ]
-      : []),
     ...(session.hasLegacyModels
       ? [
           {
@@ -953,10 +896,7 @@ function ThreadSettingsTopBar(props: {
   const handleMoreAction = (event: { readonly nativeEvent: { readonly event: string } }) => {
     const id = event.nativeEvent.event;
     void Haptics.selectionAsync();
-    if (id === "reorder-favorites") {
-      session.setActiveTab("favorites");
-      session.setReorderFavorites(true);
-    } else if (id === "show-legacy") {
+    if (id === "show-legacy") {
       session.setShowLegacy(!session.showLegacy);
     } else if (id === "manage-hidden") {
       session.setManageHidden(!session.manageHidden);
@@ -977,40 +917,6 @@ function ThreadSettingsTopBar(props: {
     const targetX = Math.max(0, layout.x + layout.width / 2 - tabsViewportWidthRef.current / 2);
     tabsScrollRef.current?.scrollTo({ x: targetX, animated: true });
   }, [session.activeTab]);
-
-  if (session.reorderFavorites) {
-    return (
-      <View
-        className="px-4 pb-2.5"
-        style={{
-          paddingTop: topPadding,
-          borderBottomWidth: 0.5,
-          borderBottomColor: surface.divider,
-        }}
-      >
-        <View className="h-[34px] flex-row items-center justify-between gap-2">
-          <View className="min-w-0 flex-1 flex-row items-center gap-2">
-            <SymbolView name="star.fill" size={16} tintColor="#f59e0b" type="monochrome" />
-            <Text className="text-[16px] font-t3-semibold text-foreground" numberOfLines={1}>
-              {gt("Reorder favorites")}
-            </Text>
-          </View>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={gt("Done")}
-            onPress={() => {
-              void Haptics.selectionAsync();
-              session.setReorderFavorites(false);
-            }}
-            className="h-[32px] items-center justify-center rounded-full px-3.5 active:opacity-70"
-            style={{ backgroundColor: surface.activeTab }}
-          >
-            <Text className="text-[13px] font-t3-semibold text-foreground">{gt("Done")}</Text>
-          </Pressable>
-        </View>
-      </View>
-    );
-  }
 
   if (showSearch) {
     return (
@@ -1677,7 +1583,6 @@ function ThreadSettingsModelListRow(props: {
   readonly showProviderIcon: boolean;
   readonly isFirst: boolean;
   readonly isLast: boolean;
-  readonly canStartFavoriteReorder: boolean;
 }) {
   const session = useThreadSettingsSession();
   return (
@@ -1686,14 +1591,6 @@ function ThreadSettingsModelListRow(props: {
       isLast={props.isLast}
       showProviderIcon={props.showProviderIcon}
       onPress={() => session.pressModel(props.option)}
-      onLongPress={
-        props.canStartFavoriteReorder
-          ? () => {
-              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              session.setReorderFavorites(true);
-            }
-          : undefined
-      }
       isFavorite={session.favoriteKeys.has(props.option.key)}
       favoritesLoaded={session.favoritesLoaded}
       onToggleFavorite={() => session.toggleFavorite(props.option)}
@@ -1706,177 +1603,6 @@ function ThreadSettingsModelListRow(props: {
       option={props.option}
       selected={session.isApplied(props.option)}
     />
-  );
-}
-
-function FavoriteReorderRow(props: {
-  readonly option: ModelOption;
-  readonly selected: boolean;
-  readonly canMoveUp: boolean;
-  readonly canMoveDown: boolean;
-  readonly offset: number;
-  readonly lifted: boolean;
-  readonly dragBackgroundColor: string;
-  readonly onHeight: (height: number) => void;
-  readonly onDragStart: () => void;
-  readonly onDragMove: (translation: number) => void;
-  readonly onDragEnd: (translation: number, cancelled: boolean) => void;
-  readonly onStep: (direction: "up" | "down") => void;
-}) {
-  const { lifted, offset } = props;
-  const style = useAnimatedStyle(() => ({
-    transform: [
-      {
-        translateY: lifted
-          ? offset
-          : withTiming(offset, { duration: 160, reduceMotion: ReduceMotion.System }),
-      },
-    ],
-    zIndex: lifted ? 10 : 0,
-  }));
-  return (
-    <Animated.View
-      style={[
-        style,
-        { borderRadius: 12, borderCurve: "continuous" },
-        lifted
-          ? {
-              backgroundColor: props.dragBackgroundColor,
-              shadowColor: "#000000",
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.22,
-              shadowRadius: 10,
-              elevation: 4,
-            }
-          : undefined,
-      ]}
-      onLayout={(event) => props.onHeight(event.nativeEvent.layout.height)}
-      className="mx-1.5 min-h-[42px] flex-row items-center gap-2.5 pl-3 pr-0.5"
-    >
-      <ProviderIcon
-        iconUrl={props.option.providerIconUrl}
-        provider={props.option.providerDriver}
-        size={15}
-      />
-      <Text
-        className={cn(
-          "min-w-0 flex-1 text-[14.5px] leading-[19px]",
-          props.selected ? "font-t3-semibold text-foreground" : "font-t3-medium text-foreground/85",
-        )}
-        numberOfLines={1}
-      >
-        {props.option.label}
-      </Text>
-      <SettingsDragHandle
-        title={props.option.label}
-        canMoveUp={props.canMoveUp}
-        canMoveDown={props.canMoveDown}
-        onStart={props.onDragStart}
-        onMove={props.onDragMove}
-        onEnd={props.onDragEnd}
-        onStep={props.onStep}
-      />
-    </Animated.View>
-  );
-}
-
-function FavoritesReorderList(props: {
-  readonly models: ReadonlyArray<ModelOption>;
-  readonly dragBackgroundColor: string;
-}) {
-  const session = useThreadSettingsSession();
-  const [drag, setDrag] = useState<{ readonly key: string; readonly translation: number } | null>(
-    null,
-  );
-  const [heights, setHeights] = useState<ReadonlyMap<string, number>>(() => new Map());
-  const [drops, setDrops] = useState(0);
-  const lastHoverIndexRef = useRef<number>(-1);
-
-  const visibleKeys = props.models.map((option) => option.key);
-  const dropIndex = (from: number, translation: number) => {
-    const step = translation > 0 ? 1 : -1;
-    let to = from;
-    let remaining = Math.abs(translation);
-    while (to + step >= 0 && to + step < visibleKeys.length) {
-      const next = heights.get(visibleKeys[to + step]!) ?? 42;
-      if (next === 0 || remaining < next / 2) break;
-      remaining -= next;
-      to += step;
-    }
-    return to;
-  };
-  const dragFrom = drag === null ? -1 : visibleKeys.indexOf(drag.key);
-  const dragTo = drag === null ? -1 : dropIndex(dragFrom, drag.translation);
-
-  const commitMove = (from: number, to: number) => {
-    if (to < 0 || to >= visibleKeys.length || from === to) return;
-    const fromKey = visibleKeys[from];
-    const toKey = visibleKeys[to];
-    if (!fromKey || !toKey) return;
-    session.moveFavorite(visibleKeys, fromKey, toKey);
-  };
-
-  return (
-    <ScrollView
-      className="flex-1"
-      scrollEnabled={drag === null}
-      showsVerticalScrollIndicator={false}
-      contentContainerStyle={{ paddingTop: 6, paddingBottom: 16 }}
-    >
-      {props.models.map((option, index) => {
-        const key = option.key;
-        const liftedHeight = drag === null ? 0 : (heights.get(drag.key) ?? 42);
-        const shift =
-          dragFrom === -1 || index === dragFrom
-            ? 0
-            : dragFrom < dragTo && index > dragFrom && index <= dragTo
-              ? -liftedHeight
-              : dragFrom > dragTo && index < dragFrom && index >= dragTo
-                ? liftedHeight
-                : 0;
-        return (
-          <FavoriteReorderRow
-            key={`${key}:${drops}`}
-            option={option}
-            selected={session.isApplied(option)}
-            canMoveUp={index > 0}
-            canMoveDown={index < props.models.length - 1}
-            offset={index === dragFrom ? (drag?.translation ?? 0) : shift}
-            lifted={index === dragFrom}
-            dragBackgroundColor={props.dragBackgroundColor}
-            onHeight={(height) =>
-              setHeights((current) =>
-                current.get(key) === height ? current : new Map(current).set(key, height),
-              )
-            }
-            onDragStart={() => {
-              lastHoverIndexRef.current = index;
-              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              setDrag({ key, translation: 0 });
-            }}
-            onDragMove={(translation) => {
-              const nextTarget = dropIndex(index, translation);
-              if (nextTarget !== lastHoverIndexRef.current) {
-                lastHoverIndexRef.current = nextTarget;
-                void Haptics.selectionAsync();
-              }
-              setDrag({ key, translation });
-            }}
-            onDragEnd={(translation, cancelled) => {
-              const target = dropIndex(index, translation);
-              lastHoverIndexRef.current = -1;
-              setDrag(null);
-              setDrops((count) => count + 1);
-              if (!cancelled) commitMove(index, target);
-            }}
-            onStep={(direction) => {
-              void Haptics.selectionAsync();
-              commitMove(index, direction === "up" ? index - 1 : index + 1);
-            }}
-          />
-        );
-      })}
-    </ScrollView>
   );
 }
 
@@ -1949,14 +1675,14 @@ function ThreadSettingsSheetBody(props: { readonly onClose: () => void }) {
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the native paging ScrollView aligned when the user taps a top provider tab or rotates the screen
   useEffect(() => {
-    if (isSearching || session.reorderFavorites || pagerWidth <= 0) return;
+    if (isSearching || pagerWidth <= 0) return;
     const targetIndex = Math.max(0, tabKeys.indexOf(session.activeTab));
     const animated =
       didInitialScrollRef.current && lastScrolledTabRef.current !== session.activeTab;
     didInitialScrollRef.current = true;
     lastScrolledTabRef.current = session.activeTab;
     pagerRef.current?.scrollTo({ x: targetIndex * pagerWidth, animated });
-  }, [isSearching, pagerWidth, session.activeTab, session.reorderFavorites, tabKeys]);
+  }, [isSearching, pagerWidth, session.activeTab, tabKeys]);
 
   const handlePagerSettled = (offsetX: number) => {
     if (pagerWidth <= 0) return;
@@ -1991,12 +1717,6 @@ function ThreadSettingsSheetBody(props: { readonly onClose: () => void }) {
           isLast={item.isLast}
           showProviderIcon={item.showProviderIcon}
           option={item.option}
-          canStartFavoriteReorder={
-            !isSearching &&
-            session.activeTab === "favorites" &&
-            session.environmentId !== null &&
-            session.favoriteKeys.size > 1
-          }
         />
       );
     } else if (item.kind === "notice") {
@@ -2088,12 +1808,6 @@ function ThreadSettingsSheetBody(props: { readonly onClose: () => void }) {
     );
   };
 
-  const reorderableFavoriteModels = session.reorderFavorites
-    ? buildCatalogItemsForTab(session, "favorites", m, locale).flatMap((item) =>
-        item.kind === "model" ? [item.option] : [],
-      )
-    : [];
-
   return (
     <View className="flex-1" style={{ backgroundColor: surface.canvas }}>
       <ThreadSettingsTopBar
@@ -2104,14 +1818,7 @@ function ThreadSettingsSheetBody(props: { readonly onClose: () => void }) {
         onClose={props.onClose}
       />
 
-      {session.reorderFavorites ? (
-        <View className="min-h-0 flex-1 px-3">
-          <FavoritesReorderList
-            models={reorderableFavoriteModels}
-            dragBackgroundColor={surface.dragRow}
-          />
-        </View>
-      ) : isSearching ? (
+      {isSearching ? (
         <View className="min-h-0 flex-1 px-3">{renderCardList(session.activeTab)}</View>
       ) : (
         <View

@@ -409,6 +409,7 @@ it("displays Favorites in the saved cross-provider order without a selected back
 
   const selectedOption = page.getByRole("option", { name: /Claude model/ }).element();
   expect(selectedOption.className).not.toContain("data-selected:bg-");
+  expect(document.querySelector('[aria-label^="Drag to reorder"]')).toBeNull();
 });
 
 it("gives the desktop model list a taller 320px viewport so more models fit without scrolling", async () => {

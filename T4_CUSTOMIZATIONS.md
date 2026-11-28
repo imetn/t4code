@@ -35,17 +35,19 @@ Each entry uses `<!-- t4-lock: <id> -->` and explicit path prefixes/files so `sc
   - `apps/web/src/components/chat/ModelPickerSidebar.tsx`
   - `apps/web/src/components/chat/ModelListRow.tsx`
   - `apps/web/src/components/chat/ProviderModelPicker.tsx`
+  - `apps/web/src/components/settings/FavoriteModelsSection.tsx`
   - `apps/web/src/index.css`
   - `apps/mobile/src/features/threads/MobileReasoningPowerSlider.tsx`
   - `apps/mobile/src/features/threads/ThreadSettingsSheet.tsx`
   - `apps/mobile/src/features/threads/ThreadSettingsRows.shared.tsx`
+  - `apps/mobile/src/features/settings/FavoriteModelsSection.tsx`
   - `apps/mobile/src/components/ComposerModelControl.tsx`
   - `apps/mobile/src/components/ComposerToolbar.tsx`
 - **Non-Negotiable Invariants**:
   - **Web / Desktop**:
     - Grounded top horizontal provider & favorites bar (`bg-muted/35`, elevated active pill with `text-xs font-semibold` and `size-4` icons matching the Favorites star).
     - Selected model rows show a crisp checkmark and semibold label with **NO persistent gray background fill** (`selectedFill={false}`); compact `min-h-8` / `13px` row density inside a taller `h-80` (`320px`, ~9 visible rows) list balanced against the anchored top header and slim `26px` reasoning slider.
-    - Favorite star toggle on every model row, plus cross-provider Favorites tab ordered by `ServerSettings.favorites` with direct `@dnd-kit` drag-to-reorder handles synced across devices.
+    - Favorite star toggle on every model row, plus cross-provider Favorites tab ordered by `ServerSettings.favorites` with **NO drag handles or reorder controls inside the model picker popup**; cross-provider favorite model reordering lives in **Settings → Providers** (`FavoriteModelsSection.tsx`, `@dnd-kit` drag handles + arrow buttons) and syncs across devices.
     - Inline compact **Capsule Reasoning Power Slider** with circular dot thumb (NOT vertical bar), pure circular drifting white starfield dots whose density & speed scale with reasoning level (no sparkle icon or scratch lines), and **NO sparkle/star AI-slop icon** in front of the Reasoning label (even on Ultra/Max).
     - No redundant text badge next to `Reasoning` when level labels are already shown beneath the slider.
     - Compact **Standard / Fast** mode toggle positioned inline with the Reasoning header (replacing depth text labels), and extra model options (such as `Cyber Access · Standard`) share the single bottom footer row alongside the right-aligned Permissions menu (`ComposerPickerFooter`).
@@ -54,7 +56,7 @@ Each entry uses `<!-- t4-lock: <id> -->` and explicit path prefixes/files so `sc
     - Aligned `34pt` top header row (`Choose model` title on left + bare ghost `magnifyingglass` and `ellipsis` icon buttons on right at the same line height, no redundant active-model subtitle), followed by a flat single-layer horizontal provider & favorites tab strip (`18pt` icons, elevated active pill with `13.5px` semibold label).
     - Direct checkmark-only model list (`38pt` rows, `14.5px` typography) with **NO selected-row background box or shadow** (only bold foreground text + right-side `✓` checkmark, subdued star opacity on unselected rows).
     - PC-aligned bottom controls: `Reasoning` header row showing level count (`X / Y`) + inline `Std / Fast` switcher, standalone full-width `28pt` Capsule Reasoning Power Slider (`22pt` circular thumb, detent dots hidden behind fill, pure circular drifting starfield dots without sparkle/scratch artifacts), and a single unified bottom footer row carrying provider-specific extra options (such as GPT `Cyber Access`) on the left and the `Runtime` (`完全访问 ⌄`) menu pill on the right.
-    - Cross-provider Favorites tab follows `ServerSettings.favorites` order with drag-to-reorder mode (`Reorder favorites` in `...` menu or long-press on any favorite row, using `SettingsDragHandle` + Reanimated smooth shift + haptics) synced live with Desktop/Web.
+    - Cross-provider Favorites tab follows `ServerSettings.favorites` order cleanly without reorder mode inside the model picker sheet; cross-provider favorite reordering lives in **Settings → Providers** (`apps/mobile/src/features/settings/FavoriteModelsSection.tsx`, using `SettingsDragHandle` + Reanimated smooth shift + haptics) synced live with Desktop/Web.
     - Simplified mobile composer toolbar (`521aa66f91`): do not re-bloat `ComposerToolbar` / `ThreadComposer` / `IssueCommentComposer`.
 
 ### 2. Project Todos Center (`/todos`), MCP Tools & Full-Screen Calendar / Timeline

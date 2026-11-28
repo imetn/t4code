@@ -1,14 +1,3 @@
-import {
-  DndContext,
-  PointerSensor,
-  closestCenter,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from "@dnd-kit/core";
-import { restrictToParentElement, restrictToVerticalAxis } from "@dnd-kit/modifiers";
-import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
 import { T, useGT, useLocale, useMessages } from "gt-react";
 import { useLegendListRef } from "~/hooks/useLegendListRef";
 import {
@@ -19,9 +8,7 @@ import {
   type ResolvedKeybindingsConfig,
   MODEL_PICKER_JUMP_KEYBINDING_COMMANDS,
 } from "@t3tools/contracts";
-import type { ModelPreferences } from "@t3tools/contracts/settings";
 import { resolveSelectableModel } from "@t3tools/shared/model";
-import { modelFavoriteListsEqual, reorderModelFavorites } from "@t3tools/shared/serverSettings";
 import { useAtomValue } from "@effect/atom-react";
 import {
   formatProviderUpdateRequiredNotice,
@@ -40,7 +27,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { ChevronRightIcon, GripVerticalIcon, SearchIcon, XIcon } from "lucide-react";
+import { ChevronRightIcon, SearchIcon, XIcon } from "lucide-react";
 import { ModelListRow } from "./ModelListRow";
 import { ModelPickerSidebar } from "./ModelPickerSidebar";
 import { useProviderWorkspaceSnapshotRefresh } from "./useProviderWorkspaceSnapshotRefresh";
@@ -71,7 +58,6 @@ import {
 import {
   useEnvironmentModelPreferences,
   useToggleEnvironmentModelFavorite,
-  useUpdateEnvironmentModelPreferences,
 } from "~/hooks/useSettings";
 import { announce } from "~/lib/announce";
 import { cn } from "~/lib/utils";
@@ -348,95 +334,6 @@ function ModelPickerList({
   );
 }
 
-function SortableFavoriteModelRow(props: {
-  readonly sortableId: string;
-  readonly modelName: string;
-  readonly renderRow: (dragHandle: ReactNode) => ReactNode;
-}) {
-  const gt = useGT();
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    setActivatorNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: props.sortableId });
-
-  const handle = (
-    <span
-      ref={setActivatorNodeRef}
-      {...attributes}
-      {...listeners}
-      role="button"
-      tabIndex={-1}
-      aria-label={gt("Drag to reorder {name}", { name: props.modelName })}
-      onPointerDown={(event) => {
-        event.stopPropagation();
-        listeners?.onPointerDown?.(event);
-      }}
-      onClick={(event) => event.stopPropagation()}
-      className="flex size-4 shrink-0 cursor-grab touch-none items-center justify-center rounded text-muted-foreground/35 transition-colors hover:text-foreground active:cursor-grabbing group-hover:text-muted-foreground/75 group-data-highlighted:text-muted-foreground/75"
-    >
-      <GripVerticalIcon className="size-3" aria-hidden="true" />
-    </span>
-  );
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={{ transform: CSS.Translate.toString(transform), transition }}
-      className={cn(isDragging && "relative z-20 rounded-lg bg-popover shadow-md")}
-    >
-      {props.renderRow(handle)}
-    </div>
-  );
-}
-
-function SortableFavoritesModelList(props: {
-  readonly models: ReadonlyArray<ModelPickerItem>;
-  readonly onReorder: (fromKey: string, toKey: string) => void;
-  readonly renderModel: (model: ModelPickerItem, index: number, dragHandle: ReactNode) => ReactNode;
-}) {
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
-  const sortableKeys = props.models.map((model) => providerModelKey(model.instanceId, model.slug));
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    if (event.over === null || event.active.id === event.over.id) return;
-    props.onReorder(String(event.active.id), String(event.over.id));
-  };
-
-  return (
-    <div className="relative h-80 max-h-80 min-h-0 shrink-0 overflow-hidden">
-      <ComboboxListVirtualized>
-        <div className="model-picker-scrollbar-none h-full space-y-0.5 overflow-x-hidden overflow-y-auto overscroll-y-contain px-2 py-1.5">
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            modifiers={[restrictToVerticalAxis, restrictToParentElement]}
-            onDragEnd={handleDragEnd}
-          >
-            <SortableContext items={sortableKeys} strategy={verticalListSortingStrategy}>
-              {props.models.map((model, index) => {
-                const sortableId = providerModelKey(model.instanceId, model.slug);
-                return (
-                  <SortableFavoriteModelRow
-                    key={modelPickerModelKey(model.instanceId, model.slug)}
-                    sortableId={sortableId}
-                    modelName={model.name}
-                    renderRow={(dragHandle) => props.renderModel(model, index, dragHandle)}
-                  />
-                );
-              })}
-            </SortableContext>
-          </DndContext>
-        </div>
-      </ComboboxListVirtualized>
-    </div>
-  );
-}
-
 // Capture gives picker shortcuts priority over the composer.
 function WindowKeyDownListener({ onKeyDown }: { onKeyDown: (event: KeyboardEvent) => void }) {
   const handleKeyDown = useEffectEvent(onKeyDown);
@@ -494,17 +391,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- publishes this picker's mount to global keydown handlers
   useLayoutEffect(() => registerModelPickerContent(), []);
   const highlightedModelKeyRef = useRef<string | null>(null);
-  const { favorites: savedFavorites } = useEnvironmentModelPreferences(props.environmentId);
-  const [pendingFavoriteOrder, setPendingFavoriteOrder] = useState<
-    ModelPreferences["favorites"] | null
-  >(null);
-  if (
-    pendingFavoriteOrder !== null &&
-    modelFavoriteListsEqual(pendingFavoriteOrder, savedFavorites)
-  ) {
-    setPendingFavoriteOrder(null);
-  }
-  const favorites = pendingFavoriteOrder ?? savedFavorites;
+  const { favorites } = useEnvironmentModelPreferences(props.environmentId);
   const activeEntry = props.instanceEntries.find(
     (entry) => entry.instanceId === props.activeInstanceId,
   );
@@ -607,23 +494,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   );
   const serverKeybindings = useAtomValue(primaryServerKeybindingsAtom);
   const keybindings = providedKeybindings ?? serverKeybindings;
-  const rawToggleFavorite = useToggleEnvironmentModelFavorite(props.environmentId);
-  const updateModelPreferences = useUpdateEnvironmentModelPreferences(props.environmentId);
-  const toggleFavorite = (provider: ProviderInstanceId, slug: string) => {
-    setPendingFavoriteOrder(null);
-    return rawToggleFavorite(provider, slug);
-  };
-  const reorderFavorites = (visibleKeys: ReadonlyArray<string>, fromKey: string, toKey: string) => {
-    if (!props.environmentId) return;
-    const nextFavorites = reorderModelFavorites(favorites, visibleKeys, fromKey, toKey);
-    if (modelFavoriteListsEqual(nextFavorites, favorites)) return;
-    setPendingFavoriteOrder(nextFavorites);
-    void updateModelPreferences({ favorites: nextFavorites }).then((result) => {
-      if (result && result._tag === "Failure") {
-        setPendingFavoriteOrder(null);
-      }
-    });
-  };
+  const toggleFavorite = useToggleEnvironmentModelFavorite(props.environmentId);
 
   const focusSearchInput = () => {
     searchInputRef.current?.focus({ preventScroll: true });
@@ -1250,143 +1121,92 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
               ) : null}
             </div>
 
-            {selectedInstanceId === "favorites" &&
-            !isSearching &&
-            visibleModels.length > 1 &&
-            props.environmentId !== null ? (
-              <SortableFavoritesModelList
-                models={visibleModels}
-                onReorder={(fromKey, toKey) =>
-                  reorderFavorites(
-                    visibleModels.map((model) => providerModelKey(model.instanceId, model.slug)),
-                    fromKey,
-                    toKey,
-                  )
-                }
-                renderModel={(model, index, dragHandle) => {
-                  const modelKey = modelPickerModelKey(model.instanceId, model.slug);
-                  const disabledReason =
-                    getModelDisabledReason?.(model.instanceId, model.slug) ?? null;
+            <ModelPickerList
+              listRef={modelListRef}
+              itemKeys={filteredItemKeys}
+              extraData={modelListExtraData}
+              renderItem={({ item: modelKey, index }) => {
+                const subProviderSection = subProviderSectionByKey.get(modelKey);
+                if (subProviderSection) {
+                  const unavailable = subProviderSection.unavailableReason !== undefined;
                   return (
-                    <ModelListRow
-                      key={modelKey}
+                    <ComboboxItem
+                      hideIndicator
+                      variant="picker"
                       index={index}
-                      slug={model.slug}
-                      name={model.name}
-                      subProvider={model.subProvider}
-                      instanceId={model.instanceId}
-                      driverKind={model.driverKind}
-                      providerDisplayName={model.instanceDisplayName}
-                      providerAccentColor={model.instanceAccentColor}
-                      acpRegistryAgentId={model.acpRegistryAgentId}
-                      acpRegistryIconUrl={model.acpRegistryIconUrl}
-                      isFavorite={favoritesSet.has(providerModelKey(model.instanceId, model.slug))}
-                      isSelected={
-                        selectedModelKeys !== undefined
-                          ? selectedModelKeySet.has(modelKey)
-                          : modelKey === activeModelKey
-                      }
-                      favoriteStarOnHover
-                      showProviderIcon
-                      showInstanceBadge={badgedInstanceIds.has(model.instanceId)}
-                      showNewBadge={model.badge === "new"}
-                      unavailable={model.isUnavailable === true}
-                      jumpLabel={modelJumpLabelByKey.get(modelKey) ?? null}
-                      disabledReason={disabledReason}
-                      leadingAccessory={dragHandle}
-                      onToggleFavorite={toggleFavorite}
-                    />
-                  );
-                }}
-              />
-            ) : (
-              <ModelPickerList
-                listRef={modelListRef}
-                itemKeys={filteredItemKeys}
-                extraData={modelListExtraData}
-                renderItem={({ item: modelKey, index }) => {
-                  const subProviderSection = subProviderSectionByKey.get(modelKey);
-                  if (subProviderSection) {
-                    const unavailable = subProviderSection.unavailableReason !== undefined;
-                    return (
-                      <ComboboxItem
-                        hideIndicator
-                        variant="picker"
-                        index={index}
-                        value={modelKey}
-                        disabled={unavailable}
-                        aria-expanded={unavailable ? undefined : subProviderSection.isExpanded}
-                        className="group w-full cursor-pointer"
-                      >
-                        <div className="min-w-0 flex-1 text-left">
-                          <div className="flex min-w-0 items-center gap-2">
-                            <div className="min-w-0 truncate font-normal leading-snug">
-                              {subProviderSection.name}
-                            </div>
-                            {unavailable ? (
-                              <Badge variant="outline" size="sm">
-                                {gt("Unavailable", {
-                                  $context: "backend cannot be used right now",
-                                })}
-                              </Badge>
-                            ) : null}
+                      value={modelKey}
+                      disabled={unavailable}
+                      aria-expanded={unavailable ? undefined : subProviderSection.isExpanded}
+                      className="group w-full cursor-pointer"
+                    >
+                      <div className="min-w-0 flex-1 text-left">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <div className="min-w-0 truncate font-normal leading-snug">
+                            {subProviderSection.name}
                           </div>
-                          <div className="mt-0.5 text-xs font-normal leading-snug text-muted-foreground">
-                            {subProviderSection.unavailableReason ??
-                              gt("{count, plural, one {{count} model} other {{count} models}}", {
-                                count: subProviderSection.models.length,
+                          {unavailable ? (
+                            <Badge variant="outline" size="sm">
+                              {gt("Unavailable", {
+                                $context: "backend cannot be used right now",
                               })}
-                          </div>
+                            </Badge>
+                          ) : null}
                         </div>
-                        {unavailable ? null : (
-                          <ChevronRightIcon
-                            className={cn(
-                              "size-4 shrink-0 transition-transform",
-                              subProviderSection.isExpanded && "rotate-90",
-                            )}
-                          />
-                        )}
-                      </ComboboxItem>
-                    );
-                  }
-                  const model = filteredModelByKey.get(modelKey);
-                  if (!model) {
-                    return null;
-                  }
-                  const disabledReason =
-                    getModelDisabledReason?.(model.instanceId, model.slug) ?? null;
-                  return (
-                    <ModelListRow
-                      key={modelKey}
-                      index={index}
-                      slug={model.slug}
-                      name={model.name}
-                      subProvider={model.subProvider}
-                      instanceId={model.instanceId}
-                      driverKind={model.driverKind}
-                      providerDisplayName={model.instanceDisplayName}
-                      providerAccentColor={model.instanceAccentColor}
-                      acpRegistryAgentId={model.acpRegistryAgentId}
-                      acpRegistryIconUrl={model.acpRegistryIconUrl}
-                      isFavorite={favoritesSet.has(providerModelKey(model.instanceId, model.slug))}
-                      isSelected={
-                        selectedModelKeys !== undefined
-                          ? selectedModelKeySet.has(modelKey)
-                          : modelKey === activeModelKey
-                      }
-                      favoriteStarOnHover={selectedInstanceId === "favorites" && !isSearching}
-                      showProviderIcon={isSearching || selectedInstanceId === "favorites"}
-                      showInstanceBadge={badgedInstanceIds.has(model.instanceId)}
-                      showNewBadge={model.badge === "new"}
-                      unavailable={model.isUnavailable === true}
-                      jumpLabel={modelJumpLabelByKey.get(modelKey) ?? null}
-                      disabledReason={disabledReason}
-                      onToggleFavorite={toggleFavorite}
-                    />
+                        <div className="mt-0.5 text-xs font-normal leading-snug text-muted-foreground">
+                          {subProviderSection.unavailableReason ??
+                            gt("{count, plural, one {{count} model} other {{count} models}}", {
+                              count: subProviderSection.models.length,
+                            })}
+                        </div>
+                      </div>
+                      {unavailable ? null : (
+                        <ChevronRightIcon
+                          className={cn(
+                            "size-4 shrink-0 transition-transform",
+                            subProviderSection.isExpanded && "rotate-90",
+                          )}
+                        />
+                      )}
+                    </ComboboxItem>
                   );
-                }}
-              />
-            )}
+                }
+                const model = filteredModelByKey.get(modelKey);
+                if (!model) {
+                  return null;
+                }
+                const disabledReason =
+                  getModelDisabledReason?.(model.instanceId, model.slug) ?? null;
+                return (
+                  <ModelListRow
+                    key={modelKey}
+                    index={index}
+                    slug={model.slug}
+                    name={model.name}
+                    subProvider={model.subProvider}
+                    instanceId={model.instanceId}
+                    driverKind={model.driverKind}
+                    providerDisplayName={model.instanceDisplayName}
+                    providerAccentColor={model.instanceAccentColor}
+                    acpRegistryAgentId={model.acpRegistryAgentId}
+                    acpRegistryIconUrl={model.acpRegistryIconUrl}
+                    isFavorite={favoritesSet.has(providerModelKey(model.instanceId, model.slug))}
+                    isSelected={
+                      selectedModelKeys !== undefined
+                        ? selectedModelKeySet.has(modelKey)
+                        : modelKey === activeModelKey
+                    }
+                    favoriteStarOnHover={selectedInstanceId === "favorites" && !isSearching}
+                    showProviderIcon={isSearching || selectedInstanceId === "favorites"}
+                    showInstanceBadge={badgedInstanceIds.has(model.instanceId)}
+                    showNewBadge={model.badge === "new"}
+                    unavailable={model.isUnavailable === true}
+                    jumpLabel={modelJumpLabelByKey.get(modelKey) ?? null}
+                    disabledReason={disabledReason}
+                    onToggleFavorite={toggleFavorite}
+                  />
+                );
+              }}
+            />
             <ModelPickerProviderNotices
               setupEntries={providerSetupEntries}
               updateRequiredNotices={updateRequiredNotices}

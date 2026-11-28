@@ -1,6 +1,6 @@
 import { type ProviderDriverKind, type ProviderInstanceId } from "@t3tools/contracts";
 import { T, useGT } from "gt-react";
-import { memo, type ReactNode } from "react";
+import { memo } from "react";
 import { CheckIcon, StarIcon } from "lucide-react";
 import { getDisplayModelName } from "./providerIconUtils";
 import { ComboboxItem } from "../ui/combobox";
@@ -32,7 +32,6 @@ export const ModelListRow = memo(function ModelListRow(props: {
   unavailable?: boolean;
   jumpLabel?: string | null;
   disabledReason?: string | null;
-  leadingAccessory?: ReactNode;
   onToggleFavorite: (instanceId: ProviderInstanceId, slug: string) => void;
 }) {
   const gt = useGT();
@@ -57,7 +56,6 @@ export const ModelListRow = memo(function ModelListRow(props: {
           "data-disabled:pointer-events-auto data-disabled:cursor-not-allowed",
       )}
     >
-      {props.leadingAccessory}
       {showProviderIcon ? (
         <ProviderInstanceIcon
           driverKind={props.driverKind}

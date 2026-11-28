@@ -10,6 +10,7 @@ import { restrictToParentElement, restrictToVerticalAxis } from "@dnd-kit/modifi
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { SettingsGroup } from "./SettingsGroup";
+import { FavoriteModelsSection } from "./FavoriteModelsSection";
 import {
   moveProviderInstance,
   orderProviderInstances,
@@ -1233,6 +1234,21 @@ export function EnvironmentProviderSettings({
           </div>
         </SettingsGroup>
       </SettingsSection>
+
+      <FavoriteModelsSection
+        favorites={favorites}
+        providers={serverProviders}
+        providerInstances={settings.providerInstances}
+        readOnly={readOnly}
+        canWriteSettings={canWriteSettings}
+        onReorderFavorites={async (next) => {
+          const result = await stableUpdateModelPreferences({ favorites: next });
+          return result?._tag !== "Failure";
+        }}
+        onToggleFavorite={(provider, model) => {
+          void stableToggleModelFavorite(provider, model);
+        }}
+      />
 
       <UsageProviderSettings
         key={environmentId}

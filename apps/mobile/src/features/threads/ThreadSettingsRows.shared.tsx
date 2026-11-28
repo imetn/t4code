@@ -12,7 +12,6 @@ export type ModelRowProps = {
   readonly selected: boolean;
   readonly selectedBackgroundColor?: string;
   readonly onPress: () => void;
-  readonly onLongPress?: () => void;
   readonly isFavorite: boolean;
   readonly favoritesLoaded: boolean;
   readonly onToggleFavorite: () => void;
@@ -73,8 +72,6 @@ export function ModelRowContent(
         className="min-h-[38px] min-w-0 flex-1 flex-row items-center gap-2.5 active:opacity-60 android:min-h-[44px]"
         disabled={props.option.isUnavailable || props.option.isHidden}
         onPress={props.onPress}
-        onLongPress={props.onLongPress}
-        delayLongPress={320}
       >
         {props.leadingSelection}
         {props.showProviderIcon ? (
