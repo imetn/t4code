@@ -267,6 +267,7 @@ beforeEach(() => {
   state.questionDrafts = {};
   state.compactModel = null;
   state.compactDueAt = "";
+  state.thread.runtime = null;
   state.thread.latestRun = null;
   state.projection = null;
   state.serverConfig = {
@@ -803,5 +804,62 @@ describe("mobile handoff preview and submission", () => {
       }),
     );
     expect(state.clearDraft).toHaveBeenCalledTimes(1);
+  });
+
+  it("prefers live shell runtime over a stale cached running projection until detail is live", () => {
+    const runId = RunId.make("run:stale-running");
+    state.thread.runtime = {
+      status: "completed",
+      activeRunId: null,
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      providerName: "codex",
+      lastError: null,
+      updatedAt: "2026-09-05T00:05:00.000Z",
+    } as unknown as null;
+    state.thread.latestRun = {
+      runId,
+      status: "completed",
+      requestedAt: "2026-09-05T00:00:00.000Z",
+      startedAt: "2026-09-05T00:00:01.000Z",
+      completedAt: "2026-09-05T00:05:00.000Z",
+      assistantMessageId: null,
+    };
+    state.projection = {
+      ...v2Projection,
+      runs: [
+        {
+          id: runId,
+          threadId: v2Projection.thread.id,
+          ordinal: 1,
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          modelSelection: v2Projection.thread.modelSelection,
+          providerThreadId: null,
+          userMessageId: MessageId.make("message:stale-running"),
+          rootNodeId: null,
+          activeAttemptId: null,
+          status: "running",
+          requestedAt: v2Now,
+          startedAt: v2Now,
+          completedAt: null,
+          checkpointId: null,
+          contextHandoffId: null,
+        },
+      ],
+    };
+
+    const cached = useThreadComposerState({ ...NO_SIDE_CHATS, detailStatus: "cached" });
+    expect(cached.interruptibleRunId).toBeNull();
+    expect(cached.activeThreadBusy).toBe(false);
+
+    const synchronizing = useThreadComposerState({
+      ...NO_SIDE_CHATS,
+      detailStatus: "synchronizing",
+    });
+    expect(synchronizing.interruptibleRunId).toBeNull();
+    expect(synchronizing.activeThreadBusy).toBe(false);
+
+    const live = useThreadComposerState({ ...NO_SIDE_CHATS, detailStatus: "live" });
+    expect(live.interruptibleRunId).toBe(runId);
+    expect(live.activeThreadBusy).toBe(true);
   });
 });

@@ -394,7 +394,10 @@ function ThreadRouteContent(
   const selectedThreadDetail = Option.getOrNull(selectedThreadDetailState.data);
   const { selectedThreadCwd } = useSelectedThreadWorktree();
   const startSideChat = useStartSideChat();
-  const composer = useThreadComposerState({ startSideChat });
+  const composer = useThreadComposerState({
+    startSideChat,
+    detailStatus: selectedThreadDetailState.status,
+  });
   const gitState = useSelectedThreadGitState();
   const gitActions = useSelectedThreadGitActions();
   const requests = useSelectedThreadRequests();
@@ -910,7 +913,9 @@ function ThreadRouteContent(
   const awaitingBootstrapTurn =
     worktreeSetup !== null
       ? worktreeSetup.phase === "running" && !worktreeSetupAgentStarted(worktreeSetup)
-      : (selectedThreadDetail?.runs.some((run) => run.status === "preparing") ?? false);
+      : selectedThreadDetailState.status === "live"
+        ? (selectedThreadDetail?.runs.some((run) => run.status === "preparing") ?? false)
+        : selectedThread?.runtime?.status === "preparing";
   const cancelWorktreeSetup = useAtomCommand(vcsEnvironment.cancelWorktreeSetup);
   const handleCancelWorktreeSetup = () => {
     if (!selectedThread) return;

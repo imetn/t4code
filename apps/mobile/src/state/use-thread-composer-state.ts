@@ -45,6 +45,7 @@ import {
   parseCodexFeedbackCommand,
   submitCodexFeedback,
   type CodexFeedbackSubmission,
+  type EnvironmentThreadStatus,
 } from "@t3tools/client-runtime/state/threads";
 import { resolveThreadWorkingStartedAt } from "@t3tools/client-runtime/state/models";
 import { deriveThreadTitleSeed } from "@t3tools/client-runtime/operations";
@@ -229,6 +230,7 @@ export function useThreadComposerState(input: {
     message: SideChatMessage,
     settings: { readonly runtimeMode: RuntimeMode; readonly modelSelection: ModelSelection },
   ) => Promise<boolean>;
+  readonly detailStatus?: EnvironmentThreadStatus;
 }) {
   const {
     selectedThread: selectedThreadShell,
@@ -364,19 +366,33 @@ export function useThreadComposerState(input: {
     thread: selectedThreadShell,
     projection: selectedThreadProjection?.projection,
   });
-  const selectedThreadRuntime = selectedThreadProjection
+  const detailRuntime = selectedThreadProjection
     ? deriveThreadRuntime(selectedThreadProjection.projection)
-    : (selectedThreadShell?.runtime ?? null);
-  const selectedThreadActivityRun = selectedThreadProjection
-    ? deriveThreadActivityRun(selectedThreadProjection.projection, serverConfig?.providers)
-    : (selectedThreadShell?.latestRun ?? null);
-  const selectedThreadAnnouncedRun = announcedRun(
-    selectedThreadActivityRun,
-    selectedThreadProjection?.projection.runs ?? [],
-  );
+    : null;
   const selectedThreadDetailBehindShell = isDetailBehindShell(
     selectedThreadProjection ? deriveLatestThreadRun(selectedThreadProjection.projection) : null,
     selectedThreadShell?.latestRun ?? null,
+  );
+  // Before the detail stream catches up, a cached projection can still hold a prior
+  // running turn after the live shell has already settled.
+  const detailRuntimeStale =
+    selectedThreadShell !== null &&
+    input.detailStatus !== undefined &&
+    input.detailStatus !== "live" &&
+    (selectedThreadDetailBehindShell ||
+      detailRuntime?.status !== selectedThreadShell.runtime?.status ||
+      detailRuntime?.activeRunId !== selectedThreadShell.runtime?.activeRunId);
+  const selectedThreadRuntime =
+    selectedThreadProjection && !detailRuntimeStale
+      ? detailRuntime
+      : (selectedThreadShell?.runtime ?? null);
+  const selectedThreadActivityRun =
+    selectedThreadProjection && !detailRuntimeStale
+      ? deriveThreadActivityRun(selectedThreadProjection.projection, serverConfig?.providers)
+      : (selectedThreadShell?.latestRun ?? null);
+  const selectedThreadAnnouncedRun = announcedRun(
+    selectedThreadActivityRun,
+    selectedThreadProjection?.projection.runs ?? [],
   );
 
   const activeRunId =
