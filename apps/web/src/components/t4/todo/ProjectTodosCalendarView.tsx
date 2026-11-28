@@ -2,6 +2,7 @@ import {
   scopeProjectRef,
   scopeThreadRef,
   scopedProjectKey,
+  scopedThreadKey,
 } from "@t3tools/client-runtime/environment";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import {
@@ -19,7 +20,6 @@ import {
   AuthOrchestrationOperateScope,
   type EnvironmentId,
   type ProjectId,
-  type ProjectTodoSummary,
   type ThreadId,
 } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
@@ -55,23 +55,26 @@ import { toastManager } from "~/components/ui/toast";
 import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
 import { cn } from "~/lib/utils";
 import { useProjects, useQuietThreadShells, useServerConfigs } from "~/state/entities";
+import { useEnvironments } from "~/state/environments";
 import {
   loadProjectTodoDispatchPrompt,
   projectTodoEnvironment,
-  useEnvironmentSupportsProjectTodos,
-  useProjectTodoDailyReview,
+  useMultiEnvironmentProjectTodoDailyReview,
+  type ScopedProjectTodoSummary,
 } from "~/state/projectTodos";
 import { formatEnvironmentQueryError } from "~/state/query";
-import { useEnvironmentScope } from "~/state/session";
+import { useEnvironmentsWithScope } from "~/state/session";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { buildThreadRouteParams } from "~/threadRoutes";
 import { newProjectTodoId, ProjectTodoFormDialog } from "./ProjectTodoFormDialog";
 
 interface ProjectTodosCalendarViewProps {
   readonly environmentId: EnvironmentId | null;
+  readonly environmentIds?: ReadonlyArray<EnvironmentId>;
   readonly projectId: ProjectId | null;
   readonly defaultProjectId?: ProjectId | null;
-  readonly onRequestNewTodo?: (projectId?: ProjectId) => void;
+  readonly defaultEnvironmentId?: EnvironmentId | null;
+  readonly onRequestNewTodo?: (projectId?: ProjectId, environmentId?: EnvironmentId) => void;
 }
 
 const WEEKDAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
@@ -102,8 +105,8 @@ function buildWeekdayHeaders(): ReadonlyArray<{ readonly key: string; readonly l
 }
 
 interface CalendarDayBucket {
-  readonly unfinished: ProjectTodoSummary[];
-  readonly completed: ProjectTodoSummary[];
+  readonly unfinished: ScopedProjectTodoSummary[];
+  readonly completed: ScopedProjectTodoSummary[];
 }
 
 export function ProjectTodosCalendarView(props: ProjectTodosCalendarViewProps) {
@@ -113,6 +116,7 @@ export function ProjectTodosCalendarView(props: ProjectTodosCalendarViewProps) {
   const projects = useProjects();
   const threads = useQuietThreadShells();
   const serverConfigs = useServerConfigs();
+  const { environments } = useEnvironments();
 
   const [today] = useState(() => todayLocalCalendarDay());
   const [visibleMonth, setVisibleMonth] = useState<{
@@ -120,13 +124,31 @@ export function ProjectTodosCalendarView(props: ProjectTodosCalendarViewProps) {
     readonly month: number;
   }>(() => ({ year: today.year, month: today.month }));
   const [activeDay, setActiveDay] = useState<LocalCalendarDay | null>(null);
-  const [editingItem, setEditingItem] = useState<ProjectTodoSummary | null>(null);
+  const [editingEntry, setEditingEntry] = useState<ScopedProjectTodoSummary | null>(null);
   const [quickTitle, setQuickTitle] = useState("");
-  const [quickProjectId, setQuickProjectId] = useState<ProjectId | null>(null);
+  const [quickProjectScopedKey, setQuickProjectScopedKey] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
-  const supported = useEnvironmentSupportsProjectTodos(props.environmentId);
-  const canOperate = useEnvironmentScope(props.environmentId, AuthOrchestrationOperateScope);
+  const requestedEnvironmentIds =
+    props.environmentIds !== undefined
+      ? props.environmentIds
+      : props.environmentId !== null
+        ? [props.environmentId]
+        : [];
+  const targetEnvironmentIds = requestedEnvironmentIds.filter(
+    (environmentId) =>
+      serverConfigs.get(environmentId)?.environment.capabilities.projectTodos === true,
+  );
+  const targetEnvironmentIdSet = new Set(targetEnvironmentIds);
+  const isMultiEnvironment = targetEnvironmentIds.length > 1;
+
+  const operableEnvironmentIds = useEnvironmentsWithScope(
+    targetEnvironmentIds.map((environmentId) => ({ environmentId })),
+    AuthOrchestrationOperateScope,
+  );
+  const environmentLabelById = new Map(
+    environments.map((environment) => [environment.environmentId, environment.label] as const),
+  );
 
   const todayKey = localCalendarDayKey(today);
   const dayBounds = localDayWindowForCalendarDay(activeDay ?? today);
@@ -134,81 +156,79 @@ export function ProjectTodosCalendarView(props: ProjectTodosCalendarViewProps) {
   const calendarCells = buildCalendarMonthGrid(visibleMonth.year, visibleMonth.month);
   const weekdayHeaders = buildWeekdayHeaders();
 
-  const reviewQuery = useProjectTodoDailyReview(
-    props.environmentId !== null
-      ? {
-          environmentId: props.environmentId,
-          input: {
-            ...(props.projectId !== null ? { projectId: props.projectId } : {}),
-            dayStartIso: dayBounds.dayStartIso,
-            dayEndIso: dayBounds.dayEndIso,
-            rangeStartIso: monthBounds.rangeStartIso,
-            rangeEndIso: monthBounds.rangeEndIso,
-          },
-        }
-      : null,
-  );
+  const reviewTargets = targetEnvironmentIds.map((environmentId) => ({
+    environmentId,
+    input: {
+      ...(props.projectId !== null ? { projectId: props.projectId } : {}),
+      dayStartIso: dayBounds.dayStartIso,
+      dayEndIso: dayBounds.dayEndIso,
+      rangeStartIso: monthBounds.rangeStartIso,
+      rangeEndIso: monthBounds.rangeEndIso,
+    },
+  }));
+  const reviewQuery = useMultiEnvironmentProjectTodoDailyReview(reviewTargets);
 
   const createCommand = useAtomCommand(projectTodoEnvironment.create, { reportFailure: false });
   const updateCommand = useAtomCommand(projectTodoEnvironment.update, { reportFailure: false });
 
-  const scratchWorkspaceRoot =
-    props.environmentId !== null
-      ? serverConfigs.get(props.environmentId)?.scratchWorkspaceRoot
-      : undefined;
   const envProjects = projects.filter(
     (project) =>
-      props.environmentId !== null &&
-      project.environmentId === props.environmentId &&
+      targetEnvironmentIdSet.has(project.environmentId) &&
       project.archivedAt === null &&
-      !isScratchProject(project, scratchWorkspaceRoot),
+      !isScratchProject(project, serverConfigs.get(project.environmentId)?.scratchWorkspaceRoot),
   );
-  const projectNameById = new Map(
-    envProjects.map((project) => [project.id, project.title] as const),
+  const projectByScopedKey = new Map(
+    envProjects.map(
+      (project) =>
+        [scopedProjectKey(scopeProjectRef(project.environmentId, project.id)), project] as const,
+    ),
   );
-  const threadById = new Map(
+  const threadByScopedKey = new Map(
     threads
-      .filter(
-        (thread) => props.environmentId !== null && thread.environmentId === props.environmentId,
-      )
-      .map((thread) => [thread.id, thread] as const),
+      .filter((thread) => targetEnvironmentIdSet.has(thread.environmentId))
+      .map(
+        (thread) =>
+          [scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)), thread] as const,
+      ),
   );
 
   const byDayKey = new Map<string, CalendarDayBucket>();
   let monthUnfinishedCount = 0;
   let monthCompletedCount = 0;
 
-  for (const item of reviewQuery.data?.calendarItems ?? []) {
-    const isCompleted = item.completedAt !== null;
+  for (const entry of reviewQuery.calendarItems) {
+    const isCompleted = entry.item.completedAt !== null;
     const targetKey = isCompleted
-      ? localDateKeyFromIso(item.completedAt!)
-      : localDateKeyFromIso(item.createdAt);
+      ? localDateKeyFromIso(entry.item.completedAt!)
+      : localDateKeyFromIso(entry.item.createdAt);
     let bucket = byDayKey.get(targetKey);
     if (bucket === undefined) {
       bucket = { unfinished: [], completed: [] };
       byDayKey.set(targetKey, bucket);
     }
     if (isCompleted) {
-      bucket.completed.push(item);
+      bucket.completed.push(entry);
       monthCompletedCount += 1;
     } else {
-      bucket.unfinished.push(item);
+      bucket.unfinished.push(entry);
       monthUnfinishedCount += 1;
     }
   }
 
   for (const bucket of byDayKey.values()) {
     bucket.unfinished.sort((left, right) => {
-      if (left.priority !== right.priority) return left.priority === "high" ? -1 : 1;
-      if (left.pinned !== right.pinned) return left.pinned ? -1 : 1;
-      return right.createdAt.localeCompare(left.createdAt);
+      if (left.item.priority !== right.item.priority) return left.item.priority === "high" ? -1 : 1;
+      if (left.item.pinned !== right.item.pinned) return left.item.pinned ? -1 : 1;
+      return right.item.createdAt.localeCompare(left.item.createdAt);
     });
     bucket.completed.sort((left, right) =>
-      (right.completedAt ?? right.updatedAt).localeCompare(left.completedAt ?? left.updatedAt),
+      (right.item.completedAt ?? right.item.updatedAt).localeCompare(
+        left.item.completedAt ?? left.item.updatedAt,
+      ),
     );
   }
 
-  if (props.environmentId === null || !supported) {
+  if (targetEnvironmentIds.length === 0) {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-xs text-muted-foreground">
         <T>Select a T4 Code environment to view the project todo calendar.</T>
@@ -216,34 +236,58 @@ export function ProjectTodosCalendarView(props: ProjectTodosCalendarViewProps) {
     );
   }
 
+  const operableProjects = envProjects.filter((project) =>
+    operableEnvironmentIds.has(project.environmentId),
+  );
   const selectedDayBucket =
     activeDay !== null ? byDayKey.get(localCalendarDayKey(activeDay)) : undefined;
-  const activeDayFirstProjectId =
-    selectedDayBucket?.unfinished[0]?.projectId ??
-    selectedDayBucket?.completed[0]?.projectId ??
-    null;
-  const preferredQuickProjectId =
-    (props.defaultProjectId != null &&
-    envProjects.some((project) => project.id === props.defaultProjectId)
-      ? props.defaultProjectId
-      : null) ??
-    (activeDayFirstProjectId !== null &&
-    envProjects.some((project) => project.id === activeDayFirstProjectId)
-      ? activeDayFirstProjectId
-      : null) ??
-    envProjects[0]?.id ??
-    null;
-  const effectiveQuickProjectId = props.projectId ?? quickProjectId ?? preferredQuickProjectId;
+  const activeDayFirstEntry =
+    selectedDayBucket?.unfinished[0] ?? selectedDayBucket?.completed[0] ?? null;
 
-  const handleToggleCompleted = async (item: ProjectTodoSummary) => {
-    if (!canOperate) return;
+  const preferredQuickProject =
+    (props.projectId !== null
+      ? operableProjects.find(
+          (project) =>
+            project.id === props.projectId &&
+            (props.environmentId === null || project.environmentId === props.environmentId),
+        )
+      : undefined) ??
+    (quickProjectScopedKey !== null
+      ? operableProjects.find(
+          (project) =>
+            scopedProjectKey(scopeProjectRef(project.environmentId, project.id)) ===
+            quickProjectScopedKey,
+        )
+      : undefined) ??
+    (props.defaultProjectId != null
+      ? operableProjects.find(
+          (project) =>
+            project.id === props.defaultProjectId &&
+            (props.defaultEnvironmentId == null ||
+              project.environmentId === props.defaultEnvironmentId),
+        )
+      : undefined) ??
+    (activeDayFirstEntry !== null
+      ? operableProjects.find(
+          (project) =>
+            project.environmentId === activeDayFirstEntry.environmentId &&
+            project.id === activeDayFirstEntry.item.projectId,
+        )
+      : undefined) ??
+    operableProjects[0] ??
+    null;
+
+  const canOperateAny = operableEnvironmentIds.size > 0;
+
+  const handleToggleCompleted = async (entry: ScopedProjectTodoSummary) => {
+    if (!operableEnvironmentIds.has(entry.environmentId)) return;
     const result = await updateCommand({
-      environmentId: props.environmentId!,
+      environmentId: entry.environmentId,
       input: {
-        id: item.id,
-        projectId: item.projectId,
-        expectedRevision: item.revision,
-        completed: item.completedAt === null,
+        id: entry.item.id,
+        projectId: entry.item.projectId,
+        expectedRevision: entry.item.revision,
+        completed: entry.item.completedAt === null,
       },
     });
     if (result._tag === "Failure") {
@@ -256,14 +300,14 @@ export function ProjectTodosCalendarView(props: ProjectTodosCalendarViewProps) {
     reviewQuery.refresh();
   };
 
-  const handleArchive = async (item: ProjectTodoSummary) => {
-    if (!canOperate) return;
+  const handleArchive = async (entry: ScopedProjectTodoSummary) => {
+    if (!operableEnvironmentIds.has(entry.environmentId)) return;
     const result = await updateCommand({
-      environmentId: props.environmentId!,
+      environmentId: entry.environmentId,
       input: {
-        id: item.id,
-        projectId: item.projectId,
-        expectedRevision: item.revision,
+        id: entry.item.id,
+        projectId: entry.item.projectId,
+        expectedRevision: entry.item.revision,
         archived: true,
       },
     });
@@ -277,32 +321,32 @@ export function ProjectTodosCalendarView(props: ProjectTodosCalendarViewProps) {
     reviewQuery.refresh();
   };
 
-  const handleDispatch = async (item: ProjectTodoSummary) => {
-    const prompt = await loadProjectTodoDispatchPrompt(props.environmentId!, item);
-    await handleNewThread(scopeProjectRef(props.environmentId!, item.projectId), {
+  const handleDispatch = async (entry: ScopedProjectTodoSummary) => {
+    const prompt = await loadProjectTodoDispatchPrompt(entry.environmentId, entry.item);
+    await handleNewThread(scopeProjectRef(entry.environmentId, entry.item.projectId), {
       prompt,
     });
   };
 
-  const handleOpenThread = (threadId: ThreadId) => {
+  const handleOpenThread = (environmentId: EnvironmentId, threadId: ThreadId) => {
     void navigate({
       to: "/$environmentId/$threadId",
-      params: buildThreadRouteParams(scopeThreadRef(props.environmentId!, threadId)),
+      params: buildThreadRouteParams(scopeThreadRef(environmentId, threadId)),
     });
   };
 
   const handleQuickAddInSheet = async (event: FormEvent) => {
     event.preventDefault();
     const trimmed = quickTitle.trim();
-    if (trimmed.length === 0 || effectiveQuickProjectId === null || !canOperate || isCreating) {
+    if (trimmed.length === 0 || preferredQuickProject === null || isCreating) {
       return;
     }
     setIsCreating(true);
     const result = await createCommand({
-      environmentId: props.environmentId!,
+      environmentId: preferredQuickProject.environmentId,
       input: {
         id: newProjectTodoId(),
-        projectId: effectiveQuickProjectId,
+        projectId: preferredQuickProject.id,
         title: trimmed,
         kind: "todo",
       },
@@ -375,7 +419,7 @@ export function ProjectTodosCalendarView(props: ProjectTodosCalendarViewProps) {
             })}
           </span>
 
-          {reviewQuery.data?.calendarTruncated ? (
+          {reviewQuery.calendarTruncated ? (
             <Badge size="sm" variant="secondary">
               <T>Showing latest 200 items</T>
             </Badge>
@@ -474,13 +518,16 @@ export function ProjectTodosCalendarView(props: ProjectTodosCalendarViewProps) {
                         <span>{completed.length}</span>
                       </span>
                     ) : null}
-                    {canOperate && props.onRequestNewTodo !== undefined ? (
+                    {canOperateAny && props.onRequestNewTodo !== undefined ? (
                       <button
                         type="button"
                         aria-label={gt("Add todo on {date}", { date: cell.key })}
                         onClick={(event) => {
                           event.stopPropagation();
-                          props.onRequestNewTodo?.(props.projectId ?? undefined);
+                          props.onRequestNewTodo?.(
+                            props.projectId ?? undefined,
+                            props.defaultEnvironmentId ?? undefined,
+                          );
                         }}
                         className="inline-flex size-5 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover/day:opacity-100 focus-visible:opacity-100"
                       >
@@ -491,13 +538,19 @@ export function ProjectTodosCalendarView(props: ProjectTodosCalendarViewProps) {
                 </div>
 
                 <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-hidden">
-                  {visibleItems.map((item) => {
+                  {visibleItems.map((entry) => {
+                    const { item, environmentId } = entry;
                     const isCompleted = item.completedAt !== null;
+                    const canOperateEntry = operableEnvironmentIds.has(environmentId);
                     const projectTitle =
-                      props.projectId === null ? projectNameById.get(item.projectId) : undefined;
+                      props.projectId === null
+                        ? projectByScopedKey.get(
+                            scopedProjectKey(scopeProjectRef(environmentId, item.projectId)),
+                          )?.title
+                        : undefined;
                     return (
                       <div
-                        key={item.id}
+                        key={`${environmentId}:${item.id}`}
                         onClick={(event) => event.stopPropagation()}
                         className={cn(
                           "flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-left text-2xs transition-colors",
@@ -508,11 +561,11 @@ export function ProjectTodosCalendarView(props: ProjectTodosCalendarViewProps) {
                               : "border-border/70 bg-card/95 text-foreground hover:border-border",
                         )}
                       >
-                        {canOperate ? (
+                        {canOperateEntry ? (
                           <button
                             type="button"
                             aria-label={isCompleted ? gt("Mark as open") : gt("Mark as completed")}
-                            onClick={() => void handleToggleCompleted(item)}
+                            onClick={() => void handleToggleCompleted(entry)}
                             className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
                           >
                             {isCompleted ? (
@@ -533,7 +586,7 @@ export function ProjectTodosCalendarView(props: ProjectTodosCalendarViewProps) {
 
                         <button
                           type="button"
-                          onClick={() => setEditingItem(item)}
+                          onClick={() => setEditingEntry(entry)}
                           className="flex min-w-0 flex-1 items-center gap-1 text-left"
                         >
                           {item.kind === "note" ? (
@@ -599,23 +652,36 @@ export function ProjectTodosCalendarView(props: ProjectTodosCalendarViewProps) {
           </SheetHeader>
 
           <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden px-4 pb-4">
-            {canOperate && effectiveQuickProjectId !== null ? (
+            {preferredQuickProject !== null ? (
               <form
                 onSubmit={(event) => void handleQuickAddInSheet(event)}
                 className="flex flex-col gap-2 rounded-lg border border-border/60 bg-muted/15 p-2.5"
               >
-                {props.projectId === null && envProjects.length > 1 ? (
+                {props.projectId === null && operableProjects.length > 1 ? (
                   <select
                     aria-label={gt("Project")}
-                    value={effectiveQuickProjectId}
-                    onChange={(event) => setQuickProjectId(event.currentTarget.value as ProjectId)}
+                    value={scopedProjectKey(
+                      scopeProjectRef(
+                        preferredQuickProject.environmentId,
+                        preferredQuickProject.id,
+                      ),
+                    )}
+                    onChange={(event) => setQuickProjectScopedKey(event.currentTarget.value)}
                     className="h-7 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground outline-none focus:ring-2 focus:ring-inset focus:ring-ring"
                   >
-                    {envProjects.map((project) => (
-                      <option key={project.id} value={project.id}>
-                        {project.title}
-                      </option>
-                    ))}
+                    {operableProjects.map((project) => {
+                      const key = scopedProjectKey(
+                        scopeProjectRef(project.environmentId, project.id),
+                      );
+                      const envLabel = isMultiEnvironment
+                        ? environmentLabelById.get(project.environmentId)
+                        : undefined;
+                      return (
+                        <option key={key} value={key}>
+                          {envLabel ? `${project.title} (${envLabel})` : project.title}
+                        </option>
+                      );
+                    })}
                   </select>
                 ) : null}
                 <div className="flex items-center gap-1.5">
@@ -661,11 +727,20 @@ export function ProjectTodosCalendarView(props: ProjectTodosCalendarViewProps) {
                       <T>No unfinished items recorded on this day.</T>
                     </p>
                   ) : (
-                    activeDayBucket!.unfinished.map((item) => {
-                      const projectTitle = projectNameById.get(item.projectId);
+                    activeDayBucket!.unfinished.map((entry) => {
+                      const { item, environmentId } = entry;
+                      const canOperateEntry = operableEnvironmentIds.has(environmentId);
+                      const projectTitle = projectByScopedKey.get(
+                        scopedProjectKey(scopeProjectRef(environmentId, item.projectId)),
+                      )?.title;
+                      const envLabel = isMultiEnvironment
+                        ? environmentLabelById.get(environmentId)
+                        : undefined;
                       const linkedThread =
                         item.linkedThreadId !== null
-                          ? (threadById.get(item.linkedThreadId) ?? null)
+                          ? (threadByScopedKey.get(
+                              scopedThreadKey(scopeThreadRef(environmentId, item.linkedThreadId)),
+                            ) ?? null)
                           : null;
                       const linkedSettled =
                         linkedThread !== null &&
@@ -673,15 +748,15 @@ export function ProjectTodosCalendarView(props: ProjectTodosCalendarViewProps) {
                         !isThreadWorking(linkedThread);
                       return (
                         <div
-                          key={`open:${scopedProjectKey(scopeProjectRef(props.environmentId!, item.projectId))}:${item.id}`}
+                          key={`open:${scopedProjectKey(scopeProjectRef(environmentId, item.projectId))}:${item.id}`}
                           className="flex flex-col gap-1.5 rounded-lg border border-border/70 bg-card/95 p-2.5"
                         >
                           <div className="flex items-start gap-2">
-                            {canOperate ? (
+                            {canOperateEntry ? (
                               <button
                                 type="button"
                                 aria-label={gt("Mark as completed")}
-                                onClick={() => void handleToggleCompleted(item)}
+                                onClick={() => void handleToggleCompleted(entry)}
                                 className="mt-0.5 shrink-0 text-warning transition-colors hover:text-success"
                               >
                                 <CircleIcon className="size-4" />
@@ -692,7 +767,7 @@ export function ProjectTodosCalendarView(props: ProjectTodosCalendarViewProps) {
                             <div className="min-w-0 flex-1">
                               <button
                                 type="button"
-                                onClick={() => setEditingItem(item)}
+                                onClick={() => setEditingEntry(entry)}
                                 className="text-left text-xs font-medium text-foreground hover:underline"
                               >
                                 {item.title}
@@ -712,12 +787,19 @@ export function ProjectTodosCalendarView(props: ProjectTodosCalendarViewProps) {
                                   {projectTitle}
                                 </Badge>
                               ) : null}
+                              {envLabel ? (
+                                <Badge size="sm" variant="outline">
+                                  {envLabel}
+                                </Badge>
+                              ) : null}
                               {item.linkedThreadId !== null ? (
                                 <Button
                                   type="button"
                                   size="xs"
                                   variant="ghost"
-                                  onClick={() => handleOpenThread(item.linkedThreadId!)}
+                                  onClick={() =>
+                                    handleOpenThread(environmentId, item.linkedThreadId!)
+                                  }
                                 >
                                   <ExternalLinkIcon className="size-3" />
                                   <span className="max-w-28 truncate">
@@ -732,41 +814,41 @@ export function ProjectTodosCalendarView(props: ProjectTodosCalendarViewProps) {
                                 type="button"
                                 size="xs"
                                 variant="outline"
-                                onClick={() => void handleDispatch(item)}
+                                onClick={() => void handleDispatch(entry)}
                               >
                                 <SendIcon className="size-3" />
                                 <span>
                                   <T>Draft in thread</T>
                                 </span>
                               </Button>
-                              {canOperate && linkedSettled ? (
+                              {canOperateEntry && linkedSettled ? (
                                 <Button
                                   type="button"
                                   size="xs"
                                   variant="secondary"
-                                  onClick={() => void handleToggleCompleted(item)}
+                                  onClick={() => void handleToggleCompleted(entry)}
                                 >
                                   <T>Mark done?</T>
                                 </Button>
                               ) : null}
-                              {canOperate ? (
+                              {canOperateEntry ? (
                                 <Button
                                   type="button"
                                   size="icon-xs"
                                   variant="ghost"
                                   aria-label={gt("Edit item")}
-                                  onClick={() => setEditingItem(item)}
+                                  onClick={() => setEditingEntry(entry)}
                                 >
                                   <PencilIcon className="size-3" />
                                 </Button>
                               ) : null}
-                              {canOperate ? (
+                              {canOperateEntry ? (
                                 <Button
                                   type="button"
                                   size="icon-xs"
                                   variant="ghost"
                                   aria-label={gt("Archive item")}
-                                  onClick={() => void handleArchive(item)}
+                                  onClick={() => void handleArchive(entry)}
                                 >
                                   <ArchiveIcon className="size-3" />
                                 </Button>
@@ -797,19 +879,26 @@ export function ProjectTodosCalendarView(props: ProjectTodosCalendarViewProps) {
                       <T>Nothing completed on this date.</T>
                     </p>
                   ) : (
-                    activeDayBucket!.completed.map((item) => {
-                      const projectTitle = projectNameById.get(item.projectId);
+                    activeDayBucket!.completed.map((entry) => {
+                      const { item, environmentId } = entry;
+                      const canOperateEntry = operableEnvironmentIds.has(environmentId);
+                      const projectTitle = projectByScopedKey.get(
+                        scopedProjectKey(scopeProjectRef(environmentId, item.projectId)),
+                      )?.title;
+                      const envLabel = isMultiEnvironment
+                        ? environmentLabelById.get(environmentId)
+                        : undefined;
                       return (
                         <div
-                          key={`done:${scopedProjectKey(scopeProjectRef(props.environmentId!, item.projectId))}:${item.id}`}
+                          key={`done:${scopedProjectKey(scopeProjectRef(environmentId, item.projectId))}:${item.id}`}
                           className="flex items-center justify-between gap-2 rounded-lg border border-success/25 bg-success/5 p-2.5"
                         >
                           <div className="flex min-w-0 flex-1 items-start gap-2">
-                            {canOperate ? (
+                            {canOperateEntry ? (
                               <button
                                 type="button"
                                 aria-label={gt("Mark as open")}
-                                onClick={() => void handleToggleCompleted(item)}
+                                onClick={() => void handleToggleCompleted(entry)}
                                 className="mt-0.5 shrink-0 text-success transition-colors hover:text-muted-foreground"
                               >
                                 <CheckCircle2Icon className="size-4" />
@@ -820,29 +909,36 @@ export function ProjectTodosCalendarView(props: ProjectTodosCalendarViewProps) {
                             <div className="min-w-0 flex-1">
                               <button
                                 type="button"
-                                onClick={() => setEditingItem(item)}
+                                onClick={() => setEditingEntry(entry)}
                                 className="text-left text-xs text-muted-foreground line-through hover:text-foreground"
                               >
                                 {item.title}
                               </button>
-                              {projectTitle ? (
-                                <div className="mt-1">
-                                  <Badge size="sm" variant="secondary">
-                                    {projectTitle}
-                                  </Badge>
+                              {projectTitle || envLabel ? (
+                                <div className="mt-1 flex flex-wrap items-center gap-1">
+                                  {projectTitle ? (
+                                    <Badge size="sm" variant="secondary">
+                                      {projectTitle}
+                                    </Badge>
+                                  ) : null}
+                                  {envLabel ? (
+                                    <Badge size="sm" variant="outline">
+                                      {envLabel}
+                                    </Badge>
+                                  ) : null}
                                 </div>
                               ) : null}
                             </div>
                           </div>
 
-                          {canOperate ? (
+                          {canOperateEntry ? (
                             <div className="flex shrink-0 items-center gap-0.5">
                               <Button
                                 type="button"
                                 size="icon-xs"
                                 variant="ghost"
                                 aria-label={gt("Edit item")}
-                                onClick={() => setEditingItem(item)}
+                                onClick={() => setEditingEntry(entry)}
                               >
                                 <PencilIcon className="size-3" />
                               </Button>
@@ -851,7 +947,7 @@ export function ProjectTodosCalendarView(props: ProjectTodosCalendarViewProps) {
                                 size="icon-xs"
                                 variant="ghost"
                                 aria-label={gt("Archive item")}
-                                onClick={() => void handleArchive(item)}
+                                onClick={() => void handleArchive(entry)}
                               >
                                 <ArchiveIcon className="size-3" />
                               </Button>
@@ -868,18 +964,28 @@ export function ProjectTodosCalendarView(props: ProjectTodosCalendarViewProps) {
         </SheetPopup>
       </Sheet>
 
-      {editingItem !== null ? (
+      {editingEntry !== null ? (
         <ProjectTodoFormDialog
           open
           onOpenChange={(open) => {
-            if (!open) setEditingItem(null);
+            if (!open) setEditingEntry(null);
           }}
-          environmentId={props.environmentId}
-          projectId={editingItem.projectId}
-          {...(projectNameById.get(editingItem.projectId) !== undefined
-            ? { projectName: projectNameById.get(editingItem.projectId)! }
+          environmentId={editingEntry.environmentId}
+          projectId={editingEntry.item.projectId}
+          {...(projectByScopedKey.get(
+            scopedProjectKey(
+              scopeProjectRef(editingEntry.environmentId, editingEntry.item.projectId),
+            ),
+          ) !== undefined
+            ? {
+                projectName: projectByScopedKey.get(
+                  scopedProjectKey(
+                    scopeProjectRef(editingEntry.environmentId, editingEntry.item.projectId),
+                  ),
+                )!.title,
+              }
             : {})}
-          editSummary={editingItem}
+          editSummary={editingEntry.item}
           onSaved={() => reviewQuery.refresh()}
           onDeleted={() => reviewQuery.refresh()}
         />

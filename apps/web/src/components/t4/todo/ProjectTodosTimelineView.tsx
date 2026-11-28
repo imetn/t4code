@@ -2,6 +2,7 @@ import {
   scopeProjectRef,
   scopeThreadRef,
   scopedProjectKey,
+  scopedThreadKey,
 } from "@t3tools/client-runtime/environment";
 import {
   localCalendarDayKey,
@@ -18,7 +19,6 @@ import {
   type EnvironmentId,
   type IsoDateTime,
   type ProjectId,
-  type ProjectTodoSummary,
   type ThreadId,
 } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
@@ -53,21 +53,23 @@ import { ScrollArea } from "~/components/ui/scroll-area";
 import { toastManager } from "~/components/ui/toast";
 import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
 import { cn } from "~/lib/utils";
-import { useProjects, useQuietThreadShells } from "~/state/entities";
+import { useProjects, useQuietThreadShells, useServerConfigs } from "~/state/entities";
+import { useEnvironments } from "~/state/environments";
 import {
   loadProjectTodoDispatchPrompt,
   projectTodoEnvironment,
-  useEnvironmentSupportsProjectTodos,
-  useProjectTodoDailyReview,
+  useMultiEnvironmentProjectTodoDailyReview,
+  type ScopedProjectTodoSummary,
 } from "~/state/projectTodos";
 import { formatEnvironmentQueryError } from "~/state/query";
-import { useEnvironmentScope } from "~/state/session";
+import { useEnvironmentsWithScope } from "~/state/session";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { buildThreadRouteParams } from "~/threadRoutes";
 import { ProjectTodoFormDialog } from "./ProjectTodoFormDialog";
 
 interface ProjectTodosTimelineViewProps {
   readonly environmentId: EnvironmentId | null;
+  readonly environmentIds?: ReadonlyArray<EnvironmentId>;
   readonly projectId: ProjectId | null;
 }
 
@@ -122,6 +124,8 @@ export function ProjectTodosTimelineView(props: ProjectTodosTimelineViewProps) {
   const handleNewThread = useNewThreadHandler();
   const projects = useProjects();
   const threads = useQuietThreadShells();
+  const serverConfigs = useServerConfigs();
+  const { environments } = useEnvironments();
 
   const [today] = useState(() => todayLocalCalendarDay());
   const [visibleMonth, setVisibleMonth] = useState<{
@@ -131,49 +135,69 @@ export function ProjectTodosTimelineView(props: ProjectTodosTimelineViewProps) {
   const [groupMode, setGroupMode] = useState<TimelineGroupMode>("by-day");
   const [statusFilter, setStatusFilter] = useState<TimelineStatusFilter>("all");
   const [searchText, setSearchText] = useState("");
-  const [editingItem, setEditingItem] = useState<ProjectTodoSummary | null>(null);
+  const [editingEntry, setEditingEntry] = useState<ScopedProjectTodoSummary | null>(null);
 
-  const supported = useEnvironmentSupportsProjectTodos(props.environmentId);
-  const canOperate = useEnvironmentScope(props.environmentId, AuthOrchestrationOperateScope);
+  const requestedEnvironmentIds =
+    props.environmentIds !== undefined
+      ? props.environmentIds
+      : props.environmentId !== null
+        ? [props.environmentId]
+        : [];
+  const targetEnvironmentIds = requestedEnvironmentIds.filter(
+    (environmentId) =>
+      serverConfigs.get(environmentId)?.environment.capabilities.projectTodos === true,
+  );
+  const targetEnvironmentIdSet = new Set(targetEnvironmentIds);
+  const isMultiEnvironment = targetEnvironmentIds.length > 1;
+
+  const operableEnvironmentIds = useEnvironmentsWithScope(
+    targetEnvironmentIds.map((environmentId) => ({ environmentId })),
+    AuthOrchestrationOperateScope,
+  );
+  const environmentLabelById = new Map(
+    environments.map((environment) => [environment.environmentId, environment.label] as const),
+  );
 
   const todayKey = localCalendarDayKey(today);
   const yesterdayKey = localCalendarDayKey(shiftLocalCalendarDay(today, -1));
   const dayBounds = localDayWindowForCalendarDay(today);
   const monthBounds = localMonthRangeForCalendar(visibleMonth.year, visibleMonth.month);
 
-  const reviewQuery = useProjectTodoDailyReview(
-    props.environmentId !== null
-      ? {
-          environmentId: props.environmentId,
-          input: {
-            ...(props.projectId !== null ? { projectId: props.projectId } : {}),
-            dayStartIso: dayBounds.dayStartIso,
-            dayEndIso: dayBounds.dayEndIso,
-            rangeStartIso: monthBounds.rangeStartIso,
-            rangeEndIso: monthBounds.rangeEndIso,
-          },
-        }
-      : null,
-  );
+  const reviewTargets = targetEnvironmentIds.map((environmentId) => ({
+    environmentId,
+    input: {
+      ...(props.projectId !== null ? { projectId: props.projectId } : {}),
+      dayStartIso: dayBounds.dayStartIso,
+      dayEndIso: dayBounds.dayEndIso,
+      rangeStartIso: monthBounds.rangeStartIso,
+      rangeEndIso: monthBounds.rangeEndIso,
+    },
+  }));
+  const reviewQuery = useMultiEnvironmentProjectTodoDailyReview(reviewTargets);
 
   const updateCommand = useAtomCommand(projectTodoEnvironment.update, { reportFailure: false });
 
-  const projectNameById = new Map(
+  const projectNameByScopedKey = new Map(
     projects
-      .filter(
-        (project) => props.environmentId !== null && project.environmentId === props.environmentId,
-      )
-      .map((project) => [project.id, project.title] as const),
+      .filter((project) => targetEnvironmentIdSet.has(project.environmentId))
+      .map(
+        (project) =>
+          [
+            scopedProjectKey(scopeProjectRef(project.environmentId, project.id)),
+            project.title,
+          ] as const,
+      ),
   );
-  const threadById = new Map(
+  const threadByScopedKey = new Map(
     threads
-      .filter(
-        (thread) => props.environmentId !== null && thread.environmentId === props.environmentId,
-      )
-      .map((thread) => [thread.id, thread] as const),
+      .filter((thread) => targetEnvironmentIdSet.has(thread.environmentId))
+      .map(
+        (thread) =>
+          [scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)), thread] as const,
+      ),
   );
 
-  if (props.environmentId === null || !supported) {
+  if (targetEnvironmentIds.length === 0) {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-xs text-muted-foreground">
         <T>Select a T4 Code environment to view the project todo timeline.</T>
@@ -181,31 +205,36 @@ export function ProjectTodosTimelineView(props: ProjectTodosTimelineViewProps) {
     );
   }
 
-  const data = reviewQuery.data;
   // Combine month items with all-time linked/stale/pinned items so status grouping never drops older unfinished tasks.
-  const mergedMap = new Map<string, ProjectTodoSummary>();
-  for (const item of data?.calendarItems ?? []) {
-    mergedMap.set(item.id, item);
+  const mergedMap = new Map<string, ScopedProjectTodoSummary>();
+  for (const entry of reviewQuery.calendarItems) {
+    mergedMap.set(`${entry.environmentId}:${entry.item.id}`, entry);
   }
   if (groupMode === "by-status") {
-    for (const item of [
-      ...(data?.linkedActive ?? []),
-      ...(data?.staleOpen ?? []),
-      ...(data?.pinnedNotes ?? []),
+    for (const entry of [
+      ...reviewQuery.linkedActive,
+      ...reviewQuery.staleOpen,
+      ...reviewQuery.pinnedNotes,
     ]) {
-      if (!mergedMap.has(item.id)) {
-        mergedMap.set(item.id, item);
+      const key = `${entry.environmentId}:${entry.item.id}`;
+      if (!mergedMap.has(key)) {
+        mergedMap.set(key, entry);
       }
     }
   }
 
   const normalizedSearch = searchText.trim().toLowerCase();
-  const filteredItems = [...mergedMap.values()].filter((item) => {
+  const filteredEntries = [...mergedMap.values()].filter(({ environmentId, item }) => {
     if (statusFilter === "unfinished" && item.completedAt !== null) return false;
     if (statusFilter === "completed" && item.completedAt === null) return false;
     if (normalizedSearch.length > 0) {
-      const projectTitle = projectNameById.get(item.projectId)?.toLowerCase() ?? "";
-      const haystack = `${item.title}\n${item.bodyPreview}\n${projectTitle}`.toLowerCase();
+      const projectTitle =
+        projectNameByScopedKey
+          .get(scopedProjectKey(scopeProjectRef(environmentId, item.projectId)))
+          ?.toLowerCase() ?? "";
+      const envLabel = environmentLabelById.get(environmentId)?.toLowerCase() ?? "";
+      const haystack =
+        `${item.title}\n${item.bodyPreview}\n${projectTitle}\n${envLabel}`.toLowerCase();
       if (!haystack.includes(normalizedSearch)) return false;
     }
     return true;
@@ -214,55 +243,59 @@ export function ProjectTodosTimelineView(props: ProjectTodosTimelineViewProps) {
   // Group 1: Timeline grouped by local day (newest day first).
   const dayBucketsMap = new Map<
     string,
-    { readonly dateKey: string; readonly items: ProjectTodoSummary[] }
+    { readonly dateKey: string; readonly items: ScopedProjectTodoSummary[] }
   >();
-  for (const item of filteredItems) {
+  for (const entry of filteredEntries) {
     const key =
-      item.completedAt !== null
-        ? localDateKeyFromIso(item.completedAt)
-        : localDateKeyFromIso(item.createdAt);
+      entry.item.completedAt !== null
+        ? localDateKeyFromIso(entry.item.completedAt)
+        : localDateKeyFromIso(entry.item.createdAt);
     let bucket = dayBucketsMap.get(key);
     if (bucket === undefined) {
       bucket = { dateKey: key, items: [] };
       dayBucketsMap.set(key, bucket);
     }
-    bucket.items.push(item);
+    bucket.items.push(entry);
   }
   const dayGroups = [...dayBucketsMap.values()]
     .toSorted((left, right) => right.dateKey.localeCompare(left.dateKey))
     .map((group) => ({
       ...group,
       items: group.items.toSorted((left, right) => {
-        const leftDone = left.completedAt !== null;
-        const rightDone = right.completedAt !== null;
+        const leftDone = left.item.completedAt !== null;
+        const rightDone = right.item.completedAt !== null;
         if (leftDone !== rightDone) return leftDone ? 1 : -1;
-        if (left.priority !== right.priority) return left.priority === "high" ? -1 : 1;
-        return right.createdAt.localeCompare(left.createdAt);
+        if (left.item.priority !== right.item.priority)
+          return left.item.priority === "high" ? -1 : 1;
+        return right.item.createdAt.localeCompare(left.item.createdAt);
       }),
     }));
 
   // Group 2: Grouped by task status (every item explicitly displays its creation date).
-  const statusUnfinished = filteredItems
+  const statusUnfinished = filteredEntries
     .filter(
-      (item) => item.completedAt === null && item.linkedThreadId === null && item.kind === "todo",
+      ({ item }) =>
+        item.completedAt === null && item.linkedThreadId === null && item.kind === "todo",
     )
     .toSorted((left, right) => {
-      if (left.priority !== right.priority) return left.priority === "high" ? -1 : 1;
-      return right.createdAt.localeCompare(left.createdAt);
+      if (left.item.priority !== right.item.priority) return left.item.priority === "high" ? -1 : 1;
+      return right.item.createdAt.localeCompare(left.item.createdAt);
     });
-  const statusInProgress = filteredItems
-    .filter((item) => item.completedAt === null && item.linkedThreadId !== null)
-    .toSorted((left, right) => right.updatedAt.localeCompare(left.updatedAt));
-  const statusCompleted = filteredItems
-    .filter((item) => item.completedAt !== null)
+  const statusInProgress = filteredEntries
+    .filter(({ item }) => item.completedAt === null && item.linkedThreadId !== null)
+    .toSorted((left, right) => right.item.updatedAt.localeCompare(left.item.updatedAt));
+  const statusCompleted = filteredEntries
+    .filter(({ item }) => item.completedAt !== null)
     .toSorted((left, right) =>
-      (right.completedAt ?? right.updatedAt).localeCompare(left.completedAt ?? left.updatedAt),
+      (right.item.completedAt ?? right.item.updatedAt).localeCompare(
+        left.item.completedAt ?? left.item.updatedAt,
+      ),
     );
-  const statusNotes = filteredItems
-    .filter((item) => item.completedAt === null && item.kind === "note")
+  const statusNotes = filteredEntries
+    .filter(({ item }) => item.completedAt === null && item.kind === "note")
     .toSorted((left, right) => {
-      if (left.pinned !== right.pinned) return left.pinned ? -1 : 1;
-      return right.updatedAt.localeCompare(left.updatedAt);
+      if (left.item.pinned !== right.item.pinned) return left.item.pinned ? -1 : 1;
+      return right.item.updatedAt.localeCompare(left.item.updatedAt);
     });
 
   const statusGroups: ReadonlyArray<{
@@ -271,7 +304,7 @@ export function ProjectTodosTimelineView(props: ProjectTodosTimelineViewProps) {
     readonly emptyText: string;
     readonly badgeVariant: "warning" | "info" | "success" | "secondary";
     readonly icon: React.ReactNode;
-    readonly items: ReadonlyArray<ProjectTodoSummary>;
+    readonly items: ReadonlyArray<ScopedProjectTodoSummary>;
   }> = [
     {
       key: "unfinished",
@@ -307,15 +340,15 @@ export function ProjectTodosTimelineView(props: ProjectTodosTimelineViewProps) {
     },
   ];
 
-  const handleToggleCompleted = async (item: ProjectTodoSummary) => {
-    if (!canOperate) return;
+  const handleToggleCompleted = async (entry: ScopedProjectTodoSummary) => {
+    if (!operableEnvironmentIds.has(entry.environmentId)) return;
     const result = await updateCommand({
-      environmentId: props.environmentId!,
+      environmentId: entry.environmentId,
       input: {
-        id: item.id,
-        projectId: item.projectId,
-        expectedRevision: item.revision,
-        completed: item.completedAt === null,
+        id: entry.item.id,
+        projectId: entry.item.projectId,
+        expectedRevision: entry.item.revision,
+        completed: entry.item.completedAt === null,
       },
     });
     if (result._tag === "Failure") {
@@ -328,14 +361,14 @@ export function ProjectTodosTimelineView(props: ProjectTodosTimelineViewProps) {
     reviewQuery.refresh();
   };
 
-  const handleArchive = async (item: ProjectTodoSummary) => {
-    if (!canOperate) return;
+  const handleArchive = async (entry: ScopedProjectTodoSummary) => {
+    if (!operableEnvironmentIds.has(entry.environmentId)) return;
     const result = await updateCommand({
-      environmentId: props.environmentId!,
+      environmentId: entry.environmentId,
       input: {
-        id: item.id,
-        projectId: item.projectId,
-        expectedRevision: item.revision,
+        id: entry.item.id,
+        projectId: entry.item.projectId,
+        expectedRevision: entry.item.revision,
         archived: true,
       },
     });
@@ -349,25 +382,34 @@ export function ProjectTodosTimelineView(props: ProjectTodosTimelineViewProps) {
     reviewQuery.refresh();
   };
 
-  const handleDispatch = async (item: ProjectTodoSummary) => {
-    const prompt = await loadProjectTodoDispatchPrompt(props.environmentId!, item);
-    await handleNewThread(scopeProjectRef(props.environmentId!, item.projectId), {
+  const handleDispatch = async (entry: ScopedProjectTodoSummary) => {
+    const prompt = await loadProjectTodoDispatchPrompt(entry.environmentId, entry.item);
+    await handleNewThread(scopeProjectRef(entry.environmentId, entry.item.projectId), {
       prompt,
     });
   };
 
-  const handleOpenThread = (threadId: ThreadId) => {
+  const handleOpenThread = (environmentId: EnvironmentId, threadId: ThreadId) => {
     void navigate({
       to: "/$environmentId/$threadId",
-      params: buildThreadRouteParams(scopeThreadRef(props.environmentId!, threadId)),
+      params: buildThreadRouteParams(scopeThreadRef(environmentId, threadId)),
     });
   };
 
-  const renderCard = (item: ProjectTodoSummary, showFullDateBadge: boolean) => {
+  const renderCard = (entry: ScopedProjectTodoSummary, showFullDateBadge: boolean) => {
+    const { item, environmentId } = entry;
+    const canOperateEntry = operableEnvironmentIds.has(environmentId);
     const isCompleted = item.completedAt !== null;
-    const projectTitle = projectNameById.get(item.projectId);
+    const projectTitle = projectNameByScopedKey.get(
+      scopedProjectKey(scopeProjectRef(environmentId, item.projectId)),
+    );
+    const envLabel = isMultiEnvironment ? environmentLabelById.get(environmentId) : undefined;
     const linkedThread =
-      item.linkedThreadId !== null ? (threadById.get(item.linkedThreadId) ?? null) : null;
+      item.linkedThreadId !== null
+        ? (threadByScopedKey.get(
+            scopedThreadKey(scopeThreadRef(environmentId, item.linkedThreadId)),
+          ) ?? null)
+        : null;
     const linkedSettled =
       linkedThread !== null &&
       linkedThread.settledOverride === "settled" &&
@@ -379,7 +421,7 @@ export function ProjectTodosTimelineView(props: ProjectTodosTimelineViewProps) {
 
     return (
       <div
-        key={`${groupMode}:${scopedProjectKey(scopeProjectRef(props.environmentId!, item.projectId))}:${item.id}`}
+        key={`${groupMode}:${scopedProjectKey(scopeProjectRef(environmentId, item.projectId))}:${item.id}`}
         data-timeline-item={item.id}
         className={cn(
           "flex flex-col gap-1.5 rounded-lg border p-3 transition-colors",
@@ -391,11 +433,11 @@ export function ProjectTodosTimelineView(props: ProjectTodosTimelineViewProps) {
         )}
       >
         <div className="flex items-start gap-2">
-          {canOperate ? (
+          {canOperateEntry ? (
             <button
               type="button"
               aria-label={isCompleted ? gt("Mark as open") : gt("Mark as completed")}
-              onClick={() => void handleToggleCompleted(item)}
+              onClick={() => void handleToggleCompleted(entry)}
               className="mt-0.5 shrink-0 text-muted-foreground transition-colors hover:text-foreground"
             >
               {isCompleted ? (
@@ -418,7 +460,7 @@ export function ProjectTodosTimelineView(props: ProjectTodosTimelineViewProps) {
             <div className="flex flex-wrap items-center gap-1.5">
               <button
                 type="button"
-                onClick={() => setEditingItem(item)}
+                onClick={() => setEditingEntry(entry)}
                 className={cn(
                   "text-left text-xs font-medium leading-snug hover:underline",
                   isCompleted ? "text-muted-foreground line-through" : "text-foreground",
@@ -478,6 +520,11 @@ export function ProjectTodosTimelineView(props: ProjectTodosTimelineViewProps) {
                 {projectTitle}
               </Badge>
             ) : null}
+            {envLabel ? (
+              <Badge size="sm" variant="outline">
+                {envLabel}
+              </Badge>
+            ) : null}
 
             {showFullDateBadge ? (
               <Badge size="sm" variant="outline">
@@ -503,7 +550,7 @@ export function ProjectTodosTimelineView(props: ProjectTodosTimelineViewProps) {
                 type="button"
                 size="xs"
                 variant="ghost"
-                onClick={() => handleOpenThread(item.linkedThreadId!)}
+                onClick={() => handleOpenThread(environmentId, item.linkedThreadId!)}
               >
                 <ExternalLinkIcon className="size-3" />
                 <span className="max-w-32 truncate">
@@ -519,7 +566,7 @@ export function ProjectTodosTimelineView(props: ProjectTodosTimelineViewProps) {
                 type="button"
                 size="xs"
                 variant="outline"
-                onClick={() => void handleDispatch(item)}
+                onClick={() => void handleDispatch(entry)}
               >
                 <SendIcon className="size-3" />
                 <span>
@@ -527,34 +574,34 @@ export function ProjectTodosTimelineView(props: ProjectTodosTimelineViewProps) {
                 </span>
               </Button>
             ) : null}
-            {canOperate && linkedSettled && !isCompleted ? (
+            {canOperateEntry && linkedSettled && !isCompleted ? (
               <Button
                 type="button"
                 size="xs"
                 variant="secondary"
-                onClick={() => void handleToggleCompleted(item)}
+                onClick={() => void handleToggleCompleted(entry)}
               >
                 <T>Mark done?</T>
               </Button>
             ) : null}
-            {canOperate ? (
+            {canOperateEntry ? (
               <Button
                 type="button"
                 size="icon-xs"
                 variant="ghost"
                 aria-label={gt("Edit item")}
-                onClick={() => setEditingItem(item)}
+                onClick={() => setEditingEntry(entry)}
               >
                 <PencilIcon className="size-3" />
               </Button>
             ) : null}
-            {canOperate ? (
+            {canOperateEntry ? (
               <Button
                 type="button"
                 size="icon-xs"
                 variant="ghost"
                 aria-label={gt("Archive item")}
-                onClick={() => void handleArchive(item)}
+                onClick={() => void handleArchive(entry)}
               >
                 <ArchiveIcon className="size-3" />
               </Button>
@@ -713,7 +760,7 @@ export function ProjectTodosTimelineView(props: ProjectTodosTimelineViewProps) {
       ) : null}
 
       <ScrollArea className="min-h-0 flex-1">
-        {reviewQuery.isPending && data === null ? (
+        {reviewQuery.isPending && !reviewQuery.hasLoadedAny ? (
           <div className="p-8 text-center text-xs text-muted-foreground">
             <T>Loading project todos...</T>
           </div>
@@ -728,7 +775,9 @@ export function ProjectTodosTimelineView(props: ProjectTodosTimelineViewProps) {
               </div>
             ) : (
               dayGroups.map((group) => {
-                const openCount = group.items.filter((item) => item.completedAt === null).length;
+                const openCount = group.items.filter(
+                  (entry) => entry.item.completedAt === null,
+                ).length;
                 const doneCount = group.items.length - openCount;
                 return (
                   <section
@@ -761,7 +810,7 @@ export function ProjectTodosTimelineView(props: ProjectTodosTimelineViewProps) {
                     </div>
 
                     <div className="flex flex-col gap-2">
-                      {group.items.map((item) => renderCard(item, false))}
+                      {group.items.map((entry) => renderCard(entry, false))}
                     </div>
                   </section>
                 );
@@ -797,7 +846,7 @@ export function ProjectTodosTimelineView(props: ProjectTodosTimelineViewProps) {
                   </p>
                 ) : (
                   <div className="flex flex-col gap-2">
-                    {group.items.map((item) => renderCard(item, true))}
+                    {group.items.map((entry) => renderCard(entry, true))}
                   </div>
                 )}
               </section>
@@ -806,18 +855,28 @@ export function ProjectTodosTimelineView(props: ProjectTodosTimelineViewProps) {
         )}
       </ScrollArea>
 
-      {editingItem !== null ? (
+      {editingEntry !== null ? (
         <ProjectTodoFormDialog
           open
           onOpenChange={(open) => {
-            if (!open) setEditingItem(null);
+            if (!open) setEditingEntry(null);
           }}
-          environmentId={props.environmentId}
-          projectId={editingItem.projectId}
-          {...(projectNameById.get(editingItem.projectId) !== undefined
-            ? { projectName: projectNameById.get(editingItem.projectId)! }
+          environmentId={editingEntry.environmentId}
+          projectId={editingEntry.item.projectId}
+          {...(projectNameByScopedKey.get(
+            scopedProjectKey(
+              scopeProjectRef(editingEntry.environmentId, editingEntry.item.projectId),
+            ),
+          ) !== undefined
+            ? {
+                projectName: projectNameByScopedKey.get(
+                  scopedProjectKey(
+                    scopeProjectRef(editingEntry.environmentId, editingEntry.item.projectId),
+                  ),
+                )!,
+              }
             : {})}
-          editSummary={editingItem}
+          editSummary={editingEntry.item}
           onSaved={() => reviewQuery.refresh()}
           onDeleted={() => reviewQuery.refresh()}
         />

@@ -95,11 +95,28 @@ vi.mock(import("~/state/entities"), async (importOriginal) => ({
       },
     ] as never,
   useQuietThreadShells: () => [] as never,
+  useServerConfigs: () =>
+    new Map([[ENV_ID, { environment: { capabilities: { projectTodos: true } } }]]) as never,
+}));
+
+vi.mock(import("~/state/environments"), async (importOriginal) => ({
+  ...(await importOriginal()),
+  useEnvironments: () =>
+    ({
+      environments: [
+        {
+          environmentId: ENV_ID,
+          label: "Work",
+          serverConfig: { environment: { capabilities: { projectTodos: true } } },
+        },
+      ],
+    }) as never,
 }));
 
 vi.mock(import("~/state/session"), async (importOriginal) => ({
   ...(await importOriginal()),
   useEnvironmentScope: () => true,
+  useEnvironmentsWithScope: () => new Set([ENV_ID]),
 }));
 
 const emptyAtom = Atom.make({ _tag: "Initial" } as const);
@@ -116,6 +133,17 @@ vi.mock("~/state/projectTodos", () => ({
   useEnvironmentSupportsProjectTodos: () => true,
   loadProjectTodoDispatchPrompt: async (_envId: EnvironmentId, item: ProjectTodoSummary) =>
     buildProjectTodoSummaryDispatchPrompt(item),
+  useMultiEnvironmentProjectTodoDailyReview: () => ({
+    calendarItems: mockItems.map((item) => ({ environmentId: ENV_ID, item })),
+    linkedActive: [],
+    staleOpen: [],
+    pinnedNotes: [],
+    calendarTruncated: false,
+    isPending: false,
+    hasLoadedAny: true,
+    error: null,
+    refresh: mockRefresh,
+  }),
   useProjectTodoDailyReview: () => ({
     data: {
       capturedToday: [mockItems[0]!],

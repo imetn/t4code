@@ -1,3 +1,4 @@
+import { useAtomValue } from "@effect/atom-react";
 import { scopeProjectRef, scopedProjectKey } from "@t3tools/client-runtime/environment";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import {
@@ -23,6 +24,7 @@ import { SidebarInset } from "~/components/ui/sidebar";
 import { isElectron } from "~/env";
 import { useProjects, useQuietThreadShells, useServerConfigs } from "~/state/entities";
 import { useEnvironments, useProjectTodosSupported } from "~/state/environments";
+import { localEnvironmentIdAtom } from "~/state/primaryEnvironment";
 import { useEnvironmentScope } from "~/state/session";
 import { ProjectTodoFormDialog } from "./ProjectTodoFormDialog";
 import { ProjectTodosCalendarView } from "./ProjectTodosCalendarView";
@@ -37,6 +39,7 @@ export function ProjectTodosPage() {
   const threads = useQuietThreadShells();
   const serverConfigs = useServerConfigs();
   const { environments } = useEnvironments();
+  const localEnvironmentId = useAtomValue(localEnvironmentIdAtom);
   const projectTodosSupported = useProjectTodosSupported();
 
   const [viewMode, setViewMode] = useState<"calendar" | "timeline" | "by-project">("calendar");
@@ -50,6 +53,11 @@ export function ProjectTodosPage() {
   );
   const capableEnvIds = new Set(
     capableEnvironments.map((environment) => environment.environmentId),
+  );
+  const environmentLabelById = new Map(
+    capableEnvironments.map(
+      (environment) => [environment.environmentId, environment.label] as const,
+    ),
   );
 
   const activeProjects = projects.filter(
@@ -67,19 +75,45 @@ export function ProjectTodosPage() {
     ]),
   );
 
-  let mostRecentProjectKey: string | null = null;
-  let mostRecentUpdatedAt = "";
+  // Anchor default project selection to the local/primary environment when available so remote
+  // background thread activity never hijacks the default project or environment mid-session.
+  const preferredAnchorEnvironmentId =
+    selectedEnvironmentId ??
+    (localEnvironmentId !== null && capableEnvIds.has(localEnvironmentId)
+      ? localEnvironmentId
+      : (capableEnvironments[0]?.environmentId ?? null));
+
+  let mostRecentProjectKeyInAnchor: string | null = null;
+  let mostRecentUpdatedAtInAnchor = "";
+  let mostRecentProjectKeyAny: string | null = null;
+  let mostRecentUpdatedAtAny = "";
   for (const thread of threads) {
     if (thread.archivedAt !== null || thread.deletedAt !== null) continue;
     const key = scopedProjectKey(scopeProjectRef(thread.environmentId, thread.projectId));
     if (!projectByScopedKey.has(key)) continue;
-    if (thread.updatedAt > mostRecentUpdatedAt) {
-      mostRecentUpdatedAt = thread.updatedAt;
-      mostRecentProjectKey = key;
+    if (thread.updatedAt > mostRecentUpdatedAtAny) {
+      mostRecentUpdatedAtAny = thread.updatedAt;
+      mostRecentProjectKeyAny = key;
+    }
+    if (
+      preferredAnchorEnvironmentId !== null &&
+      thread.environmentId === preferredAnchorEnvironmentId &&
+      thread.updatedAt > mostRecentUpdatedAtInAnchor
+    ) {
+      mostRecentUpdatedAtInAnchor = thread.updatedAt;
+      mostRecentProjectKeyInAnchor = key;
     }
   }
   const preferredDefaultProject =
-    (mostRecentProjectKey !== null ? projectByScopedKey.get(mostRecentProjectKey) : undefined) ??
+    (mostRecentProjectKeyInAnchor !== null
+      ? projectByScopedKey.get(mostRecentProjectKeyInAnchor)
+      : undefined) ??
+    (preferredAnchorEnvironmentId !== null
+      ? activeProjects.find((project) => project.environmentId === preferredAnchorEnvironmentId)
+      : undefined) ??
+    (mostRecentProjectKeyAny !== null
+      ? projectByScopedKey.get(mostRecentProjectKeyAny)
+      : undefined) ??
     activeProjects[0] ??
     null;
 
@@ -89,12 +123,13 @@ export function ProjectTodosPage() {
       : null;
   const backlogTargetProject = selectedProject ?? preferredDefaultProject;
 
-  const reviewEnvironmentId =
-    selectedEnvironmentId ??
-    selectedProject?.environmentId ??
-    preferredDefaultProject?.environmentId ??
-    capableEnvironments[0]?.environmentId ??
-    null;
+  const reviewEnvironmentIds: ReadonlyArray<EnvironmentId> =
+    selectedProject !== null
+      ? [selectedProject.environmentId]
+      : selectedEnvironmentId !== null
+        ? [selectedEnvironmentId]
+        : capableEnvironments.map((environment) => environment.environmentId);
+  const reviewEnvironmentId = reviewEnvironmentIds[0] ?? null;
   const reviewProjectId = selectedProject?.id ?? null;
 
   const captureTargetProject =
@@ -106,9 +141,17 @@ export function ProjectTodosPage() {
     AuthOrchestrationOperateScope,
   );
 
+  const showEnvironmentInProjectMenu =
+    selectedEnvironmentId === null && capableEnvironments.length > 1;
+  const formatProjectChoiceLabel = (project: (typeof activeProjects)[number]) => {
+    if (!showEnvironmentInProjectMenu) return project.title;
+    const envLabel = environmentLabelById.get(project.environmentId);
+    return envLabel ? `${project.title} (${envLabel})` : project.title;
+  };
+
   const projectChoices = activeProjects.map((project) => ({
     key: scopedProjectKey(scopeProjectRef(project.environmentId, project.id)),
-    label: project.title,
+    label: formatProjectChoiceLabel(project),
   }));
 
   const currentProjectMenuValue =
@@ -123,12 +166,19 @@ export function ProjectTodosPage() {
   const currentProjectMenuLabel =
     viewMode === "by-project"
       ? (backlogTargetProject?.title ?? gt("Project"))
-      : (selectedProject?.title ?? gt("All projects"));
+      : (selectedProject?.title ??
+        (selectedEnvironmentId !== null
+          ? (environmentLabelById.get(selectedEnvironmentId) ?? gt("All projects"))
+          : gt("All projects")));
 
-  const openCaptureForProject = (projectId?: ProjectId) => {
+  const openCaptureForProject = (projectId?: ProjectId, environmentId?: EnvironmentId) => {
     const preferred =
       projectId !== undefined
-        ? activeProjects.find((candidate) => candidate.id === projectId)
+        ? activeProjects.find(
+            (candidate) =>
+              candidate.id === projectId &&
+              (environmentId === undefined || candidate.environmentId === environmentId),
+          )
         : captureTargetProject;
     const target = preferred ?? captureTargetProject;
     if (target === null) return;
@@ -238,7 +288,7 @@ export function ProjectTodosPage() {
                       );
                       return (
                         <MenuRadioItem key={key} value={key}>
-                          {project.title}
+                          {formatProjectChoiceLabel(project)}
                         </MenuRadioItem>
                       );
                     })}
@@ -271,12 +321,18 @@ export function ProjectTodosPage() {
       ) : viewMode === "calendar" ? (
         <ProjectTodosCalendarView
           environmentId={reviewEnvironmentId}
+          environmentIds={reviewEnvironmentIds}
           projectId={reviewProjectId}
           defaultProjectId={preferredDefaultProject?.id ?? null}
+          defaultEnvironmentId={preferredDefaultProject?.environmentId ?? null}
           onRequestNewTodo={openCaptureForProject}
         />
       ) : viewMode === "timeline" ? (
-        <ProjectTodosTimelineView environmentId={reviewEnvironmentId} projectId={reviewProjectId} />
+        <ProjectTodosTimelineView
+          environmentId={reviewEnvironmentId}
+          environmentIds={reviewEnvironmentIds}
+          projectId={reviewProjectId}
+        />
       ) : (
         <div className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col overflow-hidden px-5 pt-2 pb-5">
           <ProjectTodosSection
