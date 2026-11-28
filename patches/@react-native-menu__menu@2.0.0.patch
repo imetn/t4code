@@ -471,7 +471,7 @@ index bb6bb2b..93f3e4e 100644
      var identifier: UIAction.Identifier?;
      var title: String;
      var subtitle: String?
-@@ -27,13 +84,20 @@ class RCTMenuAction {
+@@ -27,13 +84,25 @@ class RCTMenuAction {
              self.identifier = UIAction.Identifier(rawValue: identifier as String);
          }
  
@@ -504,7 +504,7 @@ index bb6bb2b..93f3e4e 100644
              }
          }
  
-@@ -103,10 +167,18 @@ class RCTMenuAction {
+@@ -103,10 +172,18 @@ class RCTMenuAction {
                  subMenuActions.append(subaction.createUIMenuElement(handler))
              }
              var menu: UIMenu;

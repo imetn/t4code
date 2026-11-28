@@ -20,7 +20,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 
-import { daily, every, Tick, webhook, WebhookRequest } from "./triggers.ts";
+import { checkTriggers, daily, every, Tick, webhook, WebhookRequest } from "./triggers.ts";
 import { issues, pullRequests } from "./forgeApi.ts";
 import { cancel, runs, signalAll, start, withdraw } from "./stepServices.ts";
 import {
@@ -1244,54 +1244,87 @@ it.effect("a signal sent before its wait opens is delivered when it does", () =>
   }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
 );
 
-it.effect("a signal buffered as its wait opens is still delivered to that wait", () =>
-  Effect.gen(function* () {
-    const looked = yield* Deferred.make<void>();
-    const opened = yield* Deferred.make<void>();
-    const checked = yield* Deferred.make<void>();
-    // Holds the signal between finding no wait and buffering, while the wait opens and finds no mail.
-    const store = Layer.effect(
-      WorkflowStore.WorkflowStore,
-      Effect.gen(function* () {
-        const real = yield* WorkflowStore.make;
-        let first = true;
-        return WorkflowStore.WorkflowStore.of({
-          ...real,
-          waitAt: (address) =>
-            Effect.tap(real.waitAt(address), () => {
-              if (!("channel" in address) || address.channel !== "c9" || !first) return Effect.void;
-              first = false;
-              return Effect.andThen(Deferred.succeed(looked, undefined), Deferred.await(opened));
-            }),
-          mailNext: (addresses, passed) =>
-            Effect.tap(real.mailNext(addresses, passed), (mail) =>
-              mail === undefined && !first ? Deferred.succeed(checked, undefined) : Effect.void,
+it.effect.each(["stays live", "expires", "is delivered concurrently"] as const)(
+  "a signal buffered as its wait opens %s",
+  (how) =>
+    Effect.gen(function* () {
+      const looked = yield* Deferred.make<void>();
+      const opened = yield* Deferred.make<void>();
+      const checked = yield* Deferred.make<void>();
+      const claiming = yield* Deferred.make<void>();
+      const claim = yield* Deferred.make<void>();
+      // Holds the signal between finding no wait and buffering, while the wait opens and finds no mail.
+      const store = Layer.effect(
+        WorkflowStore.WorkflowStore,
+        Effect.gen(function* () {
+          const real = yield* WorkflowStore.make;
+          let first = true;
+          return WorkflowStore.WorkflowStore.of({
+            ...real,
+            waitAt: (address) =>
+              Effect.tap(real.waitAt(address), () => {
+                if (!("channel" in address) || address.channel !== "c9" || !first)
+                  return Effect.void;
+                first = false;
+                return Effect.andThen(Deferred.succeed(looked, undefined), Deferred.await(opened));
+              }),
+            mailNext: (addresses, passed) =>
+              Effect.tap(real.mailNext(addresses, passed), (mail) =>
+                mail === undefined && !first ? Deferred.succeed(checked, undefined) : Effect.void,
+              ),
+            mailDeliver: (id, runId, name, woke) =>
+              Effect.andThen(
+                Effect.andThen(Deferred.succeed(claiming, undefined), Deferred.await(claim)),
+                real.mailDeliver(id, runId, name, woke),
+              ),
+          });
+        }),
+      );
+      const { boot, clock, database } = yield* harness(store);
+      yield* boot(
+        Effect.gen(function* () {
+          const workflows = yield* Workflows.Workflows;
+          const address = { workflow: "review", channel: "c9" };
+          const send = workflows.signal(address, { merge: true }, { id: "s9", ttl: "1 millis" });
+          const sent = yield* Effect.forkChild(
+            send.pipe(
+              Effect.match({ onFailure: (error) => error._tag, onSuccess: (outcome) => outcome }),
             ),
-        });
-      }),
-    );
-    const { boot } = yield* harness(store);
-    yield* boot(
-      Effect.gen(function* () {
-        const workflows = yield* Workflows.Workflows;
-        const sent = yield* Effect.forkChild(
-          workflows.signal({ workflow: "review", channel: "c9" }, { merge: true }, { id: "s9" }),
-        );
-        yield* Deferred.await(looked);
-        const { runId } = yield* workflows.start(
-          "review",
-          { change: "c9" },
-          { idempotencyKey: "c9" },
-        );
-        // Released once the open wait has looked for mail and found none.
-        yield* Deferred.await(checked);
-        yield* Deferred.succeed(opened, undefined);
-        assert.equal(yield* Fiber.join(sent), "delivered");
-        const done = yield* workflows.waitFor(runId, status("completed"));
-        assert.equal(done.result, "2 checks, merge: true");
-      }),
-    );
-  }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+          );
+          yield* Deferred.await(looked);
+          const { runId } = yield* workflows.start(
+            "review",
+            { change: "c9" },
+            { idempotencyKey: "c9" },
+          );
+          // Released once the open wait has looked for mail and found none.
+          yield* Deferred.await(checked);
+          yield* clock.close;
+          yield* TestClock.adjust(0);
+          yield* Deferred.succeed(opened, undefined);
+          yield* Deferred.await(claiming);
+          if (how === "expires") yield* TestClock.adjust("1 millis");
+          if (how === "is delivered concurrently") assert.equal(yield* send, "delivered");
+          yield* Deferred.succeed(claim, undefined);
+          assert.equal(
+            yield* Fiber.join(sent),
+            how === "expires" ? "WorkflowInputError" : "delivered",
+          );
+          if (how === "expires") {
+            const sql = yield* Effect.provide(SqlClient.SqlClient, database);
+            assert.lengthOf(yield* sql`SELECT 1 FROM workflow_mail WHERE signal_id = 's9'`, 1);
+            assert.lengthOf(yield* sql`SELECT 1 FROM workflow_signals WHERE signal_id = 's9'`, 0);
+            assert.equal(
+              yield* workflows.signal(address, { merge: false }, { id: "replacement" }),
+              "delivered",
+            );
+          }
+          yield* clock.open;
+          const done = yield* workflows.waitFor(runId, status("completed"));
+          assert.equal(done.result, `2 checks, merge: ${how !== "expires"}`);
+        }).pipe(Effect.ensuring(clock.open)),
+      );
+    }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
 );
 
 it.effect("a wait another signal claimed first wakes with that signal's value", () =>
@@ -2318,6 +2351,57 @@ it("every accepts bigint nanoseconds and names short ones in its error", () => {
   assert.deepStrictEqual(every(60_000_000_000n), every("1 minute"));
   assert.throws(() => every(1_000n), /^every\(1000n\) is shorter than the shortest, one minute\.$/);
 });
+
+it("a workflow refuses two daily schedules that fire at the same times", () => {
+  const twice = /^workflow\("standup"\) lists the same schedule twice\. List it once\.$/;
+  const refused = (...triggers: ReadonlyArray<ReturnType<typeof daily>>) =>
+    assert.throws(() => checkTriggers("standup", triggers), twice);
+  refused(daily("9:00"), daily("09:00"));
+  refused(daily("09:00"), daily("09:00", { weekdays: [] }));
+  refused(daily("09:00"), daily("09:00", { weekdays: [6, 5, 4, 3, 2, 1, 0] }));
+  refused(daily("09:00", { weekdays: [3, 1, 1] }), daily("09:00", { weekdays: [1, 3] }));
+  checkTriggers("standup", [daily("09:00", { weekdays: [1] }), daily("09:00")]);
+});
+
+it.effect("a daily schedule written another way after a restart keeps its next time and runs", () =>
+  Effect.gen(function* () {
+    const { boot, database } = yield* harness();
+    const db = <A, E>(query: (sql: SqlClient.SqlClient) => Effect.Effect<A, E>) =>
+      Effect.flatMap(SqlClient.SqlClient, query).pipe(Effect.provide(database));
+    const standup = (...written: Parameters<typeof daily>) =>
+      [
+        workflow(
+          "standup",
+          { version: 1, payload: Tick, triggers: [daily(...written)] },
+          () => Effect.void,
+        ),
+      ] as never;
+    const swept = Effect.flatMap(Workflows.Workflows, (workflows) => workflows.sweep).pipe(
+      Effect.andThen(
+        db((sql) => sql<{ idempotency_key: string }>`SELECT idempotency_key FROM workflow_runs`),
+      ),
+      Effect.map((runs) => runs.map((run) => run.idempotency_key)),
+    );
+    const saved = db(
+      (sql) => sql<{ trigger_id: string; next_at: string }>`SELECT * FROM workflow_triggers`,
+    );
+    // Saved by a server from before ids stopped following the spelling.
+    assert.deepStrictEqual(yield* boot(swept, standup("09:00")), []);
+    const [first] = yield* saved;
+    yield* db((sql) => sql`UPDATE workflow_triggers SET trigger_id = 'standup/daily:9:00:all'`);
+    // Down until a minute past the time, which is within what a daily schedule catches up on.
+    yield* TestClock.setTime(Date.parse(first!.next_at) + 60_000);
+    const key = `trigger:standup/daily:9:00:all:${first!.next_at}`;
+    assert.deepStrictEqual(yield* boot(swept, standup("09:00")), [key]);
+    const [moved, ...others] = yield* saved;
+    assert.deepStrictEqual(others, []);
+    assert.equal(moved!.trigger_id, "standup/daily:9:00:all");
+    assert.isAbove(Date.parse(moved!.next_at), Date.parse(first!.next_at));
+    // A crash between the start and moving on left the time it had started: not started again.
+    yield* db((sql) => sql`UPDATE workflow_triggers SET next_at = ${first!.next_at}`);
+    assert.deepStrictEqual(yield* boot(swept, standup(" 9:00", { weekdays: [] })), [key]);
+  }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+);
 
 it.effect("the sweep deletes skipped runs past the number the settings keep", () =>
   Effect.gen(function* () {

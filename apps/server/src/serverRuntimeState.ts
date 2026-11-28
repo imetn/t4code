@@ -18,6 +18,8 @@ export const PersistedServerRuntimeState = Schema.Struct({
   tailscaleOnly: Schema.optional(Schema.Boolean),
   port: Schema.Int,
   origin: Schema.String,
+  // Public HTTPS origin advertised by a reverse proxy or Tailscale Serve for pairing links.
+  advertisedUrl: Schema.optional(Schema.String),
   // Dev is single-origin: browsers must pair through this URL, not `origin`.
   devUrl: Schema.optional(Schema.String),
   startedAt: Schema.String,
@@ -66,25 +68,34 @@ export const makePersistedServerRuntimeState = (input: {
   readonly config: Pick<
     ServerConfig.ServerConfig["Service"],
     "host" | "privateNetworkOnly" | "tailscaleOnly" | "devUrl"
-  >;
+  > & { readonly advertisedUrls?: ReadonlyArray<string> | undefined };
   readonly port: number;
+  readonly advertisedUrl?: string | undefined;
   readonly serviceManaged?: boolean;
   readonly managedPolicy?: PersistedServerRuntimeState["managedPolicy"];
 }): Effect.Effect<PersistedServerRuntimeState> =>
-  Effect.map(DateTime.now, (now) => ({
-    version: 1,
-    pid: process.pid,
-    ...(input.config.host ? { host: input.config.host } : {}),
-    ...(input.config.privateNetworkOnly ? { privateNetworkOnly: true } : {}),
-    ...(input.config.tailscaleOnly ? { tailscaleOnly: true } : {}),
-    port: input.port,
-    origin: runtimeOriginForConfig(input.config, input.port),
-    ...(input.config.devUrl ? { devUrl: input.config.devUrl.toString() } : {}),
-    startedAt: DateTime.formatIso(now),
-    ...(input.serviceManaged ? { serviceManaged: true } : {}),
-    serverVersion: packageJson.version,
-    ...(input.managedPolicy === undefined ? {} : { managedPolicy: input.managedPolicy }),
-  }));
+  Effect.map(DateTime.now, (now) => {
+    const advertised =
+      input.advertisedUrl ??
+      (input.config.advertisedUrls?.[0] !== undefined
+        ? new URL(input.config.advertisedUrls[0]).origin
+        : undefined);
+    return {
+      version: 1,
+      pid: process.pid,
+      ...(input.config.host ? { host: input.config.host } : {}),
+      ...(input.config.privateNetworkOnly ? { privateNetworkOnly: true } : {}),
+      ...(input.config.tailscaleOnly ? { tailscaleOnly: true } : {}),
+      port: input.port,
+      origin: runtimeOriginForConfig(input.config, input.port),
+      ...(advertised !== undefined ? { advertisedUrl: advertised } : {}),
+      ...(input.config.devUrl ? { devUrl: input.config.devUrl.toString() } : {}),
+      startedAt: DateTime.formatIso(now),
+      ...(input.serviceManaged ? { serviceManaged: true } : {}),
+      serverVersion: packageJson.version,
+      ...(input.managedPolicy === undefined ? {} : { managedPolicy: input.managedPolicy }),
+    };
+  });
 
 export const persistServerRuntimeState = (input: {
   readonly path: string;

@@ -599,6 +599,9 @@ function ScheduledTaskEnvironmentList({
   const populated = loaded.flatMap(({ environment, allTasks, tasks, timeZone }) =>
     allTasks && tasks?.length ? [{ environment, allTasks, tasks, timeZone }] : [],
   );
+  const loading = states.some((state) => state.connected && state.error === null && !state.tasks);
+  // Until one machine has tasks to show, rows stand in for the list instead of a status line.
+  const placeholder = loading && populated.length === 0;
   const summaries: Record<string, string[]> = {
     "Not connected:": [],
     "Loading scheduled tasks on": [],
@@ -614,7 +617,7 @@ function ScheduledTaskEnvironmentList({
     } else if (error !== null) {
       summaries["Could not load scheduled tasks:"]!.push(`${label}: ${error}`);
     } else if (!tasks) {
-      summaries["Loading scheduled tasks on"]!.push(label);
+      if (!placeholder) summaries["Loading scheduled tasks on"]!.push(label);
     } else if (tasks.length === 0 && populated.length > 0) {
       summaries["No tasks on"]!.push(label);
     }
@@ -660,7 +663,8 @@ function ScheduledTaskEnvironmentList({
           role="status"
         />
       ) : null}
-      {populated.length === 0 && loaded.length > 0 ? (
+      {placeholder ? <ScheduledTaskRowsSkeleton /> : null}
+      {populated.length === 0 && loaded.length > 0 && !loading ? (
         <SettingsRow
           title={gt("No scheduled tasks")}
           description={gt("No tasks match this environment and project selection.")}
@@ -1613,7 +1617,7 @@ function ScheduledTaskDestination({
             <ComboboxEmpty>
               <T>No threads found.</T>
             </ComboboxEmpty>
-            <ComboboxList className="max-h-72">
+            <ComboboxList scrollAreaClassName="max-h-72">
               {items.map((value, index) => (
                 <ComboboxItem key={value} index={index} value={value}>
                   <span className="block truncate">

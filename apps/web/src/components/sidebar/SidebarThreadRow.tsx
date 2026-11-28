@@ -1698,7 +1698,7 @@ const SidebarThreadRow = memo(
                           >
                             <Undo2Icon className="mb-px size-3.5" />
                           </TooltipTrigger>
-                          <TooltipPopup side="top">
+                          <TooltipPopup side="right">
                             <T>Un-settle thread</T>
                           </TooltipPopup>
                         </Tooltip>
@@ -1720,7 +1720,7 @@ const SidebarThreadRow = memo(
                           >
                             <CheckIcon className="size-3" />
                           </TooltipTrigger>
-                          <TooltipPopup side="top">
+                          <TooltipPopup side="right">
                             <T>Settle thread</T>
                           </TooltipPopup>
                         </Tooltip>
@@ -1933,7 +1933,7 @@ const SidebarThreadRow = memo(
                                 <CheckIcon className="size-3.5" />
                                 <T>Settle</T>
                               </TooltipTrigger>
-                              <TooltipPopup>
+                              <TooltipPopup side="right">
                                 <T>Settle thread</T>
                               </TooltipPopup>
                             </Tooltip>

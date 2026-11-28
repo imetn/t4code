@@ -204,10 +204,13 @@ export function useManagedTunnelUsage() {
     t3Chat.accountId !== null && t3Chat.data
       ? managedTunnelCap(t3Chat.data, { isCustomRelay })
       : null;
+  const firstLoad = (query: { accountId: string | null; data: unknown; isPending: boolean }) =>
+    query.accountId !== null && query.data === null && query.isPending;
   return {
     used,
     limit: cap?.limit ?? null,
     upgrade: cap?.upgrade ?? null,
+    loading: firstLoad(environments) || firstLoad(t3Chat),
     refresh: refreshManagedTunnelUsage,
   };
 }

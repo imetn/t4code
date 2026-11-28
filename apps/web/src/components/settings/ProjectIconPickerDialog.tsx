@@ -228,33 +228,36 @@ function ProjectIconPickerBody({
                 onSelect={setDashboardIcon}
               />
             ) : (
-              <>
-                <ScrollArea scrollFade className="max-h-64">
-                  <div className="grid grid-cols-8 gap-1 p-0.5 sm:grid-cols-10">
-                    {icons.map((name) => (
-                      <button
-                        key={name}
-                        type="button"
-                        aria-label={iconLabel(name)}
-                        aria-pressed={iconName === name}
-                        className={cn(
-                          GRID_BUTTON_CLASS_NAME,
-                          iconName === name && "border-border bg-accent",
-                          selectedColorClassName,
-                        )}
-                        onClick={() => setIconName(name)}
-                      >
-                        <PickerIcon name={name} />
-                      </button>
-                    ))}
-                  </div>
+              /* A fixed height keeps the centered dialog still as results change; the wrapper
+                 sizes it because ScrollArea's own `size-full` beats a height class. */
+              <div className="h-64">
+                <ScrollArea scrollFade>
+                  {icons.length === 0 ? (
+                    <p className="py-8 text-center text-sm text-muted-foreground">
+                      <T>No icons found.</T>
+                    </p>
+                  ) : (
+                    <div className="grid grid-cols-8 gap-1 p-0.5 sm:grid-cols-10">
+                      {icons.map((name) => (
+                        <button
+                          key={name}
+                          type="button"
+                          aria-label={iconLabel(name)}
+                          aria-pressed={iconName === name}
+                          className={cn(
+                            GRID_BUTTON_CLASS_NAME,
+                            iconName === name && "border-border bg-accent",
+                            selectedColorClassName,
+                          )}
+                          onClick={() => setIconName(name)}
+                        >
+                          <PickerIcon name={name} />
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </ScrollArea>
-                {icons.length === 0 ? (
-                  <p className="py-8 text-center text-sm text-muted-foreground">
-                    <T>No icons found.</T>
-                  </p>
-                ) : null}
-              </>
+              </div>
             )}
           </>
         ) : mode === "monogram" ? (

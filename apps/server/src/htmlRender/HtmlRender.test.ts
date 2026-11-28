@@ -65,6 +65,7 @@ describe("HtmlRender", () => {
       const svg = path.join(directory, "logo.svg");
       const encodedPng = path.join(directory, "sh%6Ft.png");
       const literalPercent = path.join(directory, "100%25.png");
+      const commented = `<!-- <img src="/t3-missing/shot.png"> -->`;
       yield* fileSystem.writeFile(png, PNG_BYTES);
       yield* fileSystem.writeFile(literalPercent, PNG_BYTES);
       yield* fileSystem.writeFileString(svg, "<svg/>");
@@ -78,8 +79,9 @@ describe("HtmlRender", () => {
       const prepared = yield* htmlRender.prepare(
         [
           "<!doctype html><html><head><title>Shots</title></head><body>",
-          `<img src="${png}"><img src="${encodedPng}"><div style="background:url(${svg})"></div>`,
-          `<script>const shots = ['${png}', \`${svg}\`, '${literalPercent}'];</script>`,
+          `${commented}<img src="${png}"><img src="${encodedPng}"><div style="background:url(${svg})"></div>`,
+          `<!--><img src="${png}"><!-- note --!><img src="${png}">`,
+          `<script>const marker = '<!--'; const shots = ['${png}', \`${svg}\`, '${literalPercent}'];</script>`,
           ...kept.map((src) => `<img src="${src}">`),
           "</body></html>",
         ].join(""),
@@ -87,7 +89,8 @@ describe("HtmlRender", () => {
 
       const pngUri = `data:image/png;base64,${Base64.encode(PNG_BYTES)}`;
       const svgUri = `data:image/svg+xml;base64,${Base64.encode("<svg/>")}`;
-      expect(prepared).toContain(`<img src="${pngUri}"><img src="${pngUri}">`);
+      expect(prepared).toContain(`${commented}<img src="${pngUri}"><img src="${pngUri}">`);
+      expect(prepared).toContain(`<!--><img src="${pngUri}"><!-- note --!><img src="${pngUri}">`);
       expect(prepared).toContain(`url(${svgUri})`);
       expect(prepared).toContain(`['${pngUri}', \`${svgUri}\`, '${pngUri}']`);
       expect(prepared).not.toContain(directory);
@@ -105,12 +108,19 @@ describe("HtmlRender", () => {
         "<style media=screen>main{height: calc(100dvh - 2rem)}",
         "<div style='top:.5svh'></div>",
         "<div style=height:100vh></div>",
+        "<style>main{min-height:100vmax}</style>",
+        "<div style='height:calc(100dvmax - 1rem)'></div>",
+        "<style>main{block-size:100vb}</style>",
+        "<div style='margin-top:-50vh'></div>",
       ]) {
         const error = yield* htmlRender.prepare(page).pipe(Effect.flip);
         expect(error).toBeInstanceOf(HtmlRender.HtmlRenderViewportHeightError);
       }
       yield* htmlRender.prepare(
         '<style>main{width:100vw;height:320px}</style><img src="data:image/png;base64,AB1vh+2vh/3vhC">',
+      );
+      yield* htmlRender.prepare(
+        '<style>.h-100vmax,.min-h-100vb{height:200px}</style><main class="h-100vmax">hi</main>',
       );
       yield* htmlRender.prepare(
         "<p>Avoid 100vh here.</p><!-- <div style=\"height:100vh\"></div> --><script>const unit = '100vh';</script>",
@@ -169,7 +179,7 @@ describe("HtmlRender", () => {
 
       const error = yield* htmlRender
         .prepare(
-          `<img src="${missing}"><img src='${folder}'><img src="C:\\nope\\shot.webp"><img src="${secret}"><img src="${report}"><img src="${config}"><img src="${stalling}"><img src="${unclosed}"><img src="${upper}"><img src="${longer}"><img src="/%2Fattacker/share/shot.png">`,
+          `<img title="<!--" src="${missing}"><img src='${folder}'><img src="C:\\nope\\shot.webp"><img src="${secret}"><img src="${report}"><img src="${config}"><img src="${stalling}"><img src="${unclosed}"><img src="${upper}"><img src="${longer}"><img src="/%2Fattacker/share/shot.png">`,
         )
         .pipe(Effect.flip);
 

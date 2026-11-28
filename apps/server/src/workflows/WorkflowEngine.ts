@@ -35,6 +35,7 @@ import {
 import { checkOutput, rejectionText } from "../orchestration-v2/runOutput.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { isMissedFixedTimeRun, nextScheduledRunAt } from "../scheduledTasks/Schedule.ts";
+import { currentScheduleId } from "./triggers.ts";
 import { constantTimeEquals } from "../scheduledTasks/webhookVerification.ts";
 import {
   answerStamped,
@@ -361,11 +362,29 @@ const make = Effect.fn("WorkflowEngine.make")(function* (
   const latestDefinitions = [...new Set(registered.map(([definition]) => definition.name))].map(
     (name) => latest(name)![0],
   );
+  // A daily schedule saved under an id that followed its spelling keeps that id, for its next
+  // time and for the keys of its runs: a time it has started is then not started again.
+  const savedIds = yield* store.triggerIds;
+  const stateId = (
+    definition: WorkflowDefinition,
+    trigger: Exclude<WorkflowDefinition["triggers"][number], { readonly kind: "webhook" }>,
+  ) => {
+    const prefix = `${definition.name}/`;
+    const id = `${prefix}${trigger.id}`;
+    if (trigger.kind !== "schedule" || savedIds.includes(id)) return id;
+    const earlier = savedIds
+      .filter(
+        (saved) =>
+          saved.startsWith(prefix) && currentScheduleId(saved.slice(prefix.length)) === trigger.id,
+      )
+      .toSorted();
+    return earlier[0] ?? id;
+  };
   // A schedule taken out and put back is new again: its first run is one interval away.
   yield* store.triggersKeep(
     latestDefinitions.flatMap((definition) =>
       definition.triggers.flatMap((trigger) =>
-        trigger.kind === "webhook" ? [] : [`${definition.name}/${trigger.id}`],
+        trigger.kind === "webhook" ? [] : [stateId(definition, trigger)],
       ),
     ),
   );
@@ -375,7 +394,7 @@ const make = Effect.fn("WorkflowEngine.make")(function* (
     for (const definition of latestDefinitions) {
       for (const trigger of definition.triggers) {
         if (trigger.kind !== "schedule") continue;
-        const id = `${definition.name}/${trigger.id}`;
+        const id = stateId(definition, trigger);
         const due = yield* store.triggerNext(id);
         if (due !== undefined) {
           const dueAt = DateTime.makeUnsafe(due);
@@ -425,7 +444,7 @@ const make = Effect.fn("WorkflowEngine.make")(function* (
     for (const definition of latestDefinitions) {
       for (const trigger of definition.triggers) {
         if (trigger.kind !== "issues" && trigger.kind !== "pullRequests") continue;
-        const id = `${definition.name}/${trigger.id}`;
+        const id = stateId(definition, trigger);
         const since = yield* store.triggerNext(id);
         if (since === undefined) {
           yield* store.triggerSet(id, DateTime.formatIso(now));
@@ -1079,8 +1098,9 @@ const make = Effect.fn("WorkflowEngine.make")(function* (
         yield* wake(late, answered);
         return "delivered" as const;
       }
-      // The kept copy went to a wait that opened, or was dropped as already delivered.
-      if (outcome === "gone") return "delivered" as const;
+      if (outcome === "claimed") continue;
+      if (yield* store.signalSeen(options.id)) return "delivered" as const;
+      return yield* new WorkflowInputError({ problem: "Buffered signal expired or was removed." });
     }
   });
   const signal: Workflows["Service"]["signal"] = Effect.fn("Workflows.signal")(

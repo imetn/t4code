@@ -268,7 +268,7 @@ export class WorkflowStore extends Context.Service<
     readonly waitsClaimed: (runId: string) => Effect.Effect<ReadonlyArray<WaitRow>>;
     /**
      * Hands one buffered signal to one wait, or to none: the claim and the removal happen
-     * together. `gone` when another wait took the signal, `claimed` when the wait was already woken.
+     * together. `gone` when the signal is expired or absent, `claimed` when the wait was already woken.
      */
     readonly mailDeliver: (
       signalId: string,
@@ -406,6 +406,7 @@ export class WorkflowStore extends Context.Service<
     readonly triggerNext: (triggerId: string) => Effect.Effect<string | undefined>;
     readonly triggerSet: (triggerId: string, nextAt: string) => Effect.Effect<void>;
     /** Forgets every trigger but these, so one that comes back starts over. */
+    readonly triggerIds: Effect.Effect<ReadonlyArray<string>>;
     readonly triggersKeep: (triggerIds: ReadonlyArray<string>) => Effect.Effect<void>;
     /** The hook's token: the one kept for it, or `fresh` from now on. */
     readonly hookToken: (hookId: string, fresh: string) => Effect.Effect<string>;
@@ -888,15 +889,16 @@ export const make = Effect.gen(function* () {
         INSERT INTO workflow_waits (
           run_id, name, workflow, token, key, schema_json, request_json, watch_json, deadline,
           opened_at
-        ) VALUES (
+        ) SELECT
           ${wait.runId}, ${wait.name}, ${wait.workflow}, ${wait.token}, ${wait.key ?? null},
           ${wait.schemaJson}, ${wait.requestJson}, ${wait.watchJson}, ${wait.deadline}, ${at}
-        )
+        FROM workflow_runs WHERE run_id = ${wait.runId} AND ended_at IS NULL
         ON CONFLICT (run_id, name) DO NOTHING
         RETURNING name
       `.pipe(Effect.orDie);
+      if (opened.length === 0) return;
       yield* PubSub.publish(changes, wait.runId);
-      if (opened.length === 0 || wait.requestJson === null) return;
+      if (wait.requestJson === null) return;
       yield* tell(wait.runId, `${wait.runId}:${wait.name}:${at}`, at, {
         type: "workflow.needs_input",
         step: wait.name,
@@ -972,10 +974,11 @@ export const make = Effect.gen(function* () {
       `.pipe(Effect.orDie);
     }),
     mailDeliver: Effect.fn("WorkflowStore.mailDeliver")(function* (signalId, runId, name, woke) {
-      const at = yield* now;
+      let at = "";
       const outcome = yield* sql
         .withTransaction(
           Effect.gen(function* () {
+            at = yield* now;
             // A kept copy of an id that already woke a wait straight is spent: it is dropped, so
             // it wakes no second wait and is not offered again.
             const seen = yield* sql`SELECT 1 FROM workflow_signals WHERE signal_id = ${signalId}`;
@@ -990,7 +993,8 @@ export const make = Effect.gen(function* () {
             `;
             if (claimed.length === 0) return "claimed" as const;
             const taken = yield* sql<{ expires_at: string }>`
-              DELETE FROM workflow_mail WHERE signal_id = ${signalId} RETURNING expires_at
+              DELETE FROM workflow_mail
+              WHERE signal_id = ${signalId} AND expires_at > ${at} RETURNING expires_at
             `;
             // Failing undoes the claim: the wait stays open for a signal that is still there.
             const copy = taken[0];
@@ -1288,6 +1292,7 @@ export const make = Effect.gen(function* () {
         .pipe(Effect.orDie);
     }),
     mailNext: Effect.fn("WorkflowStore.mailNext")(function* (addresses, passed = new Set()) {
+      const at = yield* now;
       for (const address of addresses) {
         const rows = yield* sql<{
           signal_id: string;
@@ -1295,7 +1300,7 @@ export const make = Effect.gen(function* () {
           sender_json: string | null;
         }>`
           SELECT signal_id, value_json, sender_json FROM workflow_mail
-          WHERE address = ${mailAddress(address)} ORDER BY rowid
+          WHERE address = ${mailAddress(address)} AND expires_at > ${at} ORDER BY rowid
         `.pipe(Effect.orDie);
         const mail = rows.find((row) => !passed.has(row.signal_id));
         if (mail !== undefined) {
@@ -1412,6 +1417,11 @@ export const make = Effect.gen(function* () {
         ON CONFLICT (trigger_id) DO UPDATE SET next_at = excluded.next_at
       `.pipe(Effect.orDie);
     }),
+    triggerIds: sql<{ trigger_id: string }>`SELECT trigger_id FROM workflow_triggers`.pipe(
+      Effect.map((rows) => rows.map((row) => row.trigger_id)),
+      Effect.orDie,
+      Effect.withSpan("WorkflowStore.triggerIds"),
+    ),
     triggersKeep: Effect.fn("WorkflowStore.triggersKeep")(function* (triggerIds) {
       const kept = yield* sql<{ trigger_id: string }>`SELECT trigger_id FROM workflow_triggers`;
       for (const { trigger_id } of kept) {
@@ -1462,7 +1472,12 @@ export const make = Effect.gen(function* () {
     referenceNoted: Effect.fn("WorkflowStore.referenceNoted")(function* (runId, step, reference) {
       const at = yield* now;
       const addressJson = jsonText(reference.address);
-      const title = reference.title.slice(0, REFERENCE_TITLE_KEPT);
+      const title = reference.title.slice(
+        0,
+        splitsSurrogatePair(reference.title, REFERENCE_TITLE_KEPT)
+          ? REFERENCE_TITLE_KEPT - 1
+          : REFERENCE_TITLE_KEPT,
+      );
       const changed = yield* sql
         .withTransaction(
           Effect.gen(function* () {

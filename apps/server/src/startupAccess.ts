@@ -2,6 +2,7 @@
 import type * as NodeHttp from "node:http";
 import * as NodeNet from "node:net";
 import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
 
 import {
   formatHostForUrl,
@@ -19,6 +20,7 @@ import * as Effect from "effect/Effect";
 import { HttpServer } from "effect/http";
 import * as NetAddress from "effect/net/NetAddress";
 
+import { hostShellWord } from "./cli/invocation.ts";
 import * as ServerConfig from "./config.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import * as DirectEndpoints from "./environment/DirectEndpoints.ts";
@@ -335,7 +337,7 @@ export const renderTerminalQrCode = (value: string, margin = 2): string => {
   return rows.join("\n");
 };
 
-export const formatHeadlessServeOutput = (accessInfo: HeadlessServeAccessInfo): string =>
+const formatHeadlessServeOutput = (accessInfo: HeadlessServeAccessInfo): string =>
   [
     "T3 Code server is ready.",
     `Connection string: ${accessInfo.connectionString}`,
@@ -354,10 +356,9 @@ export const formatHeadlessServeOutput = (accessInfo: HeadlessServeAccessInfo): 
     "",
   ].join("\n");
 
-export const issueHeadlessServeAccessInfo = Effect.fn("issueHeadlessServeAccessInfo")(function* () {
+export const resolveServeConnectionString = Effect.gen(function* () {
   const serverConfig = yield* ServerConfig.ServerConfig;
   const httpServer = yield* HttpServer.HttpServer;
-  const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
   const platform = yield* HostProcess.Platform;
   const configuredEndpoint = serverConfig.advertisedUrls?.[0];
   // Direct endpoints list the Serve URL only once it answers as this server.
@@ -367,20 +368,24 @@ export const issueHeadlessServeAccessInfo = Effect.fn("issueHeadlessServeAccessI
           endpoint.httpBaseUrl.startsWith("https://"),
         )
       : undefined;
-  const connectionString =
-    configuredEndpoint !== undefined
-      ? new URL(configuredEndpoint).origin
-      : servedEndpoint
-        ? new URL(servedEndpoint.httpBaseUrl).origin
-        : resolveHeadlessConnectionString(
-            serverConfig.host,
-            resolveListeningPort(httpServer.address, serverConfig.port),
-            {
-              privateNetworkOnly: serverConfig.privateNetworkOnly,
-              platform,
-              tailscaleOnly: serverConfig.tailscaleOnly,
-            },
-          );
+  return configuredEndpoint !== undefined
+    ? new URL(configuredEndpoint).origin
+    : servedEndpoint
+      ? new URL(servedEndpoint.httpBaseUrl).origin
+      : resolveHeadlessConnectionString(
+          serverConfig.host,
+          resolveListeningPort(httpServer.address, serverConfig.port),
+          {
+            privateNetworkOnly: serverConfig.privateNetworkOnly,
+            platform,
+            tailscaleOnly: serverConfig.tailscaleOnly,
+          },
+        );
+});
+
+export const issueHeadlessServeAccessInfo = Effect.fn("issueHeadlessServeAccessInfo")(function* () {
+  const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+  const connectionString = yield* resolveServeConnectionString;
   const issued = yield* serverAuth.issueStartupPairingCredential();
 
   return {
@@ -388,4 +393,29 @@ export const issueHeadlessServeAccessInfo = Effect.fn("issueHeadlessServeAccessI
     token: issued.credential,
     pairingUrl: buildPairingUrl(connectionString, issued.credential),
   } satisfies HeadlessServeAccessInfo;
+});
+
+/**
+ * What `t3 serve` prints once it is ready. A terminal gets pairing details. The background
+ * service's output is its log file, so it gets the address and the command that pairs a device.
+ */
+export const headlessServeOutput = Effect.fn("headlessServeOutput")(function* (options: {
+  readonly serviceManaged: boolean;
+}) {
+  if (!options.serviceManaged) {
+    return formatHeadlessServeOutput(yield* issueHeadlessServeAccessInfo());
+  }
+  const serverConfig = yield* ServerConfig.ServerConfig;
+  const platform = yield* HostProcess.Platform;
+  const defaultBaseDir = NodePath.resolve(NodeOS.homedir(), ".t3");
+  const pairCommand =
+    NodePath.resolve(serverConfig.baseDir) !== defaultBaseDir
+      ? `t3 pair --base-dir ${hostShellWord(platform, serverConfig.baseDir)}`
+      : "t3 pair";
+  return [
+    "T3 Code server is ready.",
+    `Connection string: ${yield* resolveServeConnectionString}`,
+    `Run \`${pairCommand}\` on this machine to connect a device.`,
+    "",
+  ].join("\n");
 });

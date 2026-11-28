@@ -175,6 +175,7 @@ const resolveDirectPairingBaseUrl = (
   platform: NodeJS.Platform,
 ): string =>
   state.devUrl ??
+  state.advertisedUrl ??
   resolveHeadlessConnectionString(state.host, state.port, {
     privateNetworkOnly: state.privateNetworkOnly,
     platform,

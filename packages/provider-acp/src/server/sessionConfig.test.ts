@@ -40,6 +40,17 @@ describe("acpProviderOptionDescriptors", () => {
             { value: "medium", name: "Medium", description: "Balanced" },
           ],
         },
+        {
+          id: "permission_mode",
+          name: "Permission mode",
+          category: "mode",
+          type: "select",
+          currentValue: "default",
+          options: [
+            { value: "default", name: "Default" },
+            { value: "bypass", name: "Bypass" },
+          ],
+        },
       ],
       modeState: undefined,
     });
@@ -55,6 +66,17 @@ describe("acpProviderOptionDescriptors", () => {
         ],
         currentValue: "medium",
         role: "reasoning",
+      },
+      {
+        id: "permission_mode",
+        label: "Permission mode",
+        type: "select",
+        options: [
+          { id: "default", label: "Default" },
+          { id: "bypass", label: "Bypass" },
+        ],
+        currentValue: "default",
+        role: "mode",
       },
     ]);
   });
@@ -127,6 +149,7 @@ describe("acpProviderOptionDescriptors", () => {
           { id: "yolo", label: "YOLO", description: "No approvals" },
         ],
         currentValue: "safe",
+        role: "mode",
       },
     ]);
   });

@@ -60,7 +60,7 @@ import { useT3ConnectTurnOn } from "~/cloud/useT3ConnectTurnOn";
 import { useCloudLinkController } from "~/cloud/useCloudLinkController";
 import { useManagedTunnelUsage } from "~/cloud/managedRelayState";
 import { useT3ConnectAccountPage } from "../clerk/T3ConnectAccountPages";
-import { TunnelLimitAlert, TunnelUsageMeter } from "../cloud/TunnelUsage";
+import { TunnelLimitAlert, TunnelUsageMeter, TunnelUsageMeterSkeleton } from "../cloud/TunnelUsage";
 import { environmentCatalog } from "~/connection/catalog";
 import { readEnvironmentScope } from "~/state/session";
 import { type EnvironmentPresentation, useRelayEnvironmentDiscovery } from "~/state/environments";
@@ -309,7 +309,11 @@ export function SavedBackendListRow({
             onClick={() => setRoutesOpen((open) => !open)}
             className="inline-flex shrink-0 items-center gap-0.5 rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
           >
-            {routeCount === 1 ? gt("Routes") : `${routeCount} routes`}
+            {routeCount === 1
+              ? gt("Routes")
+              : gt("{count, plural, one {{count} route} other {{count} routes}}", {
+                  count: routeCount,
+                })}
             <ChevronRightIcon
               aria-hidden
               className={cn(
@@ -561,6 +565,8 @@ function T3ConnectTunnelUsage({ tunnelLimit }: { readonly tunnelLimit: number | 
           ) : null
         }
       />
+    ) : usage.loading ? (
+      <TunnelUsageMeterSkeleton />
     ) : null;
   return (
     <>
