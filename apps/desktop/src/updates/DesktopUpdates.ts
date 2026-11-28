@@ -2,7 +2,9 @@ import {
   DESKTOP_UPDATE_RESTART_MARKER_FILE,
   DESKTOP_UPDATE_IN_PROGRESS_MARKER_FILE,
   DESKTOP_UPDATE_IN_PROGRESS_TTL_MS,
+  DesktopAutoUpdateModeSchema,
   DesktopUpdateChannelSchema,
+  type DesktopAutoUpdateMode,
   type DesktopRuntimeInfo,
   type DesktopUpdateActionResult,
   type DesktopUpdateChannel,
@@ -13,9 +15,11 @@ import { errorTag } from "@t3tools/shared/observability";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -33,6 +37,8 @@ import * as DesktopConfig from "../app/DesktopConfig.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as DesktopState from "../app/DesktopState.ts";
+import * as ElectronNotification from "../electron/ElectronNotification.ts";
+import * as ElectronPowerMonitor from "../electron/ElectronPowerMonitor.ts";
 import * as ElectronUpdater from "../electron/ElectronUpdater.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as IpcChannels from "../ipc/channels.ts";
@@ -62,8 +68,12 @@ import {
 
 const CHANNEL_CHANGE_RETRY_DELAY = Duration.seconds(1);
 const CHANNEL_CHANGE_RETRIES = 30;
-const AUTO_UPDATE_STARTUP_DELAY = "15 seconds";
-const AUTO_UPDATE_POLL_INTERVAL = "4 hours";
+export const AUTO_UPDATE_STARTUP_DELAY = "15 seconds";
+export const AUTO_UPDATE_POLL_INTERVAL = "30 minutes";
+export const AUTO_UPDATE_RESUME_CHECK_DELAY = "10 seconds";
+export const AUTO_INSTALL_IDLE_THRESHOLD_SECONDS = 10 * 60;
+export const AUTO_INSTALL_IDLE_POLL_INTERVAL = "1 minute";
+export const AUTO_INSTALL_DEADLINE = Duration.hours(2);
 const UPDATE_CHECK_WAIT = Duration.seconds(90);
 
 type UpdateAction = "check" | "download" | "install" | "install-recovery" | "channel";
@@ -121,6 +131,18 @@ export class DesktopUpdateChannelPersistenceError extends Schema.TaggedError<Des
 ) {
   override get message(): string {
     return `Failed to persist the ${this.channel} desktop update channel.`;
+  }
+}
+
+export class DesktopUpdateAutoModePersistenceError extends Schema.TaggedError<DesktopUpdateAutoModePersistenceError>()(
+  "DesktopUpdateAutoModePersistenceError",
+  {
+    mode: DesktopAutoUpdateModeSchema,
+    cause: Schema.instanceOf(DesktopAppSettings.DesktopSettingsWriteError),
+  },
+) {
+  override get message(): string {
+    return `Failed to persist the ${this.mode} desktop automatic update mode.`;
   }
 }
 
@@ -213,6 +235,9 @@ export class DesktopUpdates extends Context.Service<
       channel: DesktopUpdateChannel,
       options?: { readonly minimumVersion?: string | undefined },
     ) => Effect.Effect<DesktopUpdateState, DesktopUpdateSetChannelError>;
+    readonly setAutoUpdateMode: (
+      mode: DesktopAutoUpdateMode,
+    ) => Effect.Effect<DesktopUpdateState, DesktopUpdateAutoModePersistenceError>;
     readonly clearReleaseFloor: (expectedFloor?: string) => Effect.Effect<void>;
     /** `allowDowngrade` is for a guarded track switch, which checked that older release. */
     readonly check: (
@@ -388,6 +413,8 @@ export const make = Effect.gen(function* () {
   const pool = yield* DesktopBackendPool.DesktopBackendPool;
   const sshEnvironment = yield* DesktopSshEnvironment.DesktopSshEnvironment;
   const desktopState = yield* DesktopState.DesktopState;
+  const electronNotification = yield* ElectronNotification.ElectronNotification;
+  const electronPowerMonitor = yield* ElectronPowerMonitor.ElectronPowerMonitor;
   const electronUpdater = yield* ElectronUpdater.ElectronUpdater;
   const electronWindow = yield* ElectronWindow.ElectronWindow;
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
@@ -407,6 +434,20 @@ export const make = Effect.gen(function* () {
   const lastLoggedDownloadMilestoneRef = yield* Ref.make(-1);
   const notAppliedVersionRef = yield* Ref.make(Option.none<string>());
   const downloadedFileRef = yield* Ref.make(Option.none<string>());
+  const autoUpdateModeRef = yield* Ref.make<DesktopAutoUpdateMode>(
+    environment.defaultDesktopSettings.autoUpdateMode,
+  );
+  const configureScopeRef = yield* Ref.make<Option.Option<Scope.Scope>>(Option.none());
+  const autoInstallFiberRef = yield* Ref.make<Option.Option<Fiber.Fiber<void, never>>>(
+    Option.none(),
+  );
+  const resumeCheckFiberRef = yield* Ref.make<Option.Option<Fiber.Fiber<void, never>>>(
+    Option.none(),
+  );
+  const autoDownloadFailedVersionRef = yield* Ref.make<Option.Option<string>>(Option.none());
+  const autoInstallFailedVersionRef = yield* Ref.make<Option.Option<string>>(Option.none());
+  const lastNotifiedVersionRef = yield* Ref.make<Option.Option<string>>(Option.none());
+  const installFlowActiveRef = yield* Ref.make(false);
   // The release a track switch's database check cleared. A build crosses to another track only
   // through such a switch, and never below that release: version order alone cannot tell whether
   // a Stable knows a Nightly's migrations.
@@ -833,9 +874,11 @@ export const make = Effect.gen(function* () {
   );
 
   const baseUpdateState = (channel: DesktopUpdateChannel, disabledReason: Option.Option<string>) =>
-    Ref.get(notAppliedVersionRef).pipe(
-      Effect.map((notAppliedVersion) => ({
+    Effect.all([Ref.get(notAppliedVersionRef), Ref.get(autoUpdateModeRef)]).pipe(
+      Effect.map(([notAppliedVersion, autoUpdateMode]) => ({
         ...createBaseUpdateState(channel, disabledReason, environment),
+        autoUpdateMode,
+        autoInstallAt: null,
         // Callers fall back to the channel's reason only when nothing else turns updates off.
         ...(Option.isSome(disabledReason) &&
         disabledReason.value === Option.getOrUndefined(channelBlockedReason(channel))
@@ -847,6 +890,13 @@ export const make = Effect.gen(function* () {
         }),
       })),
     );
+
+  const disarmAutoInstall = Effect.gen(function* () {
+    const prev = yield* Ref.getAndSet(autoInstallFiberRef, Option.none());
+    if (Option.isSome(prev)) {
+      yield* Fiber.interrupt(prev.value);
+    }
+  });
 
   const resetInstallAction = Effect.all(
     [
@@ -1023,72 +1073,253 @@ export const make = Effect.gen(function* () {
         state: yield* Ref.get(updateStateRef),
       };
     }
-    let installVersion = expectedVersion;
-    const retained = yield* Ref.get(updateStateRef);
-    const retainedVersion = retained.downloadedVersion;
-    const retainsExpectedDownload =
-      retainedVersion !== null &&
-      (expectedVersion === undefined || retainedVersion === expectedVersion);
-    // A cache cleaner can delete the archive; Squirrel.Mac would then fail every install attempt.
-    if (retainsExpectedDownload && (yield* downloadedFileMissing)) {
-      yield* logUpdaterWarning("the downloaded update file is gone; downloading it again", {
-        version: retainedVersion,
-      });
-      yield* updateState(reduceDesktopUpdateStateOnDownloadLost);
-      const download = yield* downloadAvailableUpdate(true);
-      if (!download.completed) {
-        return {
-          accepted: download.accepted,
-          completed: false,
-          failed: download.accepted,
-          state: yield* Ref.get(updateStateRef),
-        };
-      }
-      if (expectedVersion !== undefined) {
-        installVersion = (yield* Ref.get(updateStateRef)).downloadedVersion ?? expectedVersion;
-      }
-    } else if (
-      // A download can be hours old: a release published since replaces it before restarting.
-      retainsExpectedDownload &&
-      (yield* checkForUpdates(
-        "install",
-        "acquire",
-        retained.channel !== desktopUpdateChannelOf(environment.appVersion),
-      )) &&
-      (yield* Ref.get(updateStateRef)).status === "available"
-    ) {
-      const refreshed = yield* Ref.get(updateStateRef);
-      // electron-updater compares a stale feed with the running build, not the retained download.
-      if (
-        refreshed.availableVersion === null ||
-        compareSemverVersions(refreshed.availableVersion, retainedVersion) <= 0
-      ) {
-        yield* setState(retained);
-      } else {
-        const download = yield* downloadAvailableUpdate(false);
-        if (!download.completed) {
+    yield* disarmAutoInstall;
+    return yield* Effect.acquireUseRelease(
+      Ref.set(installFlowActiveRef, true),
+      () =>
+        Effect.gen(function* () {
+          let installVersion = expectedVersion;
+          const retained = yield* Ref.get(updateStateRef);
+          const retainedVersion = retained.downloadedVersion;
+          const retainsExpectedDownload =
+            retainedVersion !== null &&
+            (expectedVersion === undefined || retainedVersion === expectedVersion);
+          // A cache cleaner can delete the archive; Squirrel.Mac would then fail every install attempt.
+          if (retainsExpectedDownload && (yield* downloadedFileMissing)) {
+            yield* logUpdaterWarning("the downloaded update file is gone; downloading it again", {
+              version: retainedVersion,
+            });
+            yield* updateState(reduceDesktopUpdateStateOnDownloadLost);
+            const download = yield* downloadAvailableUpdate(true);
+            if (!download.completed) {
+              return {
+                accepted: download.accepted,
+                completed: false,
+                failed: download.accepted,
+                state: yield* Ref.get(updateStateRef),
+              };
+            }
+            if (expectedVersion !== undefined) {
+              installVersion =
+                (yield* Ref.get(updateStateRef)).downloadedVersion ?? expectedVersion;
+            }
+          } else if (
+            // A download can be hours old: a release published since replaces it before restarting.
+            retainsExpectedDownload &&
+            (yield* checkForUpdates(
+              "install",
+              "acquire",
+              retained.channel !== desktopUpdateChannelOf(environment.appVersion),
+            )) &&
+            (yield* Ref.get(updateStateRef)).status === "available"
+          ) {
+            const refreshed = yield* Ref.get(updateStateRef);
+            // electron-updater compares a stale feed with the running build, not the retained download.
+            if (
+              refreshed.availableVersion === null ||
+              compareSemverVersions(refreshed.availableVersion, retainedVersion) <= 0
+            ) {
+              yield* setState(retained);
+            } else {
+              const download = yield* downloadAvailableUpdate(false);
+              if (!download.completed) {
+                return {
+                  accepted: download.accepted,
+                  completed: false,
+                  failed: download.accepted,
+                  state: yield* Ref.get(updateStateRef),
+                };
+              }
+              if (expectedVersion !== undefined) {
+                installVersion =
+                  (yield* Ref.get(updateStateRef)).downloadedVersion ?? expectedVersion;
+              }
+            }
+          }
+          const result = yield* installDownloadedUpdate(installVersion);
           return {
-            accepted: download.accepted,
-            completed: false,
-            failed: download.accepted,
+            accepted: result.accepted,
+            completed: result.completed,
+            failed: result.failed,
             state: yield* Ref.get(updateStateRef),
           };
-        }
-        if (expectedVersion !== undefined) {
-          installVersion = (yield* Ref.get(updateStateRef)).downloadedVersion ?? expectedVersion;
-        }
+        }),
+      () => Ref.set(installFlowActiveRef, false),
+    );
+  });
+
+  const canAutoManageVersion = Effect.fn("desktop.updates.canAutoManageVersion")(function* (
+    version: string,
+    state: DesktopUpdateState,
+  ) {
+    if (!state.enabled) return false;
+    if (desktopUpdateChannelOf(environment.appVersion) !== state.channel) return false;
+    if (yield* Ref.get(desktopState.quitting)) return false;
+    if (Option.contains(yield* Ref.get(notAppliedVersionRef), version)) return false;
+    return true;
+  });
+
+  const maybeStartAutoDownload = Effect.fn("desktop.updates.maybeStartAutoDownload")(function* (
+    version: string,
+  ) {
+    if (yield* Ref.get(installFlowActiveRef)) return;
+    const mode = yield* Ref.get(autoUpdateModeRef);
+    if (mode !== "auto" && mode !== "notify") return;
+    const state = yield* Ref.get(updateStateRef);
+    if (state.status !== "available" || state.availableVersion !== version) return;
+    if (!(yield* canAutoManageVersion(version, state))) return;
+    if (Option.contains(yield* Ref.get(autoDownloadFailedVersionRef), version)) return;
+    const scope = yield* Ref.get(configureScopeRef);
+    if (Option.isNone(scope)) return;
+
+    const task = Effect.gen(function* () {
+      yield* logUpdaterInfo("starting automatic update download", { version, mode });
+      const result = yield* downloadAvailableUpdate(false);
+      if (result.accepted && !result.completed) {
+        yield* Ref.set(autoDownloadFailedVersionRef, Option.some(version));
       }
+    }).pipe(
+      Effect.catchCause((cause) =>
+        Cause.hasInterruptsOnly(cause)
+          ? Effect.void
+          : logUpdaterWarning("automatic update download failed unexpectedly", {
+              version,
+              cause: describeUpdateErrorCause(cause),
+            }),
+      ),
+    );
+    yield* Effect.forkIn(task, scope.value);
+  });
+
+  const maybeNotifyUpdateDownloaded = Effect.fn("desktop.updates.maybeNotifyUpdateDownloaded")(
+    function* (version: string, mode: DesktopAutoUpdateMode) {
+      if (yield* Ref.get(installFlowActiveRef)) return;
+      const alreadyNotified = yield* Ref.modify(lastNotifiedVersionRef, (prev) =>
+        Option.contains(prev, version)
+          ? ([true, prev] as const)
+          : ([false, Option.some(version)] as const),
+      );
+      if (alreadyNotified) return;
+      const focused = yield* electronWindow.focusedMainOrFirst;
+      if (Option.isSome(focused)) return;
+      const context = yield* Effect.context<never>();
+      yield* electronNotification.show({
+        title: `T4 Code ${version} is ready to install`,
+        body:
+          mode === "auto"
+            ? "Installs automatically when idle, locked, or in 2 hours. Click to open."
+            : "Click to open T4 Code and restart to install.",
+        onClick: () => {
+          void Effect.runPromiseWith(context)(
+            electronWindow.currentMainOrFirst.pipe(
+              Effect.flatMap(
+                Option.match({
+                  onNone: () => Effect.void,
+                  onSome: (win) => electronWindow.reveal(win),
+                }),
+              ),
+              Effect.ignore,
+            ),
+          );
+        },
+      });
+    },
+  );
+
+  const armAutoInstall = Effect.fn("desktop.updates.armAutoInstall")(function* (version: string) {
+    yield* disarmAutoInstall;
+    if (yield* Ref.get(installFlowActiveRef)) return;
+    const mode = yield* Ref.get(autoUpdateModeRef);
+    const state = yield* Ref.get(updateStateRef);
+    const eligible =
+      mode === "auto" &&
+      state.status === "downloaded" &&
+      state.downloadedVersion === version &&
+      (yield* canAutoManageVersion(version, state)) &&
+      !Option.contains(yield* Ref.get(autoInstallFailedVersionRef), version);
+    const scope = yield* Ref.get(configureScopeRef);
+    if (!eligible || Option.isNone(scope)) {
+      if (state.autoInstallAt !== null && state.autoInstallAt !== undefined) {
+        yield* updateState((current) => ({ ...current, autoInstallAt: null }));
+      }
+      return;
     }
-    const result = yield* installDownloadedUpdate(installVersion);
-    return {
-      accepted: result.accepted,
-      completed: result.completed,
-      failed: result.failed,
-      state: yield* Ref.get(updateStateRef),
-    };
+
+    const deadlineIso = DateTime.formatIso(
+      DateTime.addDuration(yield* DateTime.now, AUTO_INSTALL_DEADLINE),
+    );
+    yield* updateState((current) =>
+      current.status === "downloaded" && current.downloadedVersion === version
+        ? { ...current, autoInstallAt: deadlineIso }
+        : current,
+    );
+
+    const ready = yield* Deferred.make<void>();
+    const watcher = Effect.scoped(
+      Effect.gen(function* () {
+        const trigger = yield* Deferred.make<"lock-screen" | "idle" | "deadline">();
+        const triggerContext = yield* Effect.context<never>();
+        yield* electronPowerMonitor.onSimpleEvent("lock-screen", () => {
+          void Effect.runPromiseWith(triggerContext)(
+            Deferred.succeed(trigger, "lock-screen").pipe(Effect.asVoid),
+          );
+        });
+        yield* Effect.sleep(AUTO_INSTALL_IDLE_POLL_INTERVAL).pipe(
+          Effect.andThen(electronPowerMonitor.getSystemIdleTime),
+          Effect.flatMap((idleSeconds) =>
+            idleSeconds >= AUTO_INSTALL_IDLE_THRESHOLD_SECONDS
+              ? Deferred.succeed(trigger, "idle").pipe(Effect.asVoid)
+              : Effect.void,
+          ),
+          Effect.forever,
+          Effect.forkScoped,
+        );
+        yield* Effect.sleep(AUTO_INSTALL_DEADLINE).pipe(
+          Effect.andThen(Deferred.succeed(trigger, "deadline").pipe(Effect.asVoid)),
+          Effect.forkScoped,
+        );
+        yield* Deferred.succeed(ready, undefined);
+
+        const reason = yield* Deferred.await(trigger);
+        // Clear ref before installWithExpectedVersion so disarmAutoInstall does not self-interrupt.
+        yield* Ref.set(autoInstallFiberRef, Option.none());
+        const currentMode = yield* Ref.get(autoUpdateModeRef);
+        const currentState = yield* Ref.get(updateStateRef);
+        if (
+          currentMode !== "auto" ||
+          currentState.status !== "downloaded" ||
+          currentState.downloadedVersion !== version ||
+          !(yield* canAutoManageVersion(version, currentState))
+        ) {
+          return;
+        }
+        yield* logUpdaterInfo("auto-installing downloaded update", { version, reason });
+        const result = yield* installWithExpectedVersion(version);
+        if (result.failed) {
+          yield* Ref.set(autoInstallFailedVersionRef, Option.some(version));
+          yield* updateState((current) => ({ ...current, autoInstallAt: null }));
+        }
+      }),
+    ).pipe(
+      Effect.ensuring(Deferred.succeed(ready, undefined).pipe(Effect.asVoid)),
+      Effect.catchCause((cause) =>
+        Cause.hasInterruptsOnly(cause)
+          ? Effect.void
+          : logUpdaterWarning("automatic update install watcher failed", {
+              version,
+              cause: describeUpdateErrorCause(cause),
+            }),
+      ),
+    );
+
+    const fiber = yield* Effect.forkIn(watcher, scope.value);
+    yield* Ref.set(autoInstallFiberRef, Option.some(fiber));
+    yield* Deferred.await(ready);
   });
 
   const startUpdatePollers: Effect.Effect<void, never, Scope.Scope> = Effect.gen(function* () {
+    const scope = yield* Scope.Scope;
+    const context = yield* Effect.context<never>();
     yield* Effect.sleep(AUTO_UPDATE_STARTUP_DELAY).pipe(
       Effect.andThen(checkForUpdates("startup")),
       Effect.catchCause((cause) => {
@@ -1105,6 +1336,7 @@ export const make = Effect.gen(function* () {
       Effect.forkScoped,
     );
     yield* Effect.sleep(AUTO_UPDATE_POLL_INTERVAL).pipe(
+      Effect.andThen(Ref.set(autoDownloadFailedVersionRef, Option.none())),
       Effect.andThen(checkForUpdates("poll")),
       Effect.forever,
       Effect.catchCause((cause) => {
@@ -1120,6 +1352,30 @@ export const make = Effect.gen(function* () {
       }),
       Effect.forkScoped,
     );
+    yield* electronPowerMonitor.onSimpleEvent("resume", () => {
+      void Effect.runPromiseWith(context)(
+        Effect.gen(function* () {
+          const prev = yield* Ref.getAndSet(resumeCheckFiberRef, Option.none());
+          if (Option.isSome(prev)) {
+            yield* Fiber.interrupt(prev.value);
+          }
+          const task = Effect.sleep(AUTO_UPDATE_RESUME_CHECK_DELAY).pipe(
+            Effect.andThen(Ref.set(autoDownloadFailedVersionRef, Option.none())),
+            Effect.andThen(checkForUpdates("resume")),
+            Effect.asVoid,
+            Effect.catchCause((cause) =>
+              Cause.hasInterruptsOnly(cause)
+                ? Effect.void
+                : logUpdaterWarning("resume update check failed", {
+                    cause: describeUpdateErrorCause(cause),
+                  }),
+            ),
+          );
+          const fiber = yield* Effect.forkIn(task, scope);
+          yield* Ref.set(resumeCheckFiberRef, Option.some(fiber));
+        }),
+      );
+    });
   }).pipe(Effect.withSpan("desktop.updates.startPollers"));
 
   const handleUpdateAvailable = Effect.fn("desktop.updates.handleUpdateAvailable")(function* (
@@ -1139,7 +1395,16 @@ export const make = Effect.gen(function* () {
             yield* Ref.set(lastLoggedDownloadMilestoneRef, -1);
             return;
           }
-          if (isOffered(state) && state.availableVersion === info.version) return;
+          if (isOffered(state) && state.availableVersion === info.version) {
+            if (state.status === "available") {
+              yield* maybeStartAutoDownload(info.version);
+            }
+            return;
+          }
+
+          if (state.downloadedVersion !== info.version) {
+            yield* disarmAutoInstall;
+          }
 
           const checkedAt = yield* currentIsoTimestamp;
           const { releaseNotes, omittedReleaseCount } = normalizeDesktopUpdateReleaseNotes(
@@ -1163,6 +1428,7 @@ export const make = Effect.gen(function* () {
             releaseNoteGroups: releaseNotes.length,
             omittedReleaseCount,
           });
+          yield* maybeStartAutoDownload(info.version);
         }),
       ),
       Effect.catchCause((cause) => {
@@ -1283,8 +1549,14 @@ export const make = Effect.gen(function* () {
             return;
           }
           yield* Ref.set(downloadedFileRef, Option.fromNullishOr(info.downloadedFile));
+          yield* Ref.set(autoDownloadFailedVersionRef, Option.none());
           yield* setState(reduceDesktopUpdateStateOnDownloadComplete(state, info.version));
           yield* logUpdaterInfo("update downloaded", { version: info.version });
+          const mode = yield* Ref.get(autoUpdateModeRef);
+          yield* maybeNotifyUpdateDownloaded(info.version, mode);
+          if (mode === "auto") {
+            yield* armAutoInstall(info.version);
+          }
         }),
       ),
       Effect.catchCause((cause) => {
@@ -1352,6 +1624,9 @@ export const make = Effect.gen(function* () {
       }
 
       const settings = yield* desktopSettings.get;
+      yield* Ref.set(autoUpdateModeRef, settings.autoUpdateMode);
+      const scope = yield* Scope.Scope;
+      yield* Ref.set(configureScopeRef, Option.some(scope));
       const disabledReason = yield* resolveDisabledReason;
       // A blocked nightly channel still lets the user switch back to stable, so it stays updatable.
       yield* Ref.set(desktopState.canInstallUpdates, Option.isNone(disabledReason));
@@ -1455,6 +1730,7 @@ export const make = Effect.gen(function* () {
         );
 
         const disabledReason = yield* resolveDisabledReason;
+        yield* disarmAutoInstall;
         yield* setState(yield* baseUpdateState(nextChannel, disabledReason));
 
         if (Option.isSome(disabledReason) || !(yield* Ref.get(updaterConfiguredRef))) {
@@ -1470,6 +1746,41 @@ export const make = Effect.gen(function* () {
         );
         return yield* Ref.get(updateStateRef);
       }).pipe(Effect.ensuring(finishUpdateAction("channel")));
+    }),
+    setAutoUpdateMode: Effect.fn("desktop.updates.setAutoUpdateMode")(function* (
+      nextMode: DesktopAutoUpdateMode,
+    ) {
+      yield* Effect.annotateCurrentSpan({ mode: nextMode });
+      yield* desktopSettings
+        .setAutoUpdateMode(nextMode)
+        .pipe(
+          Effect.mapError(
+            (cause) => new DesktopUpdateAutoModePersistenceError({ mode: nextMode, cause }),
+          ),
+        );
+      yield* Ref.set(autoUpdateModeRef, nextMode);
+      yield* Ref.set(autoDownloadFailedVersionRef, Option.none());
+      yield* Ref.set(autoInstallFailedVersionRef, Option.none());
+      const state = yield* updateState((current) => ({
+        ...current,
+        autoUpdateMode: nextMode,
+        ...(nextMode === "auto" ? {} : { autoInstallAt: null }),
+      }));
+      if (nextMode !== "auto") {
+        yield* disarmAutoInstall;
+      }
+      if ((nextMode === "auto" || nextMode === "notify") && state.status === "available") {
+        if (state.availableVersion !== null) {
+          yield* maybeStartAutoDownload(state.availableVersion);
+        }
+      } else if (
+        nextMode === "auto" &&
+        state.status === "downloaded" &&
+        state.downloadedVersion !== null
+      ) {
+        yield* armAutoInstall(state.downloadedVersion);
+      }
+      return yield* Ref.get(updateStateRef);
     }),
     clearReleaseFloor: Effect.fn("desktop.updates.clearReleaseFloor")(function* (
       expectedFloor?: string,
@@ -1500,6 +1811,9 @@ export const make = Effect.gen(function* () {
         if (desktopUpdateChannelOf(environment.appVersion) === currentState.channel) {
           yield* Ref.set(releaseFloorRef, Option.none());
         }
+      }
+      if (reason !== "remote-update" && reason !== "channel-change") {
+        yield* Ref.set(autoDownloadFailedVersionRef, Option.none());
       }
       const checked = yield* checkForUpdates(reason, "acquire", options?.allowDowngrade === true);
       return {

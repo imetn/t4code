@@ -1,4 +1,5 @@
 import {
+  DesktopAutoUpdateModeSchema,
   DesktopUpdateActionResultSchema,
   DesktopUpdateChannelSchema,
   DesktopUpdateCheckResultSchema,
@@ -31,6 +32,16 @@ export const setUpdateChannel = DesktopIpc.makeIpcMethod({
   handler: Effect.fn("desktop.ipc.updates.setChannel")(function* ({ channel, minimumVersion }) {
     const updates = yield* DesktopUpdates.DesktopUpdates;
     return yield* updates.setChannel(channel, { minimumVersion });
+  }),
+});
+
+export const setAutoUpdateMode = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.UPDATE_SET_AUTO_UPDATE_MODE_CHANNEL,
+  payload: DesktopAutoUpdateModeSchema,
+  result: DesktopUpdateStateSchema,
+  handler: Effect.fn("desktop.ipc.updates.setAutoUpdateMode")(function* (mode) {
+    const updates = yield* DesktopUpdates.DesktopUpdates;
+    return yield* updates.setAutoUpdateMode(mode);
   }),
 });
 

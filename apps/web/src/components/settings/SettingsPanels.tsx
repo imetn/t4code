@@ -8,6 +8,7 @@ import { msg, T, useGT, useMessages } from "gt-react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import {
+  type DesktopAutoUpdateMode,
   type DesktopUpdateChannel,
   IDLE_COMPACTION_MODES,
   type IdleCompactionMode,
@@ -42,6 +43,8 @@ import { CliCommandSettingsRow } from "./CliCommandSettingsRow";
 import { MobileAppSettingsRow } from "./MobileAppSettingsRow";
 import {
   canCheckForUpdate,
+  getDesktopAutoUpdateModeDescription,
+  getDesktopAutoUpdateModeLabel,
   getDesktopUpdateAboutDescription,
   getDesktopUpdateActionError,
   getDesktopUpdateButtonTooltip,
@@ -189,6 +192,8 @@ function AboutVersionSection() {
 
   const hasDesktopBridge = typeof window !== "undefined" && Boolean(window.desktopBridge);
   const selectedUpdateChannel = updateState?.channel ?? "latest";
+  const selectedAutoUpdateMode: DesktopAutoUpdateMode = updateState?.autoUpdateMode ?? "auto";
+  const [isUpdatingAutoMode, setIsUpdatingAutoMode] = useState(false);
   // The desktop updates this machine, whose policy the primary environment reports.
   const primaryPolicy = usePrimaryManagedPolicy();
   const updatesDenial = hasDesktopBridge
@@ -316,6 +321,26 @@ function AboutVersionSection() {
           }),
         );
       });
+  };
+
+  const handleAutoUpdateModeChange = (nextMode: DesktopAutoUpdateMode) => {
+    const setMode = window.desktopBridge?.setAutoUpdateMode;
+    if (!setMode || nextMode === selectedAutoUpdateMode || isUpdatingAutoMode) return;
+    setIsUpdatingAutoMode(true);
+    void setMode(nextMode)
+      .catch((error: unknown) => {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: gt("Could not update automatic update mode"),
+            description:
+              error instanceof Error
+                ? (thrownErrorMessage(error, resolveMessage) ?? error.message)
+                : gt("Failed to save automatic update preference."),
+          }),
+        );
+      })
+      .finally(() => setIsUpdatingAutoMode(false));
   };
 
   const action = updateState ? resolveDesktopUpdateButtonAction(updateState) : "none";
@@ -460,6 +485,49 @@ function AboutVersionSection() {
                 </SelectItem>
                 <SelectItem hideIndicator value="nightly">
                   <T>Nightly</T>
+                </SelectItem>
+              </SelectPopup>
+            </Select>
+          }
+        />
+      ) : null}
+      {hasDesktopBridge && window.desktopBridge?.setAutoUpdateMode ? (
+        <SettingsRow
+          {...setting("auto-update-mode")}
+          description={getDesktopAutoUpdateModeDescription(selectedAutoUpdateMode, messages)}
+          managed={updatesDenial}
+          control={
+            <Select
+              value={selectedAutoUpdateMode}
+              onValueChange={(value) => {
+                if (value === "auto" || value === "notify" || value === "manual") {
+                  handleAutoUpdateModeChange(value);
+                }
+              }}
+            >
+              <SelectTrigger
+                size="sm"
+                className="w-full sm:w-44"
+                aria-label={gt("Automatic updates")}
+                disabled={
+                  updatesDenial !== undefined ||
+                  updateState?.enabled === false ||
+                  isUpdatingAutoMode
+                }
+              >
+                <SelectValue>
+                  {getDesktopAutoUpdateModeLabel(selectedAutoUpdateMode, messages)}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                <SelectItem hideIndicator value="auto">
+                  <T>Automatic</T>
+                </SelectItem>
+                <SelectItem hideIndicator value="notify">
+                  <T>Download &amp; notify</T>
+                </SelectItem>
+                <SelectItem hideIndicator value="manual">
+                  <T>Manual</T>
                 </SelectItem>
               </SelectPopup>
             </Select>

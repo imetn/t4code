@@ -1056,6 +1056,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     releaseChannelOnly: true,
   },
   {
+    id: "auto-update-mode",
+    title: msg("Automatic updates"),
+    to: "/settings/about",
+    searchTerms: [msg("auto download install silent idle schedule notify manual upgrade")],
+    desktopOnly: true,
+  },
+  {
     id: "cli-command",
     title: msg("t3 command"),
     to: "/settings/about",

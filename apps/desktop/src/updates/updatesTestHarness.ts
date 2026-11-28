@@ -1,6 +1,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import type { DesktopUpdateState } from "@t3tools/contracts";
+import { desktopUpdateChannelOf } from "@t3tools/shared/cliRelease";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as PlatformError from "effect/PlatformError";
@@ -10,6 +11,8 @@ import * as Option from "effect/Option";
 import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
 import * as DesktopConfig from "../app/DesktopConfig.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import * as ElectronNotification from "../electron/ElectronNotification.ts";
+import * as ElectronPowerMonitor from "../electron/ElectronPowerMonitor.ts";
 import * as ElectronUpdater from "../electron/ElectronUpdater.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
@@ -42,6 +45,12 @@ export interface UpdatesHarnessOptions {
   readonly appVersion?: string;
   /** Starts from in-memory settings with this track saved, as after a restart. */
   readonly savedChannel?: DesktopAppSettings.DesktopSettings["updateChannel"];
+  /** Defaults to "manual" in tests so manual/remote flow tests stay deterministic; pass "auto"/"notify" for auto-update tests. */
+  readonly autoUpdateMode?: DesktopAppSettings.DesktopSettings["autoUpdateMode"];
+  /** Initial system idle time in seconds reported by ElectronPowerMonitor. */
+  readonly initialIdleTimeSeconds?: number;
+  /** Whether a window is currently focused (defaults to false so OS notifications can be observed when requested). */
+  readonly hasFocusedWindow?: boolean;
   /** Adds a WSL backend beside the primary, as on a Windows host with WSL enabled. */
   readonly wslBackend?: boolean;
 }
@@ -55,8 +64,11 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
   let fullChangelog = false;
   const feedUrls: ElectronUpdater.ElectronUpdaterFeedUrl[] = [];
   const listeners = new Map<string, Set<(...args: readonly unknown[]) => void>>();
+  const powerListeners = new Map<string, Set<() => void>>();
   const sentStates: DesktopUpdateState[] = [];
   const installSteps: string[] = [];
+  const notifications: ElectronNotification.DesktopNotificationOptions[] = [];
+  let idleTimeSeconds = options.initialIdleTimeSeconds ?? 0;
 
   const addListener = (eventName: string, listener: (...args: readonly unknown[]) => void) => {
     const eventListeners = listeners.get(eventName) ?? new Set();
@@ -122,7 +134,9 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
     create: () => Effect.die("unexpected BrowserWindow creation"),
     main: Effect.succeedNone,
     currentMainOrFirst: Effect.succeedNone,
-    focusedMainOrFirst: Effect.succeedNone,
+    focusedMainOrFirst: options.hasFocusedWindow
+      ? Effect.succeedSome({} as Electron.BrowserWindow)
+      : Effect.succeedNone,
     setMain: () => Effect.void,
     clearMain: () => Effect.void,
     prepareReveal: () => Effect.succeed(false),
@@ -136,6 +150,38 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
     }),
     syncAllAppearance: () => Effect.void,
   } satisfies ElectronWindow.ElectronWindow["Service"]);
+
+  const layerNotification = Layer.succeed(ElectronNotification.ElectronNotification, {
+    show: (opts) =>
+      Effect.sync(() => {
+        notifications.push(opts);
+        return true;
+      }),
+  } satisfies ElectronNotification.ElectronNotification["Service"]);
+
+  const layerPowerMonitor = Layer.succeed(ElectronPowerMonitor.ElectronPowerMonitor, {
+    isOnBatteryPower: Effect.succeed(false),
+    getSystemIdleTime: Effect.sync(() => idleTimeSeconds),
+    getSystemIdleState: (threshold) =>
+      Effect.sync(() => (idleTimeSeconds >= threshold ? "idle" : "active")),
+    getCurrentThermalState: Effect.succeed("nominal"),
+    onSimpleEvent: (eventName, listener) =>
+      Effect.acquireRelease(
+        Effect.sync(() => {
+          const set = powerListeners.get(eventName) ?? new Set();
+          set.add(listener);
+          powerListeners.set(eventName, set);
+        }),
+        () =>
+          Effect.sync(() => {
+            const set = powerListeners.get(eventName);
+            set?.delete(listener);
+            if (set?.size === 0) powerListeners.delete(eventName);
+          }),
+      ).pipe(Effect.asVoid),
+    onThermalStateChange: () => Effect.void,
+    onSpeedLimitChange: () => Effect.void,
+  } satisfies ElectronPowerMonitor.ElectronPowerMonitor["Service"]);
 
   const layerSshEnvironment = Layer.mock(DesktopSshEnvironment.DesktopSshEnvironment, {
     closeAllTunnels: Effect.sync(() => {
@@ -205,45 +251,48 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
 
   let testSettings: DesktopAppSettings.DesktopSettings = {
     ...DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS,
-    ...(options.savedChannel === undefined
-      ? {}
-      : { updateChannel: options.savedChannel, updateChannelConfiguredByUser: true }),
+    autoUpdateMode: options.autoUpdateMode ?? "manual",
+    updateChannel: options.savedChannel ?? desktopUpdateChannelOf(options.appVersion ?? "1.2.3"),
+    updateChannelConfiguredByUser: options.savedChannel !== undefined,
   };
   const setUpdateChannelError = options.setUpdateChannelError;
-  const layerSettings =
-    setUpdateChannelError || options.beforeSetUpdateChannel || options.savedChannel
-      ? Layer.succeed(DesktopAppSettings.DesktopAppSettings, {
-          get: Effect.sync(() => testSettings),
-          load: Effect.sync(() => testSettings),
-          setMainWindowBounds: () => Effect.die("unexpected main window bounds update"),
-          setServerExposureMode: () => Effect.die("unexpected server exposure update"),
-          setTailscaleServe: () => Effect.die("unexpected Tailscale Serve update"),
-          setTailscaleSignIn: () => Effect.die("unexpected Tailscale sign-in update"),
-          setUpdateChannel: (channel) =>
-            setUpdateChannelError
-              ? Effect.fail(setUpdateChannelError)
-              : (options.beforeSetUpdateChannel ?? Effect.void).pipe(
-                  Effect.andThen(
-                    Effect.sync(() => {
-                      const changed = testSettings.updateChannel !== channel;
-                      testSettings = {
-                        ...testSettings,
-                        updateChannel: channel,
-                        updateChannelConfiguredByUser: true,
-                      };
-                      return { settings: testSettings, changed };
-                    }),
-                  ),
-                ),
-          setWslBackendEnabled: () => Effect.die("unexpected WSL backend toggle"),
-          setWslDistro: () => Effect.die("unexpected WSL distro change"),
-          setLocalEnvironmentEnabled: () => Effect.die("unexpected local environment toggle"),
-          setWslOnly: () => Effect.die("unexpected WSL-only toggle"),
-          applyWslWindowsFallback: Effect.die("unexpected WSL Windows fallback"),
-          setCustomCloudConfig: () => Effect.die("unexpected custom cloud config update"),
-          applyWslWindowsFallbackInMemory: Effect.die("unexpected WSL Windows fallback"),
-        } satisfies DesktopAppSettings.DesktopAppSettings["Service"])
-      : DesktopAppSettings.layer;
+  const layerSettings = Layer.succeed(DesktopAppSettings.DesktopAppSettings, {
+    get: Effect.sync(() => testSettings),
+    load: Effect.sync(() => testSettings),
+    setMainWindowBounds: () => Effect.die("unexpected main window bounds update"),
+    setServerExposureMode: () => Effect.die("unexpected server exposure update"),
+    setTailscaleServe: () => Effect.die("unexpected Tailscale Serve update"),
+    setTailscaleSignIn: () => Effect.die("unexpected Tailscale sign-in update"),
+    setAutoUpdateMode: (mode) =>
+      Effect.sync(() => {
+        const changed = testSettings.autoUpdateMode !== mode;
+        testSettings = { ...testSettings, autoUpdateMode: mode };
+        return { settings: testSettings, changed };
+      }),
+    setUpdateChannel: (channel) =>
+      setUpdateChannelError
+        ? Effect.fail(setUpdateChannelError)
+        : (options.beforeSetUpdateChannel ?? Effect.void).pipe(
+            Effect.andThen(
+              Effect.sync(() => {
+                const changed = testSettings.updateChannel !== channel;
+                testSettings = {
+                  ...testSettings,
+                  updateChannel: channel,
+                  updateChannelConfiguredByUser: true,
+                };
+                return { settings: testSettings, changed };
+              }),
+            ),
+          ),
+    setWslBackendEnabled: () => Effect.die("unexpected WSL backend toggle"),
+    setWslDistro: () => Effect.die("unexpected WSL distro change"),
+    setLocalEnvironmentEnabled: () => Effect.die("unexpected local environment toggle"),
+    setWslOnly: () => Effect.die("unexpected WSL-only toggle"),
+    applyWslWindowsFallback: Effect.die("unexpected WSL Windows fallback"),
+    setCustomCloudConfig: () => Effect.die("unexpected custom cloud config update"),
+    applyWslWindowsFallbackInMemory: Effect.die("unexpected WSL Windows fallback"),
+  } satisfies DesktopAppSettings.DesktopAppSettings["Service"]);
 
   const updateRestartMarkers = new Set<string>();
   const updateMarkerContents = new Map<string, string>();
@@ -298,6 +347,8 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
     Layer.provide(layerFileSystem),
     Layer.provide(DesktopUpdatePolicy.layerTest(options.policy)),
     Layer.provideMerge(layerUpdater),
+    Layer.provideMerge(layerNotification),
+    Layer.provideMerge(layerPowerMonitor),
     Layer.provideMerge(layerWindow),
     Layer.provideMerge(layerBackend),
     Layer.provideMerge(layerSshEnvironment),
@@ -339,6 +390,17 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
         0,
       ),
     sentStates,
+    notifications,
+    setIdleTimeSeconds: (seconds: number) => {
+      idleTimeSeconds = seconds;
+    },
+    emitPowerEvent: (
+      eventName: "lock-screen" | "unlock-screen" | "on-ac" | "on-battery" | "suspend" | "resume",
+    ) => {
+      for (const listener of powerListeners.get(eventName) ?? []) {
+        listener();
+      }
+    },
     emit: (eventName: string, payload?: unknown) => {
       for (const listener of listeners.get(eventName) ?? []) {
         listener(payload);

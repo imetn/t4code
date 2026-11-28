@@ -198,6 +198,7 @@ Each entry uses `<!-- t4-lock: <id> -->` and explicit path prefixes/files so `sc
   - `apps/server/src/environment/ServerEnvironment.ts`
 - **Non-Negotiable Invariants**:
   - **T4 Code / T4 Connect branding** (`com.frameflowtech.t4code`, `imetn/t4code` GitHub Releases auto-update feed, sticky update floor fix).
+  - **Automatic Desktop Updates (`autoUpdateMode`, default `"auto"`)**: 30-minute poll + wake-from-sleep check, immediate background auto-download, active in-app & OS notifications with 1-minute countdown warning, seamless silent install on screen-lock or 10-minute idle, and 2-hour forced deadline fallback (guarded by `notAppliedVersion` loop prevention), configurable in Settings → About (`Automatic` / `Download & notify` / `Manual`).
   - **Zero telemetry / analytics** — never re-enable upstream OTLP/analytics/telemetry endpoints or PostHog/Sentry reporting.
   - **Self-hosted Relay & Reverse Proxy**: custom relay URL + custom Clerk publishable key / CLI OAuth client ID + live latency verification + `https` reverse-proxy issuer normalization + private-network HTTP peer linking + fail-closed relay allowlist.
   - **Tailscale auto-discovery & sign-in** (`tailnetSignIn` capability).

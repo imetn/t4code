@@ -30,6 +30,7 @@ import { RelayClientInstallDialog } from "../components/cloud/RelayClientInstall
 import { SshPasswordPromptDialog } from "../components/desktop/SshPasswordPromptDialog";
 import { SnapShotCoordinator } from "../components/desktop/SnapShotCoordinator";
 import { DesktopAppActivationCoordinator } from "../components/desktop/DesktopAppActivationCoordinator";
+import { DesktopAutoUpdateCoordinator } from "../components/desktop/DesktopAutoUpdateCoordinator";
 import { DesktopWebLinkCoordinator } from "../components/desktop/DesktopWebLinkCoordinator";
 import { DesktopTrayCoordinator } from "../components/desktop/DesktopTrayCoordinator";
 import { TailnetDiscoveryCoordinator } from "../components/desktop/TailnetDiscoveryCoordinator";
@@ -202,6 +203,7 @@ function RootRouteBranch() {
         <>
           <RunningThreadKeepAlive />
           <DesktopTrayCoordinator />
+          <DesktopAutoUpdateCoordinator />
         </>
       ) : null}
       <RelayClientInstallDialog />

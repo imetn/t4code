@@ -1,6 +1,8 @@
 import {
+  DesktopAutoUpdateModeSchema,
   DesktopServerExposureModeSchema,
   DesktopUpdateChannelSchema,
+  type DesktopAutoUpdateMode,
   type DesktopServerExposureMode,
   type DesktopUpdateChannel,
 } from "@t3tools/contracts";
@@ -30,6 +32,7 @@ import { desktopUpdateChannelOf } from "@t3tools/shared/cliRelease";
 import { isValidDistroName } from "../wsl/wslPathParsing.ts";
 
 export interface DesktopSettings {
+  readonly autoUpdateMode: DesktopAutoUpdateMode;
   readonly customRelayUrl: string | null;
   readonly customClerkPublishableKey: string | null;
   readonly customClerkCliOAuthClientId: string | null;
@@ -75,6 +78,7 @@ export const DEFAULT_MAIN_WINDOW_SIZE = {
 } as const;
 
 export const DEFAULT_DESKTOP_SETTINGS: DesktopSettings = {
+  autoUpdateMode: "auto",
   customRelayUrl: null,
   customClerkPublishableKey: null,
   customClerkCliOAuthClientId: null,
@@ -106,6 +110,7 @@ const optionalReadableKey = <S extends Schema.Top>(schema: S) =>
   Schema.optionalKey(schema.pipe(Schema.catchDecoding(() => Effect.succeedNone)));
 
 const DesktopSettingsDocument = Schema.Struct({
+  autoUpdateMode: optionalReadableKey(DesktopAutoUpdateModeSchema),
   customRelayUrl: optionalReadableKey(Schema.NullOr(Schema.String)),
   customClerkPublishableKey: optionalReadableKey(Schema.NullOr(Schema.String)),
   customClerkCliOAuthClientId: optionalReadableKey(Schema.NullOr(Schema.String)),
@@ -189,6 +194,9 @@ export class DesktopAppSettings extends Context.Service<
     readonly setTailscaleSignIn: (
       enabled: boolean,
     ) => Effect.Effect<DesktopSettingsChange, DesktopSettingsWriteError>;
+    readonly setAutoUpdateMode: (
+      mode: DesktopAutoUpdateMode,
+    ) => Effect.Effect<DesktopSettingsChange, DesktopSettingsWriteError>;
     readonly setUpdateChannel: (
       channel: DesktopUpdateChannel,
     ) => Effect.Effect<DesktopSettingsChange, DesktopSettingsWriteError>;
@@ -269,6 +277,7 @@ function normalizeDesktopSettingsDocument(
     (parsed.wslBackendEnabled === undefined && parsed.wslMode === "wsl");
 
   return {
+    autoUpdateMode: parsed.autoUpdateMode ?? defaultSettings.autoUpdateMode,
     customRelayUrl: normalizeCustomRelayUrl(parsed.customRelayUrl),
     customClerkPublishableKey: normalizeCustomClerkPublishableKey(parsed.customClerkPublishableKey),
     customClerkCliOAuthClientId: normalizeTrimmedNonEmpty(parsed.customClerkCliOAuthClientId),
@@ -297,6 +306,9 @@ function toDesktopSettingsDocument(
 ): DesktopSettingsDocument {
   const document: Mutable<DesktopSettingsDocument> = {};
 
+  if (settings.autoUpdateMode !== defaults.autoUpdateMode) {
+    document.autoUpdateMode = settings.autoUpdateMode;
+  }
   if (settings.customRelayUrl !== defaults.customRelayUrl) {
     document.customRelayUrl = settings.customRelayUrl;
   }
@@ -400,6 +412,18 @@ function setTailscaleSignIn(settings: DesktopSettings, enabled: boolean): Deskto
   return settings.tailscaleSignInEnabled === enabled
     ? settings
     : { ...settings, tailscaleSignInEnabled: enabled };
+}
+
+function setAutoUpdateMode(
+  settings: DesktopSettings,
+  requestedMode: DesktopAutoUpdateMode,
+): DesktopSettings {
+  return settings.autoUpdateMode === requestedMode
+    ? settings
+    : {
+        ...settings,
+        autoUpdateMode: requestedMode,
+      };
 }
 
 function setUpdateChannel(
@@ -667,6 +691,11 @@ export const make = Effect.gen(function* () {
 
       return yield* persist((settings) => setTailscaleSignIn(settings, enabled));
     }),
+    setAutoUpdateMode: Effect.fn("desktop.settings.setAutoUpdateMode")(function* (mode) {
+      yield* Effect.annotateCurrentSpan({ mode });
+
+      return yield* persist((settings) => setAutoUpdateMode(settings, mode));
+    }),
     setUpdateChannel: Effect.fn("desktop.settings.setUpdateChannel")(function* (channel) {
       yield* Effect.annotateCurrentSpan({ channel });
 
@@ -748,6 +777,9 @@ export const layerTest = (initialSettings: DesktopSettings = DEFAULT_DESKTOP_SET
         }),
         setTailscaleSignIn: Effect.fn("DesktopAppSettings.setTailscaleSignIn")(function (enabled) {
           return update((settings) => setTailscaleSignIn(settings, enabled));
+        }),
+        setAutoUpdateMode: Effect.fn("DesktopAppSettings.setAutoUpdateMode")(function (mode) {
+          return update((settings) => setAutoUpdateMode(settings, mode));
         }),
         setUpdateChannel: Effect.fn("DesktopAppSettings.setUpdateChannel")(function (channel) {
           return update((settings) => setUpdateChannel(settings, channel));

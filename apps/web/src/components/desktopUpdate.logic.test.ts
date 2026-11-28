@@ -3,6 +3,8 @@ import type { DesktopUpdateState } from "@t3tools/contracts";
 
 import {
   canCheckForUpdate,
+  getDesktopAutoUpdateModeDescription,
+  getDesktopAutoUpdateModeLabel,
   getDesktopUpdateAboutDescription,
   getDesktopUpdateButtonTooltip,
   getDesktopUpdateReleaseHistoryUrl,
@@ -249,6 +251,25 @@ describe("getDesktopUpdateAboutDescription", () => {
         downloadedVersion: "0.1.12-t4.18",
       }),
     ).toBe("Update 0.1.12-t4.18 is ready to install.");
+    expect(
+      getDesktopUpdateAboutDescription({
+        ...baseState,
+        status: "downloaded",
+        availableVersion: "0.1.12-t4.18",
+        downloadedVersion: "0.1.12-t4.18",
+        autoUpdateMode: "auto",
+        autoInstallAt: "2026-11-28T12:00:00.000Z",
+      }),
+    ).toContain("Update 0.1.12-t4.18 is ready to install. Installs automatically when idle or by ");
+  });
+
+  it("formats automatic update mode labels and descriptions", () => {
+    expect(getDesktopAutoUpdateModeLabel("auto")).toBe("Automatic");
+    expect(getDesktopAutoUpdateModeLabel("notify")).toBe("Download & notify");
+    expect(getDesktopAutoUpdateModeLabel("manual")).toBe("Manual");
+    expect(getDesktopAutoUpdateModeDescription("auto")).toContain("2 hours");
+    expect(getDesktopAutoUpdateModeDescription("notify")).toContain("notifies you");
+    expect(getDesktopAutoUpdateModeDescription("manual")).toContain("waits for you");
   });
 
   it("surfaces retryable download, install, and not-applied errors with version", () => {

@@ -92,6 +92,7 @@ export type DesktopUpdateStatus =
 export type DesktopRuntimeArch = "arm64" | "x64" | "other";
 export type DesktopTheme = "light" | "dark" | "system";
 export type DesktopUpdateChannel = "latest" | "nightly";
+export type DesktopAutoUpdateMode = "auto" | "notify" | "manual";
 export type DesktopAppStageLabel = "Alpha" | "Beta" | "Dev" | "Nightly";
 
 export const DesktopUpdateStatusSchema = Schema.Literals([
@@ -107,6 +108,7 @@ export const DesktopUpdateStatusSchema = Schema.Literals([
 export const DesktopRuntimeArchSchema = Schema.Literals(["arm64", "x64", "other"]);
 export const DesktopThemeSchema = Schema.Literals(["light", "dark", "system"]);
 export const DesktopUpdateChannelSchema = Schema.Literals(["latest", "nightly"]);
+export const DesktopAutoUpdateModeSchema = Schema.Literals(["auto", "notify", "manual"]);
 export const DesktopAppStageLabelSchema = Schema.Literals(["Alpha", "Beta", "Dev", "Nightly"]);
 
 export interface DesktopAppBranding {
@@ -322,6 +324,10 @@ export interface DesktopUpdateState {
   channelBlockedByPolicy?: true;
   /** The check failed only because this build's track differs from the saved `channel`. */
   trackMismatch?: { readonly buildChannel: DesktopUpdateChannel };
+  /** Automatic update behavior configured for this desktop app. */
+  autoUpdateMode?: DesktopAutoUpdateMode;
+  /** ISO timestamp when a downloaded update will auto-install if not installed sooner. */
+  autoInstallAt?: string | null;
 }
 
 export interface DesktopUpdateReleaseNote {
@@ -367,6 +373,8 @@ export const DesktopUpdateStateSchema = Schema.Struct({
   notAppliedVersion: Schema.optionalKey(Schema.String),
   channelBlockedByPolicy: Schema.optionalKey(Schema.Literal(true)),
   trackMismatch: Schema.optionalKey(Schema.Struct({ buildChannel: DesktopUpdateChannelSchema })),
+  autoUpdateMode: Schema.optionalKey(DesktopAutoUpdateModeSchema),
+  autoInstallAt: Schema.optionalKey(Schema.NullOr(Schema.String)),
 });
 
 export const DesktopCliCommandStateSchema = Schema.Struct({
@@ -1314,6 +1322,7 @@ export interface DesktopBridge {
     channel: DesktopUpdateChannel,
     minimumVersion?: string,
   ) => Promise<DesktopUpdateState>;
+  setAutoUpdateMode?: (mode: DesktopAutoUpdateMode) => Promise<DesktopUpdateState>;
   checkForUpdate: () => Promise<DesktopUpdateCheckResult>;
   downloadUpdate: () => Promise<DesktopUpdateActionResult>;
   /** With a version, installs only that downloaded build. */

@@ -1,5 +1,6 @@
 import { desktopTrackMismatchText } from "@t3tools/client-runtime/state/server";
 import type {
+  DesktopAutoUpdateMode,
   DesktopBridge,
   DesktopUpdateActionResult,
   DesktopUpdateState,
@@ -283,6 +284,50 @@ export function getDesktopUpdateDisabledReason(
   );
 }
 
+export function formatDesktopAutoInstallTime(
+  isoTimestamp: string | null | undefined,
+): string | null {
+  if (!isoTimestamp) return null;
+  const parsed = Date.parse(isoTimestamp);
+  if (Number.isNaN(parsed)) return null;
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(parsed));
+}
+
+export function getDesktopAutoUpdateModeLabel(
+  mode: DesktopAutoUpdateMode,
+  resolve: MessageResolver = m,
+): string {
+  switch (mode) {
+    case "auto":
+      return resolve(msg("Automatic"));
+    case "notify":
+      return resolve(msg("Download & notify"));
+    case "manual":
+      return resolve(msg("Manual"));
+  }
+}
+
+export function getDesktopAutoUpdateModeDescription(
+  mode: DesktopAutoUpdateMode,
+  resolve: MessageResolver = m,
+): string {
+  switch (mode) {
+    case "auto":
+      return resolve(
+        msg("Downloads updates automatically and installs when idle, locked, or after 2 hours."),
+      );
+    case "notify":
+      return resolve(
+        msg("Downloads updates in the background and notifies you when ready to install."),
+      );
+    case "manual":
+      return resolve(msg("Checks for updates and waits for you to download and install them."));
+  }
+}
+
 export function getDesktopUpdateAboutDescription(
   state: DesktopUpdateState | null,
   managedDenial?: string,
@@ -310,6 +355,22 @@ export function getDesktopUpdateAboutDescription(
       : resolve(msg("Downloading update"));
   }
 
+  const formatReadyDescription = (version: string | null): string => {
+    if (!version) return resolve(msg("Update ready to install."));
+    if (state.autoUpdateMode === "auto") {
+      const time = formatDesktopAutoInstallTime(state.autoInstallAt);
+      if (time !== null) {
+        return resolve(
+          msg(
+            "Update {version} is ready to install. Installs automatically when idle or by {time}.",
+            { version, time },
+          ),
+        );
+      }
+    }
+    return resolve(msg("Update {version} is ready to install.", { version }));
+  };
+
   const action = resolveDesktopUpdateButtonAction(state);
   if (action === "install") {
     const version = getDesktopUpdateDownloadedVersion(state);
@@ -325,9 +386,7 @@ export function getDesktopUpdateAboutDescription(
         }),
       );
     }
-    return version
-      ? resolve(msg("Update {version} is ready to install.", { version }))
-      : resolve(msg("Update ready to install."));
+    return formatReadyDescription(version);
   }
 
   if (action === "download") {
@@ -353,9 +412,7 @@ export function getDesktopUpdateAboutDescription(
 
   // Rechecks keep showing the downloaded version until a newer release replaces it.
   if (state.status === "checking" && state.downloadedVersion) {
-    return resolve(
-      msg("Update {version} is ready to install.", { version: state.downloadedVersion }),
-    );
+    return formatReadyDescription(state.downloadedVersion);
   }
 
   return resolve(msg("Current version of the application."));

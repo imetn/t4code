@@ -1,6 +1,6 @@
-import type { DesktopUpdateState } from "@t3tools/contracts";
+import type { DesktopAutoUpdateMode, DesktopUpdateState } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { page } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 
@@ -130,5 +130,41 @@ describe("AboutSettingsPanel version update status", () => {
     });
     await expect.element(page.getByText("Update 0.1.12-t4.18 is ready to install.")).toBeVisible();
     await expect.element(page.getByRole("button", { name: "Install" })).toBeVisible();
+  });
+
+  it("lets the user configure the automatic update mode from Settings -> About", async () => {
+    const setAutoUpdateMode = vi.fn(async (mode: DesktopAutoUpdateMode) => {
+      const next: DesktopUpdateState = {
+        ...baseState,
+        autoUpdateMode: mode,
+      };
+      await publish(next);
+      return next;
+    });
+    const originalBridge = window.desktopBridge;
+    Object.defineProperty(window, "desktopBridge", {
+      value: { setAutoUpdateMode },
+      configurable: true,
+    });
+    try {
+      mocks.update = {
+        ...baseState,
+        autoUpdateMode: "auto",
+      };
+      await using _screen = await render(<AboutSettingsPanel />);
+
+      const trigger = page.getByRole("combobox", { name: "Automatic updates" });
+      await expect.element(trigger).toHaveTextContent("Automatic");
+      await userEvent.click(trigger);
+      await userEvent.click(page.getByRole("option", { name: "Download & notify" }));
+
+      expect(setAutoUpdateMode).toHaveBeenCalledWith("notify");
+      await expect.element(trigger).toHaveTextContent("Download & notify");
+    } finally {
+      Object.defineProperty(window, "desktopBridge", {
+        value: originalBridge,
+        configurable: true,
+      });
+    }
   });
 });

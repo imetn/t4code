@@ -296,6 +296,7 @@ function layerTest(input: {
     setServerExposureMode: () => Effect.die("unexpected server exposure update"),
     setTailscaleServe: () => Effect.die("unexpected Tailscale Serve update"),
     setTailscaleSignIn: () => Effect.die("unexpected Tailscale sign-in update"),
+    setAutoUpdateMode: () => Effect.die("unexpected auto update mode change"),
     setUpdateChannel: () => Effect.die("unexpected update channel change"),
     setWslBackendEnabled: () => Effect.die("unexpected WSL backend toggle"),
     setWslDistro: () => Effect.die("unexpected WSL distro change"),

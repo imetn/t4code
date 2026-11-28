@@ -117,6 +117,7 @@ export function reduceDesktopUpdateStateOnUpdateAvailable(
     message: null,
     errorContext: null,
     canRetry: isDownloadedVersion,
+    ...(isDownloadedVersion ? {} : { autoInstallAt: null }),
   };
 }
 
@@ -149,6 +150,7 @@ export function reduceDesktopUpdateStateOnNoUpdate(
     message: null,
     errorContext: null,
     canRetry: false,
+    autoInstallAt: null,
   };
 }
 
@@ -162,6 +164,7 @@ export function reduceDesktopUpdateStateOnDownloadStart(
     message: null,
     errorContext: null,
     canRetry: false,
+    autoInstallAt: null,
   };
 }
 
@@ -222,6 +225,7 @@ export function reduceDesktopUpdateStateOnDownloadLost(
     message: null,
     errorContext: null,
     canRetry: false,
+    autoInstallAt: null,
   };
 }
 
@@ -235,6 +239,7 @@ export function reduceDesktopUpdateStateOnInstallFailure(
     message,
     errorContext: "install",
     canRetry: true,
+    autoInstallAt: null,
   };
 }
 

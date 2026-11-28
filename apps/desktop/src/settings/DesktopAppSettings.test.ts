@@ -223,6 +223,7 @@ describe("DesktopSettings", () => {
         );
 
         assert.deepEqual(yield* settings.load, {
+          autoUpdateMode: "auto",
           customRelayUrl: null,
           customClerkPublishableKey: null,
           customClerkCliOAuthClientId: null,
@@ -380,6 +381,7 @@ describe("DesktopSettings", () => {
         });
 
         assert.deepEqual(yield* settings.load, {
+          autoUpdateMode: "auto",
           customRelayUrl: null,
           customClerkPublishableKey: null,
           customClerkCliOAuthClientId: null,
@@ -413,6 +415,7 @@ describe("DesktopSettings", () => {
         });
 
         assert.deepEqual(yield* settings.load, {
+          autoUpdateMode: "auto",
           customRelayUrl: null,
           customClerkPublishableKey: null,
           customClerkCliOAuthClientId: null,
@@ -523,6 +526,24 @@ describe("DesktopSettings", () => {
         const loaded = yield* settings.load;
         assert.equal(loaded.wslBackendEnabled, true);
         assert.equal(loaded.wslDistro, "Ubuntu-22.04");
+      }),
+    ),
+  );
+
+  it.effect("defaults autoUpdateMode to auto and persists changes round-trip", () =>
+    withSettings(
+      Effect.gen(function* () {
+        const settings = yield* DesktopAppSettings.DesktopAppSettings;
+        assert.equal((yield* settings.load).autoUpdateMode, "auto");
+
+        const changed = yield* settings.setAutoUpdateMode("notify");
+        assert.isTrue(changed.changed);
+        assert.equal(changed.settings.autoUpdateMode, "notify");
+        assert.equal((yield* settings.load).autoUpdateMode, "notify");
+
+        const manual = yield* settings.setAutoUpdateMode("manual");
+        assert.isTrue(manual.changed);
+        assert.equal((yield* settings.load).autoUpdateMode, "manual");
       }),
     ),
   );

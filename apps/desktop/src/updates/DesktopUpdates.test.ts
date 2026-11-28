@@ -281,10 +281,10 @@ describe("DesktopUpdates", () => {
         yield* TestClock.adjust("15 seconds");
         assert.equal(harness.checkCount(), 1);
 
-        yield* TestClock.adjust("3 hours");
+        yield* TestClock.adjust("29 minutes");
         assert.equal(harness.checkCount(), 1);
 
-        yield* TestClock.adjust("1 hour");
+        yield* TestClock.adjust("1 minute");
         assert.equal(harness.checkCount(), 2);
       }),
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
@@ -1557,6 +1557,205 @@ describe("DesktopUpdates under a managed policy", () => {
         harness.emit("update-available", { version: "0.1.12-t4.12" });
         yield* flushCallbacks;
         assert.equal((yield* updates.getState).availableVersion, "0.1.12-t4.12");
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+});
+
+describe("DesktopUpdates automatic updates", () => {
+  it.effect("defaults desktop settings to automatic updates", () =>
+    Effect.sync(() => {
+      assert.equal(DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS.autoUpdateMode, "auto");
+    }),
+  );
+
+  it.effect("automatically downloads an available update in auto mode", () => {
+    const harness = makeHarness({ autoUpdateMode: "auto" });
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+
+        harness.emit("update-available", { version: "1.2.4" });
+        yield* flushCallbacks;
+        yield* flushCallbacks;
+
+        assert.equal(harness.downloadCount(), 1);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
+  it.effect("notifies when unfocused and installs immediately on screen lock in auto mode", () => {
+    const harness = makeHarness({ autoUpdateMode: "auto", hasFocusedWindow: false });
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+
+        harness.emit("update-downloaded", { version: "1.2.4" });
+        yield* flushCallbacks;
+        yield* flushCallbacks;
+
+        const downloaded = yield* updates.getState;
+        assert.equal(downloaded.status, "downloaded");
+        assert.equal(downloaded.autoUpdateMode, "auto");
+        assert.isString(downloaded.autoInstallAt);
+        assert.equal(harness.notifications.length, 1);
+        assert.include(harness.notifications[0]?.title ?? "", "1.2.4");
+
+        harness.emitPowerEvent("lock-screen");
+        yield* flushCallbacks;
+        yield* flushCallbacks;
+        assert.equal(harness.quitAndInstalls(), 1);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
+  it.effect("installs silently once system idle time reaches 10 minutes in auto mode", () => {
+    const harness = makeHarness({ autoUpdateMode: "auto", initialIdleTimeSeconds: 0 });
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+
+        harness.emit("update-downloaded", { version: "1.2.4" });
+        yield* flushCallbacks;
+        yield* flushCallbacks;
+
+        yield* TestClock.adjust("5 minutes");
+        assert.equal(harness.quitAndInstalls(), 0);
+
+        harness.setIdleTimeSeconds(DesktopUpdates.AUTO_INSTALL_IDLE_THRESHOLD_SECONDS);
+        yield* TestClock.adjust("1 minute");
+        yield* flushCallbacks;
+        assert.equal(harness.quitAndInstalls(), 1);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
+  it.effect("force-installs after the 2-hour deadline even when the user remains active", () => {
+    const harness = makeHarness({ autoUpdateMode: "auto", initialIdleTimeSeconds: 0 });
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+
+        harness.emit("update-downloaded", { version: "1.2.4" });
+        yield* flushCallbacks;
+        yield* flushCallbacks;
+
+        yield* TestClock.adjust("119 minutes");
+        assert.equal(harness.quitAndInstalls(), 0);
+
+        yield* TestClock.adjust("1 minute");
+        yield* flushCallbacks;
+        assert.equal(harness.quitAndInstalls(), 1);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
+  it.effect("auto-downloads in notify mode without ever auto-installing", () => {
+    const harness = makeHarness({ autoUpdateMode: "notify", initialIdleTimeSeconds: 999 });
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+
+        harness.emit("update-available", { version: "1.2.4" });
+        yield* flushCallbacks;
+        yield* flushCallbacks;
+        assert.equal(harness.downloadCount(), 1);
+
+        harness.emit("update-downloaded", { version: "1.2.4" });
+        yield* flushCallbacks;
+        yield* flushCallbacks;
+
+        assert.isNull((yield* updates.getState).autoInstallAt);
+        harness.emitPowerEvent("lock-screen");
+        yield* TestClock.adjust("3 hours");
+        yield* flushCallbacks;
+        assert.equal(harness.quitAndInstalls(), 0);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
+  it.effect("never auto-downloads or auto-installs a version that failed to apply", () => {
+    const harness = makeHarness({
+      autoUpdateMode: "auto",
+      appVersion: "1.2.3",
+      installRecord: JSON.stringify({ fromVersion: "1.2.3", targetVersion: "1.2.4" }),
+    });
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+
+        harness.emit("update-available", { version: "1.2.4" });
+        yield* flushCallbacks;
+        yield* flushCallbacks;
+        assert.equal(harness.downloadCount(), 0);
+
+        harness.emit("update-downloaded", { version: "1.2.4" });
+        yield* flushCallbacks;
+        yield* TestClock.adjust("3 hours");
+        assert.equal(harness.quitAndInstalls(), 0);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
+  it.effect("switches modes dynamically and disarms or arms auto-install immediately", () => {
+    const harness = makeHarness({ autoUpdateMode: "auto" });
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+
+        harness.emit("update-downloaded", { version: "1.2.4" });
+        yield* flushCallbacks;
+        assert.isString((yield* updates.getState).autoInstallAt);
+
+        const notifyState = yield* updates.setAutoUpdateMode("notify");
+        assert.equal(notifyState.autoUpdateMode, "notify");
+        assert.isNull(notifyState.autoInstallAt);
+
+        harness.emitPowerEvent("lock-screen");
+        yield* TestClock.adjust("3 hours");
+        assert.equal(harness.quitAndInstalls(), 0);
+
+        const autoAgain = yield* updates.setAutoUpdateMode("auto");
+        assert.equal(autoAgain.autoUpdateMode, "auto");
+        assert.isString(autoAgain.autoInstallAt);
+
+        harness.emitPowerEvent("lock-screen");
+        yield* flushCallbacks;
+        yield* flushCallbacks;
+        assert.equal(harness.quitAndInstalls(), 1);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
+  it.effect("checks for updates shortly after waking from sleep", () => {
+    const harness = makeHarness({ autoUpdateMode: "manual" });
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+
+        harness.emitPowerEvent("resume");
+        yield* flushCallbacks;
+        assert.equal(harness.checkCount(), 0);
+
+        yield* TestClock.adjust("10 seconds");
+        yield* flushCallbacks;
+        assert.equal(harness.checkCount(), 1);
       }),
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });
