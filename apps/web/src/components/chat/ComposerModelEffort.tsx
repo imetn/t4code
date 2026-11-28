@@ -796,7 +796,7 @@ function EffortSectionContent(props: {
 
   return (
     <div
-      className="flex flex-col gap-2 border-t border-border/60 bg-muted/15 px-3 py-2"
+      className="flex flex-col gap-1.5 border-t border-border/70 bg-accent/45 px-3 py-2 dark:bg-foreground/4"
       onKeyDownCapture={moveBetweenRows}
     >
       {effort || hasSpeed ? (
@@ -907,7 +907,7 @@ export function ComposerPickerFooter(props: {
   return (
     <div
       data-model-picker-footer="true"
-      className="flex min-h-9 items-center justify-between gap-1.5 border-t border-border/60 bg-muted/20 px-2.5 py-1"
+      className="flex min-h-8 items-center justify-between gap-1.5 border-t border-border/35 bg-accent/45 px-2.5 py-1 dark:bg-foreground/4"
     >
       {props.traits ? (
         <FooterTraitsControls

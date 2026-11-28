@@ -65,7 +65,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
 
   return (
     <Toolbar.Root
-      className="flex h-11 w-full shrink-0 items-center justify-between gap-1.5 border-b border-border/70 bg-muted/35 px-2.5"
+      className="flex h-12 w-full shrink-0 items-center justify-between gap-2 border-b border-border/75 bg-accent/55 px-2.5 dark:bg-foreground/4"
       data-model-picker-sidebar="true"
       aria-label={m(msg("Providers"))}
       orientation="horizontal"
@@ -77,133 +77,135 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
         }
       }}
     >
-      <div className="model-picker-scrollbar-none flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto overscroll-x-contain py-1">
-        {showFavorites ? (
-          <>
-            <div className="shrink-0" data-model-picker-provider="favorites">
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Toolbar.Button
-                      className={cn(
-                        "relative isolate flex h-7.5 shrink-0 cursor-pointer items-center justify-center rounded-full text-foreground/70 transition-colors hover:bg-foreground/10 hover:text-foreground focus-visible:bg-foreground/10 focus-visible:outline-none",
-                        props.selectedInstanceId === "favorites"
-                          ? "gap-1.5 bg-background px-2.5 text-foreground shadow-2xs ring-1 ring-border/75 dark:bg-foreground/14 dark:ring-foreground/12"
-                          : "w-7.5",
-                      )}
-                      onClick={() => handleSelect("favorites")}
-                      type="button"
-                      aria-label={m(msg("Favorites"))}
-                      aria-pressed={props.selectedInstanceId === "favorites"}
-                    >
-                      <StarIcon
+      <div className="model-picker-scrollbar-none flex min-w-0 flex-1 items-center overflow-x-auto overscroll-x-contain py-1">
+        <div className="inline-flex items-center gap-0.5 rounded-full bg-foreground/6 p-0.5 dark:bg-foreground/8">
+          {showFavorites ? (
+            <>
+              <div className="shrink-0" data-model-picker-provider="favorites">
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Toolbar.Button
                         className={cn(
-                          "size-4 shrink-0 fill-current",
-                          props.selectedInstanceId === "favorites" && "text-warning",
+                          "relative isolate flex h-7 shrink-0 cursor-pointer items-center justify-center rounded-full text-foreground/70 transition-colors hover:bg-foreground/8 hover:text-foreground focus-visible:bg-foreground/10 focus-visible:outline-none",
+                          props.selectedInstanceId === "favorites"
+                            ? "gap-1.5 bg-popover px-2.5 text-foreground shadow-xs ring-1 ring-border/55 hover:bg-popover dark:bg-foreground/16 dark:ring-foreground/15 dark:hover:bg-foreground/16"
+                            : "w-7",
                         )}
-                        aria-hidden
-                      />
-                      {props.selectedInstanceId === "favorites" ? (
-                        <span className="text-xs font-semibold leading-none">
-                          <T>Favorites</T>
-                        </span>
-                      ) : null}
-                    </Toolbar.Button>
-                  }
+                        onClick={() => handleSelect("favorites")}
+                        type="button"
+                        aria-label={m(msg("Favorites"))}
+                        aria-pressed={props.selectedInstanceId === "favorites"}
+                      >
+                        <StarIcon
+                          className={cn(
+                            "size-3.5 shrink-0 fill-current",
+                            props.selectedInstanceId === "favorites" && "text-warning",
+                          )}
+                          aria-hidden
+                        />
+                        {props.selectedInstanceId === "favorites" ? (
+                          <span className="text-xs font-semibold leading-none">
+                            <T>Favorites</T>
+                          </span>
+                        ) : null}
+                      </Toolbar.Button>
+                    }
+                  />
+                  <TooltipPopup
+                    side={PICKER_TOOLTIP_SIDE}
+                    sideOffset={PICKER_TOOLTIP_SIDE_OFFSET}
+                    align="center"
+                  >
+                    <T>Favorites</T>
+                  </TooltipPopup>
+                </Tooltip>
+              </div>
+              <div className="mx-0.5 h-3.5 w-px shrink-0 bg-foreground/12" aria-hidden="true" />
+            </>
+          ) : null}
+
+          {props.instanceEntries.map((entry) => {
+            const isUnavailable = !isProviderInstancePickerReady(entry);
+            const isContextDisabled = props.disabledInstanceIds?.has(entry.instanceId) ?? false;
+            const unavailableSelectionIsReachable =
+              props.selectableUnavailableInstanceIds?.has(entry.instanceId) ?? false;
+            const isDisabled =
+              (isUnavailable && !unavailableSelectionIsReachable) || isContextDisabled;
+            const isSelected = props.selectedInstanceId === entry.instanceId;
+            const showInstanceBadge = shouldShowInstanceBadge(entry, props.instanceEntries);
+
+            const tooltip = isUnavailable
+              ? describeUnavailableInstance(entry, m)
+              : isContextDisabled
+                ? (props.getDisabledInstanceTooltip?.(entry) ?? entry.displayName)
+                : entry.displayName;
+
+            const button = (
+              <Toolbar.Button
+                className={cn(
+                  "relative isolate flex h-7 shrink-0 cursor-pointer items-center justify-center rounded-full text-foreground/70 transition-colors hover:bg-foreground/8 hover:text-foreground focus-visible:bg-foreground/10 focus-visible:outline-none",
+                  isSelected
+                    ? "gap-1.5 bg-popover px-2.5 text-foreground shadow-xs ring-1 ring-border/55 hover:bg-popover dark:bg-foreground/16 dark:ring-foreground/15 dark:hover:bg-foreground/16"
+                    : "w-7",
+                  isDisabled && "cursor-not-allowed opacity-45 hover:bg-transparent",
+                )}
+                data-provider-accent-color={entry.accentColor}
+                onClick={() => !isDisabled && handleSelect(entry.instanceId)}
+                disabled={isDisabled}
+                focusableWhenDisabled={!isDisabled}
+                aria-pressed={isSelected}
+                type="button"
+                aria-label={isUnavailable || isContextDisabled ? tooltip : entry.displayName}
+              >
+                <ProviderInstanceIcon
+                  driverKind={entry.driverKind}
+                  displayName={entry.displayName}
+                  accentColor={entry.accentColor}
+                  acpRegistryAgentId={entry.acpRegistryAgentId}
+                  acpRegistryIconUrl={entry.acpRegistryIconUrl}
+                  showBadge={showInstanceBadge}
+                  className="z-30 size-4"
+                  iconClassName="size-3.5"
+                  indicatorBackground={isSelected ? "var(--popover)" : "var(--accent)"}
+                  {...(entry.accentColor
+                    ? { badgeClassName: "h-2.5 min-w-2.5 px-0.5 text-5xs" }
+                    : {})}
                 />
-                <TooltipPopup
-                  side={PICKER_TOOLTIP_SIDE}
-                  sideOffset={PICKER_TOOLTIP_SIDE_OFFSET}
-                  align="center"
-                >
-                  <T>Favorites</T>
-                </TooltipPopup>
-              </Tooltip>
-            </div>
-            <div className="mx-1 h-4 w-px shrink-0 bg-border/80" aria-hidden="true" />
-          </>
-        ) : null}
+                {isSelected ? (
+                  <span className="max-w-24 truncate text-xs font-semibold leading-none">
+                    {entry.displayName}
+                  </span>
+                ) : null}
+              </Toolbar.Button>
+            );
 
-        {props.instanceEntries.map((entry) => {
-          const isUnavailable = !isProviderInstancePickerReady(entry);
-          const isContextDisabled = props.disabledInstanceIds?.has(entry.instanceId) ?? false;
-          const unavailableSelectionIsReachable =
-            props.selectableUnavailableInstanceIds?.has(entry.instanceId) ?? false;
-          const isDisabled =
-            (isUnavailable && !unavailableSelectionIsReachable) || isContextDisabled;
-          const isSelected = props.selectedInstanceId === entry.instanceId;
-          const showInstanceBadge = shouldShowInstanceBadge(entry, props.instanceEntries);
+            const trigger = isDisabled ? (
+              <span className="relative inline-flex shrink-0">{button}</span>
+            ) : (
+              button
+            );
 
-          const tooltip = isUnavailable
-            ? describeUnavailableInstance(entry, m)
-            : isContextDisabled
-              ? (props.getDisabledInstanceTooltip?.(entry) ?? entry.displayName)
-              : entry.displayName;
-
-          const button = (
-            <Toolbar.Button
-              className={cn(
-                "relative isolate flex h-7.5 shrink-0 cursor-pointer items-center justify-center rounded-full text-foreground/70 transition-colors hover:bg-foreground/10 hover:text-foreground focus-visible:bg-foreground/10 focus-visible:outline-none",
-                isSelected
-                  ? "gap-1.5 bg-background px-2.5 text-foreground shadow-2xs ring-1 ring-border/75 dark:bg-foreground/14 dark:ring-foreground/12"
-                  : "w-7.5",
-                isDisabled && "cursor-not-allowed opacity-45 hover:bg-transparent",
-              )}
-              data-provider-accent-color={entry.accentColor}
-              onClick={() => !isDisabled && handleSelect(entry.instanceId)}
-              disabled={isDisabled}
-              focusableWhenDisabled={!isDisabled}
-              aria-pressed={isSelected}
-              type="button"
-              aria-label={isUnavailable || isContextDisabled ? tooltip : entry.displayName}
-            >
-              <ProviderInstanceIcon
-                driverKind={entry.driverKind}
-                displayName={entry.displayName}
-                accentColor={entry.accentColor}
-                acpRegistryAgentId={entry.acpRegistryAgentId}
-                acpRegistryIconUrl={entry.acpRegistryIconUrl}
-                showBadge={showInstanceBadge}
-                className="z-30 size-4"
-                iconClassName="size-4"
-                indicatorBackground={isSelected ? "var(--accent)" : "var(--popover)"}
-                {...(entry.accentColor
-                  ? { badgeClassName: "h-2.5 min-w-2.5 px-0.5 text-5xs" }
-                  : {})}
-              />
-              {isSelected ? (
-                <span className="max-w-24 truncate text-xs font-semibold leading-none">
-                  {entry.displayName}
-                </span>
-              ) : null}
-            </Toolbar.Button>
-          );
-
-          const trigger = isDisabled ? (
-            <span className="relative inline-flex shrink-0">{button}</span>
-          ) : (
-            button
-          );
-
-          return (
-            <div
-              key={entry.instanceId}
-              className="shrink-0"
-              data-model-picker-provider={entry.instanceId}
-            >
-              <Tooltip>
-                <TooltipTrigger render={trigger} />
-                <TooltipPopup
-                  side={PICKER_TOOLTIP_SIDE}
-                  sideOffset={PICKER_TOOLTIP_SIDE_OFFSET}
-                  align="center"
-                >
-                  {tooltip}
-                </TooltipPopup>
-              </Tooltip>
-            </div>
-          );
-        })}
+            return (
+              <div
+                key={entry.instanceId}
+                className="shrink-0"
+                data-model-picker-provider={entry.instanceId}
+              >
+                <Tooltip>
+                  <TooltipTrigger render={trigger} />
+                  <TooltipPopup
+                    side={PICKER_TOOLTIP_SIDE}
+                    sideOffset={PICKER_TOOLTIP_SIDE_OFFSET}
+                    align="center"
+                  >
+                    {tooltip}
+                  </TooltipPopup>
+                </Tooltip>
+              </div>
+            );
+          })}
+        </div>
       </div>
       {props.trailing ? <div className="flex shrink-0 items-center">{props.trailing}</div> : null}
     </Toolbar.Root>

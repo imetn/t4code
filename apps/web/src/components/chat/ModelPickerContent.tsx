@@ -304,12 +304,16 @@ function ModelPickerList({
   };
   const scrollRef = useLegendListRef(listRef, updateScrollFades);
 
+  const listHeight =
+    itemKeys.length > 0 ? Math.min(320, Math.max(120, itemKeys.length * 38 + 12)) : 0;
+
   return (
     <div
       data-scroll-bottom={showBottomScrollFade && itemKeys.length > 8 ? "true" : undefined}
+      style={itemKeys.length > 0 ? { height: listHeight } : undefined}
       className={cn(
         "model-picker-list-fade relative min-h-0 overflow-hidden",
-        itemKeys.length > 0 ? "h-80 max-h-80 shrink-0" : "h-0",
+        itemKeys.length > 0 ? "max-h-80 shrink-0" : "h-0",
       )}
     >
       <ComboboxListVirtualized>
@@ -993,7 +997,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                     type="button"
                     aria-label={gt("Search models")}
                     onClick={openSearch}
-                    className="flex size-7.5 cursor-pointer items-center justify-center rounded-full text-foreground/70 transition-colors hover:bg-foreground/10 hover:text-foreground focus-visible:bg-foreground/10 focus-visible:outline-none"
+                    className="flex size-8 cursor-pointer items-center justify-center rounded-full border border-border/65 bg-popover text-foreground/75 shadow-2xs transition-colors hover:border-border hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:outline-none dark:border-foreground/12 dark:bg-foreground/8"
                   >
                     <SearchIcon className="size-3.5" aria-hidden="true" />
                   </button>
@@ -1005,7 +1009,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
             <div
               className={cn(
                 showSearchBar || sidebarInstanceEntries.length === 0
-                  ? "flex h-11 shrink-0 items-center gap-2 border-b border-border/60 px-3"
+                  ? "flex h-12 shrink-0 items-center gap-2 border-b border-border/75 bg-accent/55 px-3 dark:bg-foreground/4"
                   : "sr-only",
               )}
             >
