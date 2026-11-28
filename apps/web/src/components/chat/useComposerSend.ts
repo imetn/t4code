@@ -96,7 +96,9 @@ import {
   responseContextReference,
 } from "../../lib/composerContextRecords";
 import { environmentServerConfigsAtom } from "../../state/server";
+import { useAtomCommand } from "../../state/use-atom-command";
 import { threadEnvironment } from "../../state/threads";
+import { vcsEnvironment } from "../../state/vcs";
 import { runMobileComposerTransition } from "./draftHeroTransition";
 import { useClientSettingsHydrated } from "../../hooks/useSettings";
 import { useStableCallback } from "../../hooks/useStableCallback";
@@ -216,6 +218,8 @@ interface ComposerSendInput {
   readonly isServerThread: boolean;
   readonly isLocalDraftThread: boolean;
   readonly isGitRepo: boolean;
+  /** Undefined until the project folder's Git status has loaded. */
+  readonly knownIsGitRepo: boolean | undefined;
   readonly phase: SessionPhase;
   readonly runtimeMode: RuntimeMode;
   readonly sendEnvMode: DraftThreadEnvMode;
@@ -319,6 +323,7 @@ export function useComposerSend(input: ComposerSendInput) {
     isServerThread,
     isLocalDraftThread,
     isGitRepo,
+    knownIsGitRepo,
     phase,
     runtimeMode,
     sendEnvMode,
@@ -386,6 +391,9 @@ export function useComposerSend(input: ComposerSendInput) {
     reportFailure: false,
   });
   const uploadThreadFeedback = useOrchestrationCommand(threadEnvironment.uploadFeedback, {
+    reportFailure: false,
+  });
+  const refreshLocalStatus = useAtomCommand(vcsEnvironment.refreshLocalStatusForPicker, {
     reportFailure: false,
   });
   const setComposerDraftPrompt = useComposerDraftStore((store) => store.setPrompt);
@@ -1011,6 +1019,40 @@ export function useComposerSend(input: ComposerSendInput) {
       environmentContexts: composerEnvironmentContextsSnapshot,
       messageText: messageTextForSend,
     } = sendSnapshot;
+    // Until Git status loads the folder counts as a repository, which would refuse a plain
+    // folder's worktree send for want of a base branch, so ask once before deciding.
+    let projectIsGitRepo = knownIsGitRepo ?? true;
+    if (
+      knownIsGitRepo === undefined &&
+      sendEnvMode === "worktree" &&
+      !activeThreadBranch &&
+      !activeThread.worktreePath &&
+      !activeProjectIsScratch
+    ) {
+      const draftBeforeStatus = useComposerDraftStore
+        .getState()
+        .getComposerDraft(composerDraftTarget);
+      sendInFlightRef.current = true;
+      const status = await refreshLocalStatus({
+        environmentId,
+        input: { cwd: activeProject.workspaceRoot },
+      }).finally(() => {
+        sendInFlightRef.current = false;
+      });
+      if (status._tag === "Success" && !status.value.isRepo) projectIsGitRepo = false;
+      if (
+        composerDraftContentChanged(
+          draftBeforeStatus,
+          useComposerDraftStore.getState().getComposerDraft(composerDraftTarget),
+        )
+      ) {
+        setThreadError(
+          threadIdForSend,
+          m(msg("Draft changed while preparing this message. Review it and send again.")),
+        );
+        return;
+      }
+    }
     const {
       missingWorktreeBaseBranch,
       baseBranchForWorktree,
@@ -1025,7 +1067,7 @@ export function useComposerSend(input: ComposerSendInput) {
       sendEnvMode,
       worktreePath: activeThread.worktreePath,
       activeThreadBranch,
-      projectIsGitRepo: isGitRepo,
+      projectIsGitRepo,
       plainProjectBaseBranch: readWorktreeBaseBranch(activeProject),
       isScratchProject: activeProjectIsScratch,
       resumeCompactionTokens,

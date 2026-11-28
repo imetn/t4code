@@ -65,6 +65,24 @@ function upsertEntity<T extends { readonly id: unknown }>(
   return next;
 }
 
+function attributePendingBackgroundTasks(
+  existing: OrchestrationV2ThreadProjection["providerThreads"],
+  next: OrchestrationV2ThreadProjection["providerThreads"][number],
+  runId: OrchestrationV2DomainEvent["runId"],
+) {
+  const tasks = next.pendingBackgroundTasks;
+  if (!tasks?.some((task) => task.runId === undefined)) return next;
+  const prev = existing.find((thread) => thread.id === next.id)?.pendingBackgroundTasks ?? [];
+  const known = new Map(prev.map((task) => [task.taskId, task.runId]));
+  return {
+    ...next,
+    pendingBackgroundTasks: tasks.map((task) => {
+      const owner = task.runId ?? (known.has(task.taskId) ? known.get(task.taskId) : runId);
+      return owner === undefined ? task : { ...task, runId: owner };
+    }),
+  };
+}
+
 // A deduped item repeats a record the stream just sent, so search newest first.
 function latestBodies(projection: OrchestrationV2ThreadProjection): DedupedBodySource {
   return {
@@ -311,16 +329,18 @@ export function applyOrchestrationV2ProjectionEvent(
     case "thread.pinned":
     case "thread.unpinned":
     case "thread.pin-reordered":
-    case "thread.active-reordered":
     case "thread.metadata-updated":
-    case "thread.pull-request-synced":
-    case "thread.issue-synced":
     case "thread.runtime-mode-updated":
     case "thread.interaction-mode-updated":
     case "thread.model-selection-updated":
     case "thread.provider-switched":
     case "thread.guest-share-updated":
       return { ...base, thread: event.payload };
+    // Reordering and PR refreshes keep the orchestrator's activity time, as the server does.
+    case "thread.active-reordered":
+    case "thread.pull-request-synced":
+    case "thread.issue-synced":
+      return { ...base, thread: event.payload, updatedAt: event.payload.updatedAt };
     // Visited tracking and tags are not activity: skip the updatedAt bump.
     case "thread.visited":
     case "thread.tags-updated":
@@ -405,7 +425,10 @@ export function applyOrchestrationV2ProjectionEvent(
           !isQueuedProviderThreadPlaceholder(event.payload)
             ? { ...base.thread, activeProviderThreadId: event.payload.id }
             : base.thread,
-        providerThreads: upsertEntity(base.providerThreads, event.payload),
+        providerThreads: upsertEntity(
+          base.providerThreads,
+          attributePendingBackgroundTasks(base.providerThreads, event.payload, event.runId),
+        ),
       };
     case "provider-turn.updated":
       return {

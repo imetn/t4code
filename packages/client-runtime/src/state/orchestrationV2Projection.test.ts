@@ -137,6 +137,22 @@ describe("applyOrchestrationV2ProjectionEvent", () => {
     expect(next?.updatedAt).toEqual(projection.updatedAt);
   });
 
+  it.each([
+    "thread.pull-request-synced",
+    "thread.issue-synced",
+    "thread.active-reordered",
+  ] as const)("keeps the thread's activity time on %s", (type) => {
+    const later = DateTime.makeUnsafe("2026-06-20T01:00:00.000Z");
+    const next = applyOrchestrationV2ProjectionEvent(emptyProjection, {
+      id: "background-sync" as OrchestrationV2DomainEvent["id"],
+      type,
+      threadId,
+      occurredAt: later,
+      payload: emptyProjection.thread,
+    } as OrchestrationV2DomainEvent);
+    expect(next?.updatedAt).toEqual(emptyProjection.thread.updatedAt);
+  });
+
   it("keeps live token usage when the terminal provider turn omits it", () => {
     const providerTurnId = ProviderTurnId.make("provider-turn-reducer");
     const running = {
@@ -898,6 +914,68 @@ describe("provider-thread.updated", () => {
     expect(foreign?.thread.activeProviderThreadId).toBeNull();
     expect(foreign?.providerThreads.map((thread) => thread.id)).toEqual([
       ProviderThreadId.make("provider-thread-foreign"),
+    ]);
+  });
+
+  it("attributes pending background tasks to their originating run across roster refreshes", () => {
+    const runA = RunId.make("run-a");
+    const runB = RunId.make("run-b");
+    const runExplicit = RunId.make("run-explicit");
+
+    const afterRunA = applyOrchestrationV2ProjectionEvent(emptyProjection, {
+      id: "event-provider-thread-a",
+      type: "provider-thread.updated",
+      threadId,
+      runId: runA,
+      occurredAt: now,
+      payload: providerThread("provider-thread-bg", {
+        pendingBackgroundTasks: [{ taskId: "watch", kind: "monitor", awaited: true }],
+      }),
+    } as OrchestrationV2DomainEvent);
+
+    expect(afterRunA?.providerThreads[0]?.pendingBackgroundTasks).toEqual([
+      { taskId: "watch", kind: "monitor", awaited: true, runId: runA },
+    ]);
+
+    const afterRunB = applyOrchestrationV2ProjectionEvent(afterRunA, {
+      id: "event-provider-thread-b",
+      type: "provider-thread.updated",
+      threadId,
+      runId: runB,
+      occurredAt: now,
+      payload: providerThread("provider-thread-bg", {
+        pendingBackgroundTasks: [
+          { taskId: "watch", kind: "monitor", awaited: true },
+          { taskId: "follow-up", kind: "command" },
+          { taskId: "explicit", kind: "subagent", runId: runExplicit },
+        ],
+      }),
+    } as OrchestrationV2DomainEvent);
+
+    expect(afterRunB?.providerThreads[0]?.pendingBackgroundTasks).toEqual([
+      { taskId: "watch", kind: "monitor", awaited: true, runId: runA },
+      { taskId: "follow-up", kind: "command", runId: runB },
+      { taskId: "explicit", kind: "subagent", runId: runExplicit },
+    ]);
+
+    const afterRunless = apply(
+      providerThread("provider-thread-unowned", {
+        pendingBackgroundTasks: [{ taskId: "unowned", kind: "monitor" }],
+      }),
+    );
+    const afterLaterRun = applyOrchestrationV2ProjectionEvent(afterRunless, {
+      id: "event-provider-thread-unowned-b",
+      type: "provider-thread.updated",
+      threadId,
+      runId: runB,
+      occurredAt: now,
+      payload: providerThread("provider-thread-unowned", {
+        pendingBackgroundTasks: [{ taskId: "unowned", kind: "monitor" }],
+      }),
+    } as OrchestrationV2DomainEvent);
+
+    expect(afterLaterRun?.providerThreads[0]?.pendingBackgroundTasks).toEqual([
+      { taskId: "unowned", kind: "monitor" },
     ]);
   });
 });
