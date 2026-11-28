@@ -3290,7 +3290,10 @@ function collectUnpackedAsarFiles(
   return output;
 }
 
-const countPayloadFiles = Effect.fn("desktopArtifact.countPayloadFiles")(function* (root: string) {
+const countPayloadFiles = Effect.fn("desktopArtifact.countPayloadFiles")(function* (
+  root: string,
+  excludedDirectories: ReadonlySet<string> = new Set(),
+) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const pendingDirectories = [root];
@@ -3302,6 +3305,7 @@ const countPayloadFiles = Effect.fn("desktopArtifact.countPayloadFiles")(functio
     const entries = yield* fs.readDirectory(directory);
     for (const entry of entries) {
       const entryPath = path.join(directory, entry);
+      if (excludedDirectories.has(entryPath)) continue;
       const stat = yield* fs.stat(entryPath);
       if (stat.type === "Directory") {
         pendingDirectories.push(entryPath);
@@ -3621,7 +3625,11 @@ export const validateWindowsPackagedPayload = Effect.fn(
     }
   }
 
-  const fileCount = yield* countPayloadFiles(packagedAppDir);
+  // Native Windows builds pre-warm V8 bytecode chunks into resources/server-compile-cache via afterPack.
+  const fileCount = yield* countPayloadFiles(
+    packagedAppDir,
+    new Set([path.join(resourcesDir, "server-compile-cache")]),
+  );
   if (fileCount > fileLimit) {
     return yield* new WindowsPackagedPayloadValidationError({
       reason: "file-limit-exceeded",

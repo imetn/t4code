@@ -648,6 +648,44 @@ jobs:
             $global:LASTEXITCODE = 0
           }
 
+      # Historical release tags cut before the native Windows file-count fix count
+      # afterPack's resources/server-compile-cache chunks (~38 V8 bytecode files)
+      # against the 80-file budget. Exclude that directory during build validation
+      # when checking out older tags; newer commits already include this fix.
+      - name: Patch Windows payload file-count budget for historical tags
+        shell: pwsh
+        run: |
+          @'
+          import fs from "node:fs";
+
+          const target = "scripts/build-desktop-artifact.ts";
+          const source = fs.readFileSync(target, "utf8");
+          if (source.includes('"server-compile-cache"')) {
+            console.log("build-desktop-artifact.ts already excludes server-compile-cache; no patch needed.");
+            process.exit(0);
+          }
+          const fnBefore = 'const countPayloadFiles = Effect.fn("desktopArtifact.countPayloadFiles")(function* (root: string) {';
+          const fnAfter = 'const countPayloadFiles = Effect.fn("desktopArtifact.countPayloadFiles")(function* (root: string, excludedDirectories: ReadonlySet<string> = new Set()) {';
+          const entryBefore = "const entryPath = path.join(directory, entry);";
+          const entryAfter = "const entryPath = path.join(directory, entry);\n      if (excludedDirectories.has(entryPath)) continue;";
+          const callBefore = "const fileCount = yield* countPayloadFiles(packagedAppDir);";
+          const callAfter = 'const fileCount = yield* countPayloadFiles(packagedAppDir, new Set([path.join(resourcesDir, "server-compile-cache")]));';
+          let updated = source;
+          for (const [before, after, label] of [
+            [fnBefore, fnAfter, "countPayloadFiles signature"],
+            [entryBefore, entryAfter, "countPayloadFiles directory skip"],
+            [callBefore, callAfter, "validateWindowsPackagedPayload call"],
+          ]) {
+            if (!updated.includes(before)) {
+              throw new Error(`Could not locate ${label} in ${target}`);
+            }
+            updated = updated.replace(before, after);
+          }
+          fs.writeFileSync(target, updated, "utf8");
+          console.log("Patched historical build-desktop-artifact.ts to exclude resources/server-compile-cache from Windows payload file count.");
+          '@ | node --input-type=module
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Build Windows x64 NSIS installer (unsigned)
         shell: pwsh
         env:

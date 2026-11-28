@@ -1422,6 +1422,37 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     ),
   );
 
+  it.effect(
+    "excludes afterPack server-compile-cache chunks from the Windows payload file-count budget",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const fixture = yield* makeWindowsPayloadFixture({ copyUnpackedNatives: true });
+          const cacheDir = path.join(fixture.packagedAppDir, "resources", "server-compile-cache");
+          yield* fs.makeDirectory(cacheDir, { recursive: true });
+          yield* fs.writeFileString(path.join(cacheDir, "manifest.json"), '{"format":1}');
+          for (let i = 0; i < 40; i += 1) {
+            yield* fs.writeFileString(
+              path.join(cacheDir, i.toString(16).padStart(8, "0")),
+              "bytecode",
+            );
+          }
+
+          const result = yield* validateWindowsPackagedPayload({
+            stageDistDir: fixture.stageDistDir,
+            appExecutableName: fixture.appExecutableName,
+            targetArch: "x64",
+            appVersion: WINDOWS_PAYLOAD_FIXTURE_VERSION,
+            fileLimit: 10,
+          });
+
+          assert.isAtMost(result.fileCount, 10);
+        }),
+      ).pipe(Effect.provideService(HostProcess.Platform, "linux")),
+  );
+
   it.effect("rejects a sidecar whose extracted server bundle cannot resolve", () =>
     Effect.scoped(
       Effect.gen(function* () {
