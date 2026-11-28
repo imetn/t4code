@@ -8,6 +8,7 @@ import {
   ProviderInstanceId,
 } from "./providerInstance.ts";
 import {
+  AGENT_MESSAGE_SENDER_NOTE_MAX_CHARS,
   ClientSettingsSchema,
   ClientSettingsPatch,
   ClientServerSettingsPatch,
@@ -586,5 +587,27 @@ describe("T4 Code custom settings", () => {
       "Mac Studio",
     );
     expect(decodeServerSettingsPatch({ environmentLabel: null }).environmentLabel).toBeNull();
+  });
+
+  it("defaults agentMessageSenderNote to off and validates custom prefixes", () => {
+    expect(decodeServerSettings({}).agentMessageSenderNote).toEqual({
+      mode: "off",
+      customPrefix: "",
+    });
+    expect(
+      decodeServerSettingsPatch({
+        agentMessageSenderNote: { mode: "custom", customPrefix: "  [Automated]  " },
+      }),
+    ).toEqual({
+      agentMessageSenderNote: { mode: "custom", customPrefix: "[Automated]" },
+    });
+    expect(() =>
+      decodeServerSettingsPatch({
+        agentMessageSenderNote: {
+          customPrefix: "x".repeat(AGENT_MESSAGE_SENDER_NOTE_MAX_CHARS + 1),
+        },
+      }),
+    ).toThrow();
+    expect(PROJECT_SCOPED_SERVER_SETTING_KEYS).not.toContain("agentMessageSenderNote");
   });
 });

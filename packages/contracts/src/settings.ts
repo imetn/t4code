@@ -1147,6 +1147,20 @@ const SourceControlWritingStyleSetting = Schema.Union([
 export const BranchNamingMode = Schema.Literals(["static", "semantic", "custom"]);
 export type BranchNamingMode = typeof BranchNamingMode.Type;
 
+export const AgentMessageSenderNoteMode = Schema.Literals(["off", "default", "custom"]);
+export type AgentMessageSenderNoteMode = typeof AgentMessageSenderNoteMode.Type;
+
+export const AGENT_MESSAGE_SENDER_NOTE_MAX_CHARS = 500;
+
+export const AgentMessageSenderNoteSettings = Schema.Struct({
+  mode: AgentMessageSenderNoteMode.pipe(Schema.withDecodingDefault(Effect.succeed("off" as const))),
+  customPrefix: TrimmedString.pipe(
+    Schema.check(Schema.isMaxLength(AGENT_MESSAGE_SENDER_NOTE_MAX_CHARS)),
+    Schema.withDecodingDefault(Effect.succeed("")),
+  ),
+});
+export type AgentMessageSenderNoteSettings = typeof AgentMessageSenderNoteSettings.Type;
+
 export interface BranchNamingOptions {
   mode: BranchNamingMode;
   prefix: string;
@@ -1642,6 +1656,9 @@ export const ServerSettings = Schema.Struct({
     ),
   ),
   threadTitleInstructions: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  agentMessageSenderNote: AgentMessageSenderNoteSettings.pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
   branchNamingMode: BranchNamingMode.pipe(
     Schema.withDecodingDefault(Effect.succeed("static" as const)),
   ),
@@ -2049,6 +2066,14 @@ export const ServerSettingsPatch = Schema.Struct({
   ghqCloneLayout: Schema.optionalKey(Schema.Boolean),
   textGenerationModelSelection: Schema.optionalKey(ModelSelectionPatch),
   threadTitleInstructions: Schema.optionalKey(TrimmedString),
+  agentMessageSenderNote: Schema.optionalKey(
+    Schema.Struct({
+      mode: Schema.optionalKey(AgentMessageSenderNoteMode),
+      customPrefix: Schema.optionalKey(
+        TrimmedString.pipe(Schema.check(Schema.isMaxLength(AGENT_MESSAGE_SENDER_NOTE_MAX_CHARS))),
+      ),
+    }),
+  ),
   branchNamingMode: Schema.optionalKey(BranchNamingMode),
   branchNamePrefix: Schema.optionalKey(TrimmedString),
   branchNameInstructions: Schema.optionalKey(TrimmedString),

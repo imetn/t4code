@@ -26,6 +26,7 @@ const PreferenceFields = {
     customInstructions: Schema.String,
     truncated: Schema.Boolean,
   }),
+  agentMessageSenderNote: ServerSettings.fields.agentMessageSenderNote,
 };
 const shared = {
   failure: OrchestratorMcpFailure,
@@ -64,6 +65,7 @@ const EnvironmentPreferencesTool = Tool.make("t3_environment_preferences_update"
     enableProviderUpdateChecks: ServerSettingsPatch.fields.enableProviderUpdateChecks,
     backgroundActivity: Schema.optionalKey(Schema.Struct({ profile: BackgroundActivityProfile })),
     sourceControlWritingStyle: ServerSettingsPatch.fields.sourceControlWritingStyle,
+    agentMessageSenderNote: ServerSettingsPatch.fields.agentMessageSenderNote,
   }),
   success: Schema.Struct(PreferenceFields),
 }).annotate(Tool.Destructive, true);

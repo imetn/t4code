@@ -39,6 +39,12 @@ const WRITING_STYLE_LABELS: Record<string, string> = {
   custom: msg("Custom instructions"),
 };
 
+const AGENT_MESSAGE_SENDER_NOTE_LABELS: Record<string, string> = {
+  off: msg("Off (treat as user)"),
+  default: msg("Default source notice"),
+  custom: msg("Custom prefix"),
+};
+
 const BACKGROUND_ACTIVITY_PROFILE_LABELS: Record<string, string> = {
   balanced: msg("Balanced"),
   performance: msg("Performance"),
@@ -106,6 +112,10 @@ function formatValue(
         return value.mode === "off"
           ? resolve(msg("Off", { $context: "setting value" }))
           : resolve(msg("Custom", { $context: "setting value" }));
+      }
+      if (key === "agentMessageSenderNote") {
+        const label = AGENT_MESSAGE_SENDER_NOTE_LABELS[value.mode];
+        return label ? resolve(label) : value.mode;
       }
       return key === "sourceControlWritingStyle"
         ? (() => {

@@ -26,6 +26,7 @@ import * as Stream from "effect/Stream";
 
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as McpAppModelContext from "../mcpApps/McpAppModelContext.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as EventSink from "./EventSink.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
@@ -458,12 +459,94 @@ it.effect("steers a running turn with its sender and the thread's MCP app model 
     }).pipe(Effect.provide(layerControl));
 
     assert.equal(steered.length, 1);
-    assert.equal(
-      steered[0]!.message.text,
-      '[T3 Code: the agent in T3 thread "thread:steer-sender" sent this message, not the user.]\n\nWhat did the app report?',
-    );
+    assert.equal(steered[0]!.message.text, "What did the app report?");
     assert.deepEqual("appContext" in steered[0]! ? steered[0].appContext : undefined, [
       { key: "mcp_app_turn-item_call-1", text: "Pressed: blue" },
     ]);
+  }),
+);
+
+it.effect("applies configured agentMessageSenderNote modes when steering an agent message", () =>
+  Effect.gen(function* () {
+    const now = yield* DateTime.now;
+    const threadId = ThreadId.make("thread:steer-sender-note");
+    const sessionId = ProviderSessionId.make("provider-session:steer-sender-note");
+    const providerTurnId = ProviderTurnId.make("provider-turn:steer-sender-note");
+    const attemptId = RunAttemptId.make("run-attempt:steer-sender-note");
+    const providerThread = {
+      id: ProviderThreadId.make("provider-thread:steer-sender-note"),
+      driver,
+      providerInstanceId,
+      providerSessionId: sessionId,
+    } as OrchestrationV2ProviderThread;
+    const projection = makeProjection({ now, threadId, providerThread, providerTurnId, attemptId });
+    const runSteer = (agentMessageSenderNote: {
+      readonly mode: "off" | "default" | "custom";
+      readonly customPrefix: string;
+    }) =>
+      Effect.gen(function* () {
+        const steered: Array<ProviderAdapter.ProviderAdapterV2SteerInput> = [];
+        const runtime = {
+          instanceId: providerInstanceId,
+          driver,
+          providerSessionId: sessionId,
+          steerTurn: (input: ProviderAdapter.ProviderAdapterV2SteerInput) =>
+            Effect.sync(() => void steered.push(input)),
+        } as unknown as ProviderAdapter.ProviderAdapterV2SessionRuntime;
+        const layerControl = ProviderTurnControlService.layer.pipe(
+          Layer.provide(
+            Layer.mergeAll(
+              layerProjectionStore(() =>
+                Effect.succeed({
+                  providerThread,
+                  providerTurn: projection.providerTurns[0],
+                  attempt: projection.attempts[0],
+                  message: {
+                    id: MessageId.make("message:steer-sender-note"),
+                    text: "Check status",
+                    attachments: [],
+                    createdBy: "agent",
+                    creationSource: "mcp",
+                    senderThreadId: ThreadId.make("thread:steer-sender"),
+                  } as unknown as NonNullable<
+                    ProjectionStore.ProjectionProviderControlContext["message"]
+                  >,
+                  run: {
+                    id: RunId.make("run:steer-sender-note"),
+                    status: "running",
+                    activeAttemptId: attemptId,
+                  } as OrchestrationV2Run,
+                }),
+              ),
+              layerSessions(sessionId, runtime),
+              Layer.mock(EventSink.EventSinkV2)({}),
+              Layer.mock(McpAppModelContext.McpAppModelContext)({
+                forThread: () => Effect.succeed([]),
+              }),
+              ServerSettings.layerTest({ agentMessageSenderNote }),
+            ),
+          ),
+        );
+        yield* Effect.gen(function* () {
+          const control = yield* ProviderTurnControlService.ProviderTurnControlServiceV2;
+          yield* control.steer({
+            threadId,
+            providerSessionId: sessionId,
+            providerThreadId: providerThread.id,
+            providerTurnId,
+            messageId: MessageId.make("message:steer-sender-note"),
+          });
+        }).pipe(Effect.provide(layerControl));
+        return steered[0]!.message.text;
+      });
+
+    assert.equal(
+      yield* runSteer({ mode: "default", customPrefix: "" }),
+      '[T3 Code: the agent in T3 thread "thread:steer-sender" sent this message, not the user.]\n\nCheck status',
+    );
+    assert.equal(
+      yield* runSteer({ mode: "custom", customPrefix: "[Delegated]" }),
+      "[Delegated]\n\nCheck status",
+    );
   }),
 );

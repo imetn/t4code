@@ -724,6 +724,10 @@ it("keeps MCP preference output allowlisted and Unicode-bounded", () => {
     customInstructions: "🙂".repeat(4000),
     truncated: true,
   });
+  expect(result.agentMessageSenderNote).toEqual({
+    mode: "off",
+    customPrefix: "",
+  });
 });
 
 it.effect("resolves reused attachment references from stored metadata", () =>

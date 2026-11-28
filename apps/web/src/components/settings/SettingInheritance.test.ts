@@ -99,4 +99,25 @@ describe("settingInheritanceLayers", () => {
       ["Current checkout", false],
     ]);
   });
+
+  it("formats agent message sender note modes on environment and built-in layers", () => {
+    const settings = {
+      ...DEFAULT_SERVER_SETTINGS,
+      agentMessageSenderNote: { mode: "custom" as const, customPrefix: "[Automation]" },
+    };
+    const layers = settingInheritanceLayers(
+      {
+        environmentId,
+        label: "Laptop",
+        projectId: null,
+        ...resolveProjectSettings(settings, null),
+      },
+      settings,
+      "agentMessageSenderNote",
+    );
+    expect(layers.map((layer) => [layer.key, layer.value, layer.effective])).toEqual([
+      ["environment", "Custom prefix", true],
+      ["built-in", "Off (treat as user)", false],
+    ]);
+  });
 });

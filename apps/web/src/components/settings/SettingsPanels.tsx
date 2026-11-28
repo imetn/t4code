@@ -68,6 +68,7 @@ import {
 import { useScopedModelDisabledReason } from "./useScopedModelAvailability";
 import { useOptionalSettingsScope, useSettingsScope } from "./SettingsScopeContext";
 import { scopedIdleCompaction } from "./scopedSettings";
+import { AgentMessageSenderNoteSettings } from "./AgentMessageSenderNoteSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
 import { ThreadTitleInstructionsSettings } from "./ThreadTitleInstructionsSettings";
 import { SnoozePresetsRow } from "./SnoozePresetsSettings";
@@ -670,6 +671,12 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.threadTitleInstructions !== DEFAULT_UNIFIED_SETTINGS.threadTitleInstructions
       ? [gt("Thread title instructions")]
       : []),
+    ...(!Equal.equals(
+      settings.agentMessageSenderNote,
+      DEFAULT_UNIFIED_SETTINGS.agentMessageSenderNote,
+    )
+      ? [gt("Agent message sender note")]
+      : []),
     ...getChangedBrowserSettingLabels(settings, messages),
     ...(settings.enableAgentBrowserAccess !== DEFAULT_UNIFIED_SETTINGS.enableAgentBrowserAccess
       ? [gt("Agent browser access")]
@@ -790,6 +797,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       historySwipeNavigation: DEFAULT_UNIFIED_SETTINGS.historySwipeNavigation,
       textGenerationModelSelection: DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection,
       threadTitleInstructions: DEFAULT_UNIFIED_SETTINGS.threadTitleInstructions,
+      agentMessageSenderNote: DEFAULT_UNIFIED_SETTINGS.agentMessageSenderNote,
       fontFamilySans: DEFAULT_UNIFIED_SETTINGS.fontFamilySans,
       fontFamilyComposer: DEFAULT_UNIFIED_SETTINGS.fontFamilyComposer,
       fontFamilyCode: DEFAULT_UNIFIED_SETTINGS.fontFamilyCode,
@@ -2523,9 +2531,14 @@ export function ThreadsSettingsPanel() {
           }
         />
         <AdvancedSettings
-          targetIds={[setting("thread-title-instructions").id, setting("response-streaming").id]}
+          targetIds={[
+            setting("thread-title-instructions").id,
+            setting("agent-message-sender-note").id,
+            setting("response-streaming").id,
+          ]}
         >
           <ThreadTitleInstructionsSettings />
+          <AgentMessageSenderNoteSettings />
           <SettingsRow
             serverScoped
             settingKeys={["responseStreamingMode"]}

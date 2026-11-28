@@ -1034,6 +1034,15 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: [msg("generated thread titles prompt custom style naming rename regenerate")],
   },
   {
+    id: "agent-message-sender-note",
+    title: msg("Agent message sender note"),
+    to: "/settings/threads",
+    scope: "environment-defaults",
+    searchTerms: [
+      msg("mcp tool cross thread scheduled prompt prefix sender notice treat as user custom"),
+    ],
+  },
+  {
     id: "app-version",
     title: msg("Version"),
     to: "/settings/about",

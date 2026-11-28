@@ -1,5 +1,6 @@
 import type {
   ChatAttachment,
+  MessageSenderNoteOptions,
   ModelSelection,
   OrchestrationV2ThreadProjection,
   ThreadTokenUsageSnapshot,
@@ -134,11 +135,12 @@ export function handoffBudget(input: {
 
 export function historicalMessage(
   item: OrchestrationV2TurnItem,
+  senderNote?: MessageSenderNoteOptions,
 ): OrchestrationV2HistoricalMessage | null {
   let text: string;
   switch (item.type) {
     case "user_message":
-      text = withMessageSenderNote(item, item.text);
+      text = withMessageSenderNote(item, item.text, senderNote);
       break;
     case "assistant_message":
       text = item.text;

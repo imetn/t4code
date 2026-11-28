@@ -406,6 +406,7 @@ export function SettingsRow({
   const overridingProjects = isProjectScope ? [] : projectOverrides(context, scopedKeys);
   const renderedReset =
     unavailable ||
+    environmentWide ||
     deviceReadOnly ||
     managedBy !== undefined ||
     managed !== undefined ? null : isProjectScope && scopedKeys.length > 0 ? (
@@ -571,7 +572,12 @@ export function SettingsRow({
           </div>
         ) : null}
       </div>
-      {unavailable && children ? (
+      {(unavailable ||
+        environmentWide ||
+        deviceReadOnly ||
+        managedBy !== undefined ||
+        managed !== undefined) &&
+      children ? (
         <div inert className="opacity-50">
           {children}
         </div>

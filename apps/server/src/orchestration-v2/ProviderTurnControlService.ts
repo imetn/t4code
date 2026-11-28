@@ -20,6 +20,7 @@ import * as Stream from "effect/Stream";
 
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as McpAppModelContext from "../mcpApps/McpAppModelContext.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as EventSink from "./EventSink.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
@@ -125,6 +126,15 @@ export const layer: Layer.Layer<
     const projections = yield* ProjectionStore.ProjectionStoreV2;
     const sessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
     const mcpAppModelContext = yield* McpAppModelContext.McpAppModelContext;
+    const serverSettings = yield* Effect.serviceOption(ServerSettings.ServerSettingsService);
+    const readSenderNote = Option.match(serverSettings, {
+      onNone: () => Effect.succeed(undefined),
+      onSome: (service) =>
+        service.getSettings.pipe(
+          Effect.map((settings) => settings.agentMessageSenderNote),
+          Effect.orElseSucceed(() => undefined),
+        ),
+    });
 
     const load = Effect.fn("ProviderTurnControlService.load")(function* (input: {
       readonly threadId: ThreadId;
@@ -452,6 +462,7 @@ export const layer: Layer.Layer<
             mcpAppModelContext,
             input.threadId,
           );
+          const senderNote = yield* readSenderNote;
           yield* loaded.session.value
             .steerTurn({
               threadId: input.threadId,
@@ -470,6 +481,7 @@ export const layer: Layer.Layer<
                     text: message.text,
                     records: message.context?.records ?? [],
                   }),
+                  senderNote,
                 ),
                 attachments: message.attachments,
                 createdBy: message.createdBy,

@@ -13,6 +13,7 @@ import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import {
@@ -25,6 +26,7 @@ import {
 } from "@t3tools/provider-core/server/handoffBudget";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import { createOrchestrationV2TurnItemVisibility } from "@t3tools/shared/orchestrationV2Timeline";
+import * as ServerSettings from "../serverSettings.ts";
 import { turnItemsSinceContextBoundary } from "./contextBoundary.ts";
 import type { ProjectionStoreV2Shape } from "./ProjectionStore.ts";
 
@@ -374,6 +376,15 @@ function makeLegacyImportSummary(items: ReadonlyArray<OrchestrationV2TurnItem>):
 const makeContextHandoffService = Effect.fn("orchestrationV2.ContextHandoffService.layer")(
   function* () {
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
+    const serverSettings = yield* Effect.serviceOption(ServerSettings.ServerSettingsService);
+    const readSenderNote = Option.match(serverSettings, {
+      onNone: () => Effect.succeed(undefined),
+      onSome: (service) =>
+        service.getSettings.pipe(
+          Effect.map((settings) => settings.agentMessageSenderNote),
+          Effect.orElseSucceed(() => undefined),
+        ),
+    });
     const tokenCap = yield* handoffTokenCapConfig.pipe(
       Effect.orElseSucceed(() => DEFAULT_HANDOFF_TOKEN_CAP),
     );
@@ -405,10 +416,11 @@ const makeContextHandoffService = Effect.fn("orchestrationV2.ContextHandoffServi
                 }),
             ),
           );
+        const senderNote = yield* readSenderNote;
         const coverage = handoffCoverage({ ...input, coveredRunOrdinals: { from: 1, to: 1 } });
         const selected = selectHistory({
           messages: input.items.flatMap((item) => {
-            const message = historicalMessage(item);
+            const message = historicalMessage(item, senderNote);
             return message === null ? [] : [message];
           }),
           coverage,
@@ -471,6 +483,7 @@ const makeContextHandoffService = Effect.fn("orchestrationV2.ContextHandoffServi
                 }),
             ),
           );
+        const senderNote = yield* readSenderNote;
         const coverage = handoffCoverage({
           threadId: input.sourceThreadId,
           coveredRunOrdinals: input.coveredRunOrdinals,
@@ -478,7 +491,7 @@ const makeContextHandoffService = Effect.fn("orchestrationV2.ContextHandoffServi
         });
         const selected = selectHistory({
           messages: input.deltaItems.flatMap((item) => {
-            const message = historicalMessage(item);
+            const message = historicalMessage(item, senderNote);
             return message === null ? [] : [message];
           }),
           coverage,
@@ -547,6 +560,7 @@ const makeContextHandoffService = Effect.fn("orchestrationV2.ContextHandoffServi
               }),
           ),
         );
+      const senderNote = yield* readSenderNote;
       const runStatuses = new Map(input.runs?.map((run) => [run.id, run.status]));
       const coverage = handoffCoverage({
         ...input,
@@ -554,7 +568,7 @@ const makeContextHandoffService = Effect.fn("orchestrationV2.ContextHandoffServi
       });
       const selected = selectHistory({
         messages: input.items.flatMap((item) => {
-          const message = historicalMessage(item);
+          const message = historicalMessage(item, senderNote);
           return message === null
             ? []
             : [

@@ -706,6 +706,58 @@ describe("withMessageSenderNote", () => {
     creationSource: "mcp",
     senderThreadId: ThreadId.make("t"),
   } as const;
+  const linked = {
+    createdBy: "agent",
+    creationSource: "mcp",
+    linkedSender: {
+      environmentId: EnvironmentId.make("e"),
+      threadId: ThreadId.make("r"),
+      title: "x",
+    },
+  } as const;
+  const scheduled = {
+    createdBy: "user",
+    creationSource: "web",
+    scheduledTaskId: ScheduledTaskId.make("s"),
+  } as const;
+  const mcp = { createdBy: "agent", creationSource: "mcp" } as const;
+  const remoteUser = {
+    createdBy: "user",
+    creationSource: "mobile",
+    sentFrom: "User sent this message from T3 Code mobile on iOS via T3 Connect.",
+  } as const;
+
+  it.each([
+    [thread, "Hi", "Hi"],
+    [thread, "", ""],
+    [linked, "Hi", "Hi"],
+    [scheduled, "Hi", "Hi"],
+    [mcp, "Hi", "Hi"],
+    [
+      {
+        ...scheduled,
+        sentFrom: "ignored for scheduled tasks",
+      },
+      "Hi",
+      "Hi",
+    ],
+    [
+      remoteUser,
+      "Hi",
+      "[T3 Code: User sent this message from T3 Code mobile on iOS via T3 Connect.]\n\nHi",
+    ],
+    [remoteUser, "/compact", "/compact"],
+    [{ createdBy: "system", creationSource: "server", sentFrom: "ignored for system" }, "Hi", "Hi"],
+    [{ createdBy: "user", creationSource: "web" }, "Hi", "Hi"],
+    [{ createdBy: "agent", creationSource: "server" }, "Hi", "Hi"],
+  ] as const)(
+    "omits non-user sender notes by default for %j's message %j",
+    (message, text, expected) => {
+      expect(withMessageSenderNote(message, text)).toBe(expected);
+      expect(withMessageSenderNote(message, text, { mode: "off" })).toBe(expected);
+    },
+  );
+
   it.each([
     [thread, "Hi", '[T3 Code: the agent in T3 thread "t" sent this message, not the user.]\n\nHi'],
     [thread, "", '[T3 Code: the agent in T3 thread "t" sent this message, not the user.]'],
@@ -717,51 +769,29 @@ describe("withMessageSenderNote", () => {
       '[T3 Code: the agent in T3 thread "t" sent this message, not the user.]\n\n$25 left',
     ],
     [
-      {
-        createdBy: "agent",
-        creationSource: "mcp",
-        linkedSender: {
-          environmentId: EnvironmentId.make("e"),
-          threadId: ThreadId.make("r"),
-          title: "x",
-        },
-      },
+      linked,
       "Hi",
       '[T3 Code: the agent in T3 thread "r" on linked environment "e" sent this message, not the user.]\n\nHi',
     ],
     [
-      { createdBy: "user", creationSource: "web", scheduledTaskId: ScheduledTaskId.make("s") },
+      scheduled,
       "Hi",
       '[T3 Code: scheduled task "s" sent this prompt, not the user typing in this chat.]\n\nHi',
     ],
     [
-      { createdBy: "agent", creationSource: "mcp" },
+      mcp,
       "Hi",
       "[T3 Code: this message came through T3 Code's tools, not from the user typing in this chat.]\n\nHi",
     ],
     [
-      {
-        createdBy: "user",
-        creationSource: "mobile",
-        sentFrom: "User sent this message from T3 Code mobile on iOS via T3 Connect.",
-      },
+      remoteUser,
       "Hi",
       "[T3 Code: User sent this message from T3 Code mobile on iOS via T3 Connect.]\n\nHi",
     ],
+    [remoteUser, "/compact", "/compact"],
     [
       {
-        createdBy: "user",
-        creationSource: "mobile",
-        sentFrom: "User sent this message from T3 Code mobile on iOS via T3 Connect.",
-      },
-      "/compact",
-      "/compact",
-    ],
-    [
-      {
-        createdBy: "user",
-        creationSource: "web",
-        scheduledTaskId: ScheduledTaskId.make("s"),
+        ...scheduled,
         sentFrom: "ignored for scheduled tasks",
       },
       "Hi",
@@ -770,7 +800,34 @@ describe("withMessageSenderNote", () => {
     [{ createdBy: "system", creationSource: "server", sentFrom: "ignored for system" }, "Hi", "Hi"],
     [{ createdBy: "user", creationSource: "web" }, "Hi", "Hi"],
     [{ createdBy: "agent", creationSource: "server" }, "Hi", "Hi"],
-  ] as const)("labels %j's message %j for the provider", (message, text, expected) => {
-    expect(withMessageSenderNote(message, text)).toBe(expected);
-  });
+  ] as const)(
+    "labels %j's message %j with the built-in notice in default mode",
+    (message, text, expected) => {
+      expect(withMessageSenderNote(message, text, { mode: "default" })).toBe(expected);
+    },
+  );
+
+  it.each([
+    [thread, "Hi", "  [Automation]  ", "[Automation]\n\nHi"],
+    [thread, "", "[Automation]", "[Automation]"],
+    [linked, "Hi", "[Automation]", "[Automation]\n\nHi"],
+    [scheduled, "Hi", "[Automation]", "[Automation]\n\nHi"],
+    [mcp, "Hi", "[Automation]", "[Automation]\n\nHi"],
+    [mcp, " /git/review staged", "[Automation]", " /git/review staged"],
+    [mcp, "$deploy ship it", "[Automation]", "$deploy ship it"],
+    [mcp, "Hi", "   ", "Hi"],
+    [
+      remoteUser,
+      "Hi",
+      "[Automation]",
+      "[T3 Code: User sent this message from T3 Code mobile on iOS via T3 Connect.]\n\nHi",
+    ],
+    [{ createdBy: "user", creationSource: "web" }, "Hi", "[Automation]", "Hi"],
+    [{ createdBy: "system", creationSource: "server" }, "Hi", "[Automation]", "Hi"],
+  ] as const)(
+    "prepends custom prefix %j for %j's message %j in custom mode",
+    (message, text, customPrefix, expected) => {
+      expect(withMessageSenderNote(message, text, { mode: "custom", customPrefix })).toBe(expected);
+    },
+  );
 });

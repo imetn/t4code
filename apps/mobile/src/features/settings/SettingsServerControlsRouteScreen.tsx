@@ -24,6 +24,7 @@ import {
 } from "../threads/thread-settings-options";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { useSettingsEnvironmentMenu } from "./components/SettingsEnvironmentFilterHeader";
+import { AgentMessageSenderNoteSettings } from "./components/AgentMessageSenderNoteSettings";
 import { BranchNamingSettings } from "./components/BranchNamingSettings";
 import { DatabaseStorageNotice } from "./components/DatabaseStorageNotice";
 import { ListChoiceRow as SettingsChoiceRow } from "../../components/ui/ListChoiceRow";
@@ -220,6 +221,24 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
   const isMixed = (key: keyof ServerSettings) =>
     reference === null ||
     displayTargets.some((entry) => entry.settings[key] !== reference.settings[key]);
+  const senderNoteMode =
+    reference !== null &&
+    displayTargets.every(
+      (entry) =>
+        entry.settings.agentMessageSenderNote.mode ===
+        reference.settings.agentMessageSenderNote.mode,
+    )
+      ? reference.settings.agentMessageSenderNote.mode
+      : null;
+  const senderNoteCustomPrefix =
+    reference !== null &&
+    displayTargets.every(
+      (entry) =>
+        entry.settings.agentMessageSenderNote.customPrefix ===
+        reference.settings.agentMessageSenderNote.customPrefix,
+    )
+      ? reference.settings.agentMessageSenderNote.customPrefix
+      : null;
   const writeSettings = useSettingsWriter();
   const write = (patch: ServerSettingsPatch) => {
     if (writeInFlight.current) {
@@ -409,6 +428,20 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                   />
                 </SettingsSection>
                 <AutoSettleSettingsRows write={write} pending={pendingWrites > 0} />
+                <AgentMessageSenderNoteSettings
+                  mode={senderNoteMode}
+                  customPrefix={senderNoteCustomPrefix}
+                  disabled={disabledFor("agentMessageSenderNote")}
+                  footer={
+                    projectSelected
+                      ? managedSubtitle(
+                          "agentMessageSenderNote",
+                          gt("Environment-wide setting. Select All projects to change it."),
+                        )
+                      : managed("agentMessageSenderNote")
+                  }
+                  onChange={write}
+                />
               </>
             ) : null}
 

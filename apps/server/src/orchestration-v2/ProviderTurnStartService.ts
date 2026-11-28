@@ -335,6 +335,7 @@ export const layer: Layer.Layer<
     const providerSessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
     const runExecution = yield* RunExecutionService.RunExecutionServiceV2;
     const runtimePolicy = yield* RuntimePolicy.RuntimePolicyV2;
+    const serverSettings = yield* ServerSettings.ServerSettingsService;
     const restoreMissingWorktree = yield* makeRestoreMissingWorktree;
     const worktreeRestore = yield* ThreadWorktreeRestore;
     const turnItemPositions = yield* TurnItemPositionStore.TurnItemPositionStoreV2;
@@ -1097,12 +1098,17 @@ export const layer: Layer.Layer<
       });
       let effectiveHandoffs = handoffs;
       let resumeFellBack = false;
+      const senderNote = yield* serverSettings.getSettings.pipe(
+        Effect.map((settings) => settings.agentMessageSenderNote),
+        Effect.orElseSucceed(() => undefined),
+      );
       const messageText = withMessageSenderNote(
         providerMessage,
         projectComposerContextForProvider({
           text: providerMessage.text,
           records: providerMessage.context?.records ?? [],
         }),
+        senderNote,
       );
       const slashCommand = isSlashCommandMessage(providerMessage);
       const goalDriver =
@@ -1271,7 +1277,7 @@ export const layer: Layer.Layer<
                       !legacyRecoveredRunIds.has(item.runId)));
                 if (item.runId === run.id || (!acceptedNatively && !deliveredItemIds.has(item.id)))
                   return sum;
-                const historical = historicalMessage(item);
+                const historical = historicalMessage(item, senderNote);
                 const nativeAttachments =
                   item.type === "user_message" && acceptedNatively
                     ? attachmentTokenAllowance(item.attachments)
@@ -1336,7 +1342,7 @@ export const layer: Layer.Layer<
                   ...missedRunIds,
                 ])).filter((item) => item.runId !== null && missedRunIds.has(item.runId));
           const missedItems = missedHistory.filter(
-            (item) => !coveredItemIds.has(item.id) && historicalMessage(item) !== null,
+            (item) => !coveredItemIds.has(item.id) && historicalMessage(item, senderNote) !== null,
           );
           // The resume fallback summary already covers every earlier run in order. A
           // retry copy after it would rank older missed requests as the newest history.

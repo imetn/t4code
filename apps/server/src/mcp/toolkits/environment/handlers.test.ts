@@ -107,3 +107,15 @@ it("keeps agent feedback out of the preferences agents read and write", () => {
     Object.keys(EnvironmentToolkit.tools.t3_environment_preferences_update.parametersSchema.fields),
   ).not.toContain("agentFeedback");
 });
+
+it("exposes agentMessageSenderNote on environment read and preferences update tools", () => {
+  expect(
+    EnvironmentHandlers.preferences({
+      ...DEFAULT_SERVER_SETTINGS,
+      agentMessageSenderNote: { mode: "custom", customPrefix: "[Automated]" },
+    }).agentMessageSenderNote,
+  ).toEqual({ mode: "custom", customPrefix: "[Automated]" });
+  expect(
+    Object.keys(EnvironmentToolkit.tools.t3_environment_preferences_update.parametersSchema.fields),
+  ).toContain("agentMessageSenderNote");
+});

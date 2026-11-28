@@ -107,6 +107,16 @@ describe("searchSettings", () => {
     });
   });
 
+  it("finds the agent message sender note setting", () => {
+    for (const query of ["agent message sender note", "treat as user", "sender notice"]) {
+      expect(searchSettings(query)[0]).toMatchObject({
+        id: "agent-message-sender-note",
+        to: "/settings/threads",
+        scope: "environment-defaults",
+      });
+    }
+  });
+
   it("matches normalized title substrings", () => {
     expect(searchSettings("  WORD   WRAP  ", ITEMS).map((item) => item.id)).toEqual(["word-wrap"]);
     expect(searchSettings("glass").map((item) => item.id)).toEqual(["setting-glass-opacity"]);
