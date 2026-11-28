@@ -1,3 +1,4 @@
+import { requireNativeView, requireOptionalNativeModule } from "expo";
 import { useGT, useMessages } from "gt-react-native";
 import {
   WORKSPACE_TAB_LABELS,
@@ -13,7 +14,7 @@ import {
   type ReactNode,
   type SetStateAction,
 } from "react";
-import { View, type NativeSyntheticEvent } from "react-native";
+import { View, type NativeSyntheticEvent, type ViewProps } from "react-native";
 import { Tabs, type TabSelectedEvent, type TabSelectionRejectedEvent } from "react-native-screens";
 
 import { WorkspaceTabsContext, useWorkspaceTabs } from "./WorkspaceTabsContext";
@@ -39,6 +40,28 @@ import { useSelectWorkspaceTab } from "./useSelectWorkspaceTab";
 const PULL_REQUEST_ICON = require("../../../../assets/icons/pull-request.png");
 const ISSUE_ICON = require("../../../../assets/icons/issue.png");
 
+interface TabBarVisibilityGuardProps extends ViewProps {
+  readonly tabBarHidden: boolean;
+  readonly tabsKey: string;
+}
+
+function resolveTabBarVisibilityGuard() {
+  try {
+    const module = requireOptionalNativeModule<{
+      readonly ViewPrototypes?: { readonly T3NativeControls_TabBarVisibilityGuard?: unknown };
+    }>("T3NativeControls");
+    if (!module?.ViewPrototypes?.T3NativeControls_TabBarVisibilityGuard) return null;
+    return requireNativeView<TabBarVisibilityGuardProps>(
+      "T3NativeControls",
+      "TabBarVisibilityGuard",
+    );
+  } catch {
+    return null;
+  }
+}
+
+const TabBarVisibilityGuard = resolveTabBarVisibilityGuard();
+
 /** Retain each native controller tree; removing its root can leave RNS's stack empty. */
 function RetainedWorkspaceTab(props: {
   readonly slot: string;
@@ -48,7 +71,7 @@ function RetainedWorkspaceTab(props: {
   readonly prewarm: boolean;
   readonly setMountedSlots: Dispatch<SetStateAction<ReadonlySet<string>>>;
   readonly setPrewarmRequests: Dispatch<SetStateAction<ReadonlyMap<string, number>>>;
-  readonly children: (workspace: SlotWorkspace, headerOnly: boolean) => ReactNode;
+  readonly children: (workspace: SlotWorkspace, headerOnly: boolean, active: boolean) => ReactNode;
 }) {
   const workspace = useWorkspaceTabs()!;
   // Whether this slot is the visible one, read by cleanups after the switch has committed.
@@ -127,7 +150,7 @@ function RetainedWorkspaceTab(props: {
     <NativeWorkspaceTabActivityContext value={activity}>
       <WorkspaceSlotOptionsContext value={slotOptions}>
         <WorkspaceTabsContext value={content.workspace}>
-          {content.children(content.workspace, content.headerOnly)}
+          {content.children(content.workspace, content.headerOnly, props.active)}
         </WorkspaceTabsContext>
       </WorkspaceSlotOptionsContext>
     </NativeWorkspaceTabActivityContext>
@@ -138,7 +161,7 @@ type SlotWorkspace = NonNullable<ReturnType<typeof useWorkspaceTabs>>;
 
 export function WorkspaceNativeTabs(props: {
   /** Renders a slot's tree for its own tab, which can lay out differently from the shown one. */
-  readonly children: (workspace: SlotWorkspace, headerOnly: boolean) => ReactNode;
+  readonly children: (workspace: SlotWorkspace, headerOnly: boolean, active: boolean) => ReactNode;
   readonly hidden: boolean;
   /** The sidebar column draws the tabs itself, so they leave with it. */
   readonly tabsInSidebarColumn?: boolean;
@@ -196,81 +219,92 @@ export function WorkspaceNativeTabs(props: {
     return () => cancelIdleCallback(handle);
   }, [prewarmReady, prewarm]);
   const request = { selectedScreenKey, baseProvenance: provenance };
+  const hostTabBarHidden = props.hidden || !systemTabBar;
+  const tabsKey = primaryTabs.join(":");
+  const tabsHost = (
+    <Tabs.Host
+      navStateRequest={request}
+      tabBarHidden={hostTabBarHidden}
+      ios={{
+        tabBarControllerMode: "tabBar",
+        tabBarMinimizeBehavior: "never",
+        tabBarTintColor: colors["--color-primary"],
+      }}
+      onTabSelectionRejected={({ nativeEvent }: NativeSyntheticEvent<TabSelectionRejectedEvent>) =>
+        setProvenance(nativeEvent.provenance)
+      }
+      onTabSelected={({ nativeEvent }: NativeSyntheticEvent<TabSelectedEvent>) => {
+        setProvenance(nativeEvent.provenance);
+        if (nativeEvent.actionOrigin === "programmaticJs") return;
+        const tab = workspaceTabForNativeSlot(primaryTabs, nativeEvent.selectedScreenKey);
+        if (tab) selectTab(tab);
+      }}
+    >
+      {NATIVE_WORKSPACE_TAB_SLOTS.map((slot, index) => {
+        const settings = slot === "settings";
+        const tab = settings ? (overflow ?? selectedTab) : primaryTabs[index];
+        if (!tab) return null;
+        return (
+          <Tabs.Screen
+            // Stable slot controllers keep UIKit's stacks attached when a section moves into Settings.
+            key={slot}
+            screenKey={slot}
+            title=""
+            tabBarItemAccessibilityLabel={settings ? gt("Settings") : m(WORKSPACE_TAB_LABELS[tab])}
+            ios={{
+              prewarmRequest: prewarmRequests.get(slot) ?? 0,
+              contentReady: mountedSlots.has(slot),
+              icon: settings
+                ? { type: "sfSymbol", name: "gearshape" }
+                : tab === "pullRequests"
+                  ? {
+                      type: "imageSource",
+                      imageSource: PULL_REQUEST_ICON,
+                      renderingMode: "template",
+                    }
+                  : tab === "issues"
+                    ? {
+                        type: "imageSource",
+                        imageSource: ISSUE_ICON,
+                        renderingMode: "template",
+                      }
+                    : { type: "sfSymbol", name: NAVIGATION_TAB_ICONS[tab] },
+              selectedIcon:
+                !settings && tab === "threads"
+                  ? { type: "sfSymbol", name: "text.bubble.fill" }
+                  : undefined,
+              overrideScrollViewContentInsetAdjustmentBehavior: false,
+            }}
+          >
+            <RetainedWorkspaceTab
+              slot={slot}
+              tab={tab}
+              prewarm={prewarm}
+              setMountedSlots={setMountedSlots}
+              setPrewarmRequests={setPrewarmRequests}
+              active={settings ? selectedSlot === -1 : selectedSlot === index}
+            >
+              {props.children}
+            </RetainedWorkspaceTab>
+          </Tabs.Screen>
+        );
+      })}
+    </Tabs.Host>
+  );
   return (
     <View style={{ flex: 1 }}>
       <WorkspaceColumnMetricsContext value={sharedColumnMetrics}>
-        <Tabs.Host
-          navStateRequest={request}
-          tabBarHidden={props.hidden || !systemTabBar}
-          ios={{
-            tabBarControllerMode: "tabBar",
-            tabBarMinimizeBehavior: "never",
-            tabBarTintColor: colors["--color-primary"],
-          }}
-          onTabSelectionRejected={({
-            nativeEvent,
-          }: NativeSyntheticEvent<TabSelectionRejectedEvent>) =>
-            setProvenance(nativeEvent.provenance)
-          }
-          onTabSelected={({ nativeEvent }: NativeSyntheticEvent<TabSelectedEvent>) => {
-            setProvenance(nativeEvent.provenance);
-            if (nativeEvent.actionOrigin === "programmaticJs") return;
-            const tab = workspaceTabForNativeSlot(primaryTabs, nativeEvent.selectedScreenKey);
-            if (tab) selectTab(tab);
-          }}
-        >
-          {NATIVE_WORKSPACE_TAB_SLOTS.map((slot, index) => {
-            const settings = slot === "settings";
-            const tab = settings ? (overflow ?? selectedTab) : primaryTabs[index];
-            if (!tab) return null;
-            return (
-              <Tabs.Screen
-                // Stable slot controllers keep UIKit's stacks attached when a section moves into Settings.
-                key={slot}
-                screenKey={slot}
-                title=""
-                tabBarItemAccessibilityLabel={
-                  settings ? gt("Settings") : m(WORKSPACE_TAB_LABELS[tab])
-                }
-                ios={{
-                  prewarmRequest: prewarmRequests.get(slot) ?? 0,
-                  contentReady: mountedSlots.has(slot),
-                  icon: settings
-                    ? { type: "sfSymbol", name: "gearshape" }
-                    : tab === "pullRequests"
-                      ? {
-                          type: "imageSource",
-                          imageSource: PULL_REQUEST_ICON,
-                          renderingMode: "template",
-                        }
-                      : tab === "issues"
-                        ? {
-                            type: "imageSource",
-                            imageSource: ISSUE_ICON,
-                            renderingMode: "template",
-                          }
-                        : { type: "sfSymbol", name: NAVIGATION_TAB_ICONS[tab] },
-                  selectedIcon:
-                    !settings && tab === "threads"
-                      ? { type: "sfSymbol", name: "text.bubble.fill" }
-                      : undefined,
-                  overrideScrollViewContentInsetAdjustmentBehavior: false,
-                }}
-              >
-                <RetainedWorkspaceTab
-                  slot={slot}
-                  tab={tab}
-                  prewarm={prewarm}
-                  setMountedSlots={setMountedSlots}
-                  setPrewarmRequests={setPrewarmRequests}
-                  active={settings ? selectedSlot === -1 : selectedSlot === index}
-                >
-                  {props.children}
-                </RetainedWorkspaceTab>
-              </Tabs.Screen>
-            );
-          })}
-        </Tabs.Host>
+        {TabBarVisibilityGuard ? (
+          <TabBarVisibilityGuard
+            tabBarHidden={hostTabBarHidden}
+            tabsKey={tabsKey}
+            style={{ flex: 1 }}
+          >
+            {tabsHost}
+          </TabBarVisibilityGuard>
+        ) : (
+          tabsHost
+        )}
       </WorkspaceColumnMetricsContext>
       {(deviceType === "pad" ||
         compactTabs ||

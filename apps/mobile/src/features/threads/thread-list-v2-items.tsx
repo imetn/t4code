@@ -60,6 +60,10 @@ import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { copyThreadReference } from "../../lib/copyThreadReference";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { useEnvironmentScope, useEnvironmentScopeDenied } from "../../state/session";
+import {
+  clearComposerDraftContent,
+  useHasThreadComposerDraft,
+} from "../../state/use-composer-drafts";
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
 import {
   pendingDraftBranchNeedsRefs,
@@ -893,6 +897,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const theme = useUniwindTheme();
   const sidebarPane = props.pane === "sidebar";
   const selected = props.selected === true;
+  const hasUnsentDraft = useHasThreadComposerDraft(thread.environmentId, thread.id);
   const rowAppearance = getThreadListV2RowAppearance(theme, sidebarPane, selected);
 
   const rawStatus = resolveThreadListV2Status(thread);
@@ -1164,6 +1169,9 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     const nested = Platform.OS === "ios";
     const localized = (action: MenuAction): MenuAction => ({ ...action, title: m(action.title) });
     const direct: MenuAction[] = [
+      ...(hasUnsentDraft
+        ? [{ id: "discard-draft", title: gt("Delete draft"), image: "xmark.circle" }]
+        : []),
       ...(thread.branch
         ? [
             {
@@ -1261,6 +1269,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     canShareWithGuest,
     canUnsettle,
     groupMenuItems,
+    hasUnsentDraft,
     pinMenuItems,
     props.settlementSupported,
     reorderMenuItems,
@@ -1274,6 +1283,10 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   ]);
   const handleMenuAction = useCallback(
     ({ nativeEvent }: { readonly nativeEvent: { readonly event: string } }) => {
+      if (nativeEvent.event === "discard-draft") {
+        clearComposerDraftContent(rowIdentity);
+        return;
+      }
       if (nativeEvent.event === "new-thread-on-branch") onNewThreadOnBranch(thread);
       if (nativeEvent.event === "settle") handleSettle();
       if (nativeEvent.event === "unsettle") handleUnsettle();
@@ -1367,6 +1380,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       handleUnsettle,
       handleUnsnooze,
       markThreadUnread,
+      rowIdentity,
       setCustomSnoozeOpen,
       snoozePresets,
       props.snoozePresets,
@@ -1507,6 +1521,33 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
           {thread.title}
         </Text>
         <View className="flex-row items-center gap-1.5" style={{ minHeight: titleLineHeight }}>
+          {hasUnsentDraft ? (
+            <View className="flex-row items-center gap-1">
+              <SymbolView
+                name="square.and.pencil"
+                size={12}
+                tintColorClassName={
+                  selected
+                    ? selectedThreadRowColors.iconTintClassName
+                    : "accent-adaptive-amber-700-300"
+                }
+                type="monochrome"
+                weight="semibold"
+              />
+              {!showsWoke && !statusLabel ? (
+                <Text
+                  className={cn(
+                    "text-xs font-t3-bold",
+                    selected
+                      ? selectedThreadRowColors.foregroundClassName
+                      : "text-adaptive-amber-700-300",
+                  )}
+                >
+                  <T>Draft</T>
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
           {props.hasQueuedMessages ? <QueuedMessageIcon selected={selected} /> : null}
           {groupCount}
           {pinnedRow ? (
@@ -1758,6 +1799,9 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         }}
         style={rowAppearance.cardStyle}
       >
+        {hasUnsentDraft && !selected ? (
+          <View pointerEvents="none" className="absolute inset-0 bg-warning/35" />
+        ) : null}
         {sidebarPane ? (
           onGroupRail(fadedCardContent)
         ) : (
@@ -1787,6 +1831,9 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         }}
         style={rowAppearance.style}
       >
+        {hasUnsentDraft && !selected ? (
+          <View pointerEvents="none" className="absolute inset-0 bg-warning/35" />
+        ) : null}
         <View className={cn(THREAD_LIST_V2_ROW_CONTENT_CLASS_NAME, sidebarPane && "px-3")}>
           {onGroupRail(
             <View className="min-h-[44px] flex-row items-center gap-2 py-2">
@@ -1838,6 +1885,31 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
                   />
                 ) : null}
               </View>
+              {hasUnsentDraft ? (
+                <View className="flex-row items-center gap-1">
+                  <SymbolView
+                    name="square.and.pencil"
+                    size={12}
+                    tintColorClassName={
+                      selected
+                        ? selectedThreadRowColors.iconTintClassName
+                        : "accent-adaptive-amber-700-300"
+                    }
+                    type="monochrome"
+                    weight="semibold"
+                  />
+                  <Text
+                    className={cn(
+                      "text-xs font-t3-bold",
+                      selected
+                        ? selectedThreadRowColors.foregroundClassName
+                        : "text-adaptive-amber-700-300",
+                    )}
+                  >
+                    <T>Draft</T>
+                  </Text>
+                </View>
+              ) : null}
               {props.hasQueuedMessages ? <QueuedMessageIcon selected={selected} /> : null}
               {groupCount}
               <Text

@@ -559,7 +559,7 @@ function WorkspaceStackView(props: ViewProps & { readonly nativeColumns: boolean
           (metrics?.verticalBarEdge ?? "none") === "none"
         }
       >
-        {(slotWorkspace, headerOnly) => {
+        {(slotWorkspace, headerOnly, active) => {
           // A tab not shown yet renders the page opening it shows, under the key it opens with,
           // so that page is already on screen in the tab when it's selected.
           const tab = slotWorkspace.settingsOpen ? "settings" : slotWorkspace.state.selectedTab;
@@ -586,7 +586,7 @@ function WorkspaceStackView(props: ViewProps & { readonly nativeColumns: boolean
           ) : (
             <V5CardStackView
               {...props}
-              onRootVisibilityChange={setPrimaryVisible}
+              onRootVisibilityChange={active && !headerOnly ? setPrimaryVisible : undefined}
               onNativePopChange={setNativelyPoppingWorkspaceRoute}
               descriptors={slotDescriptors}
               state={{

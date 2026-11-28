@@ -699,6 +699,23 @@ export function isComposerDraftEmpty(draft: ComposerDraft): boolean {
   return isEmptyDraft(draft);
 }
 
+export function composerDraftHasUserContent(draft: ComposerDraft | undefined): boolean {
+  return draft !== undefined && (draft.text.trim().length > 0 || draft.attachments.length > 0);
+}
+
+const threadHasComposerDraftAtom = Atom.family((draftKey: string) =>
+  Atom.map(composerDraftsAtom, (drafts) => composerDraftHasUserContent(drafts[draftKey])).pipe(
+    Atom.withLabel("mobile:thread-has-composer-draft"),
+  ),
+);
+
+export function useHasThreadComposerDraft(
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+): boolean {
+  return useAtomValue(threadHasComposerDraftAtom(scopedThreadKey({ environmentId, threadId })));
+}
+
 function isEmptyDraft(draft: ComposerDraft): boolean {
   return (
     draft.text.length === 0 &&

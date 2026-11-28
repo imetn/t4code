@@ -39,7 +39,7 @@ export function WorkspaceTabDock(props: { readonly placement: "column" | "window
   const selectTab = useSelectWorkspaceTab();
   const { colors, colorScheme } = useControlTheme();
   const compose = useWorkspaceCompose();
-  // Floating tabs carry compose beside them, and keep its room when it's gone so the tabs hold still.
+  // Floating tabs sit beside compose on Chats and center cleanly when compose is absent.
   const compact = useFloatingWorkspaceTabs();
   const onCompose = compact ? compose?.onPress : undefined;
   const width =
@@ -85,9 +85,9 @@ export function WorkspaceTabDock(props: { readonly placement: "column" | "window
         style={{
           position: "absolute",
           bottom: 0,
-          left: compact ? 8 : 0,
+          left: compact && onCompose ? 8 : 0,
           maxWidth: layout.variant === "medium" ? 280 : undefined,
-          right: compact ? 12 + (onCompose ? 0 : 64) : 0,
+          right: compact && onCompose ? 12 : 0,
           height: 128,
         }}
       />

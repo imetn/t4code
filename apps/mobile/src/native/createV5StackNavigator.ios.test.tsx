@@ -37,7 +37,10 @@ import { V5CardStackView, type V5StackViewProps } from "./createV5StackNavigator
 const home = { key: "home", name: "Home" };
 const thread = { key: "thread", name: "Thread" };
 
-function fire(key: string, event: "onWillAppear" | "onWillDisappear" | "onDidDisappear") {
+function fire(
+  key: string,
+  event: "onWillAppear" | "onDidAppear" | "onWillDisappear" | "onDidDisappear",
+) {
   const handler = screens.get(key)?.[event] as (() => void) | undefined;
   if (!handler) throw new Error(`No ${event} for ${key}`);
   act(() => handler());
@@ -88,6 +91,54 @@ it("forgets native Back when a full-screen presentation covers the top card", ()
     fire("home", "onWillAppear");
     fire("thread", "onDidDisappear");
     expect(onNativePopChange).toHaveBeenLastCalledWith("thread");
+  } finally {
+    act(() => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it("clears root visibility when a detail card finishes appearing after a cancelled back swipe", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const state: StackNavigationState<ParamListBase> = {
+    key: "stack",
+    type: "stack",
+    stale: false,
+    index: 1,
+    routeNames: ["Home", "Thread"],
+    routes: [home, thread],
+    preloadedRoutes: [],
+  };
+  const navigation = { getState: () => state, emit: vi.fn(), dispatch: vi.fn() };
+  const descriptor = (route: typeof home) => ({
+    route,
+    navigation,
+    options: {},
+    render: () => null,
+  });
+  const onRootVisibilityChange = vi.fn();
+  const root = createRoot(document.createElement("div"));
+  try {
+    act(() =>
+      root.render(
+        <V5CardStackView
+          {...({
+            state,
+            navigation,
+            descriptors: { home: descriptor(home), thread: descriptor(thread) },
+            describe: () => descriptor(home),
+          } as unknown as V5StackViewProps)}
+          onRootVisibilityChange={onRootVisibilityChange}
+        />,
+      ),
+    );
+
+    fire("thread", "onWillDisappear");
+    fire("home", "onWillAppear");
+    expect(onRootVisibilityChange).toHaveBeenLastCalledWith(true);
+
+    // Cancelled back gesture returns to the detail card without firing home.onWillDisappear.
+    fire("thread", "onDidAppear");
+    expect(onRootVisibilityChange).toHaveBeenLastCalledWith(false);
   } finally {
     act(() => root.unmount());
     vi.unstubAllGlobals();

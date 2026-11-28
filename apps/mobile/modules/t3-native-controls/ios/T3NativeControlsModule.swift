@@ -48,6 +48,16 @@ public final class T3NativeControlsModule: Module {
       Prop("appearance") { (view: T3SidebarTabBarView, value: String) in view.appearance = value }
     }
 
+    View(T3TabBarVisibilityGuardView.self) {
+      ViewName("TabBarVisibilityGuard")
+      Prop("tabBarHidden") { (view: T3TabBarVisibilityGuardView, value: Bool) in
+        view.tabBarHidden = value
+      }
+      Prop("tabsKey") { (view: T3TabBarVisibilityGuardView, value: String) in
+        view.tabsKey = value
+      }
+    }
+
     View(T3LayoutMetricsView.self) {
       ViewName("LayoutMetrics")
       Events("onMetricsChange")

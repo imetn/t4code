@@ -191,4 +191,45 @@ describe("SubscriptionUsage iOS widget", () => {
     expect(serialized).not.toContain('{"$modifier":"foregroundStyle","value":"#d97757"}');
     expect(serialized).toContain('"type":"Circle"');
   });
+
+  it("falls back to the weekly countdown in medium 2x2 when session reset is absent and uses crisp clock glyph", () => {
+    const claudeExhausted: SubscriptionUsageSnapshot["providers"][number] = {
+      driver: "claudeAgent",
+      name: "Claude",
+      detail: "Subscription remaining",
+      expiresAt: now + 60 * 60_000,
+      totalWindows: 2,
+      windows: [
+        {
+          id: "five_hour",
+          kind: "session",
+          label: "Session",
+          remaining: 0,
+          reset: "Reset time unavailable",
+        },
+        {
+          id: "seven_day",
+          kind: "weekly",
+          label: "Weekly",
+          remaining: 0,
+          reset: "Next reset Mon 9:00 AM",
+          shortReset: "Mon",
+          resetsAt: now + (3 * 60 + 42) * 60_000,
+        },
+      ],
+    };
+    const tree = SubscriptionUsage(makeSnapshot([claudeExhausted, coreProviders[1]!]), {
+      widgetFamily: "systemMedium",
+      colorScheme: "light",
+      widgetRenderingMode: "fullColor",
+      isLuminanceReduced: false,
+      date: new Date(now),
+      configuration: {},
+    });
+    const serialized = JSON.stringify(tree);
+
+    expect(serialized).toContain('"3h42m"');
+    expect(serialized).toContain('"systemName":"clock"');
+    expect(serialized).not.toContain('"systemName":"arrow.clockwise"');
+  });
 });

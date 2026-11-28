@@ -265,10 +265,15 @@ export function SubscriptionUsage(
   };
 
   const renderResetChip = (label: string, size = 9) => (
-    <HStack spacing={2.5} alignment="center">
-      <HStack modifiers={[frame({ width: size, height: size }), foregroundStyle(secondary)]}>
-        <Image systemName="arrow.clockwise" modifiers={[resizable()]} />
-      </HStack>
+    <HStack spacing={2} alignment="center">
+      <Image
+        systemName="clock"
+        modifiers={[
+          font({ size: Math.max(7.5, size - 1), weight: "medium" }),
+          foregroundStyle(secondary),
+          opacity(0.75),
+        ]}
+      />
       <Text
         modifiers={[
           font({ size }),
@@ -912,15 +917,14 @@ export function SubscriptionUsage(
           : [picked.session, picked.weekly].filter((w): w is SnapshotWindow => w !== undefined);
     const effectiveRows = rows.length > 0 ? rows : picked.shown.slice(0, 2);
     const singleWindow = effectiveRows.length === 1 ? effectiveRows[0] : undefined;
-    const headerResetWindow =
+    const sessionCountdown = picked.session ? formatCountdown(picked.session) : undefined;
+    const weeklyCountdown = picked.weekly ? formatCountdown(picked.weekly) : undefined;
+    const headerCountdown =
       !singleWindow && effectiveRows.length > 0
-        ? picked.weekly &&
-          picked.weekly.remaining <= 10 &&
-          (!picked.session || picked.session.remaining > 10)
-          ? picked.weekly
-          : (picked.session ?? picked.weekly)
+        ? picked.weekly && picked.weekly.remaining <= 10
+          ? (weeklyCountdown ?? sessionCountdown)
+          : (sessionCountdown ?? weeklyCountdown)
         : undefined;
-    const headerCountdown = headerResetWindow ? formatCountdown(headerResetWindow) : undefined;
     const singleCountdown = singleWindow ? formatCountdown(singleWindow) : undefined;
 
     return (

@@ -178,3 +178,135 @@ final class T3SidebarTabBarView: ExpoView, UITabBarDelegate {
     onSelectionChange(["tab": tabs[item.tag]])
   }
 }
+
+/// Keeps a nested UITabBarController's system tab bar hidden across iOS 26/27 `setTabs(_:animated:)`
+/// updates and initial window attachment when JS hides the host bar in favor of `WorkspaceTabDock`.
+final class T3TabBarVisibilityGuardView: ExpoView {
+  private weak var observedController: UITabBarController?
+  private var tabBarHiddenObservation: NSKeyValueObservation?
+  private var forcedHidden = false
+  private var isApplying = false
+
+  var tabBarHidden = false {
+    didSet {
+      guard tabBarHidden != oldValue else { return }
+      if tabBarHidden {
+        enforceTabBarHidden(forceReset: false)
+        scheduleEnforce(forceReset: true)
+      } else {
+        releaseTabBarHidden()
+      }
+    }
+  }
+
+  var tabsKey = "" {
+    didSet {
+      guard tabsKey != oldValue, tabBarHidden else { return }
+      // `RNSTabsHostComponentView` applies `setTabs(_:animated:)` during `mountingTransactionDidMount`,
+      // right after prop updates; re-enforce on the next main-queue turn after UIKit rebuilds the bar.
+      scheduleEnforce(forceReset: true)
+    }
+  }
+
+  deinit {
+    MainActor.assumeIsolated {
+      tabBarHiddenObservation?.invalidate()
+      tabBarHiddenObservation = nil
+    }
+  }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    if window == nil {
+      tabBarHiddenObservation?.invalidate()
+      tabBarHiddenObservation = nil
+      return
+    }
+    if tabBarHidden {
+      enforceTabBarHidden(forceReset: false)
+      scheduleEnforce(forceReset: true)
+    }
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    if window != nil, tabBarHidden {
+      enforceTabBarHidden(forceReset: false)
+    }
+  }
+
+  private func scheduleEnforce(forceReset: Bool) {
+    DispatchQueue.main.async { [weak self] in
+      guard let self, self.window != nil, self.tabBarHidden else { return }
+      self.enforceTabBarHidden(forceReset: forceReset)
+    }
+  }
+
+  private func resolveTabBarController() -> UITabBarController? {
+    if let observedController, observedController.viewIfLoaded?.isDescendant(of: self) == true {
+      return observedController
+    }
+    guard let found = findTabBarController(in: self) else { return nil }
+    observedController = found
+    observeTabBar(of: found)
+    return found
+  }
+
+  private func findTabBarController(in view: UIView) -> UITabBarController? {
+    for subview in view.subviews {
+      if let controller = subview.next as? UITabBarController {
+        return controller
+      }
+      if let found = findTabBarController(in: subview) {
+        return found
+      }
+    }
+    return nil
+  }
+
+  private func observeTabBar(of controller: UITabBarController) {
+    tabBarHiddenObservation?.invalidate()
+    guard tabBarHidden else {
+      tabBarHiddenObservation = nil
+      return
+    }
+    tabBarHiddenObservation = controller.tabBar.observe(\.isHidden, options: [.new]) {
+      [weak self] _, _ in
+      MainActor.assumeIsolated {
+        guard let self, self.tabBarHidden, !self.isApplying else { return }
+        self.enforceTabBarHidden(forceReset: false)
+      }
+    }
+  }
+
+  private func enforceTabBarHidden(forceReset: Bool) {
+    guard tabBarHidden, !isApplying, let controller = resolveTabBarController() else { return }
+    if tabBarHiddenObservation == nil {
+      observeTabBar(of: controller)
+    }
+    isApplying = true
+    defer { isApplying = false }
+    if #available(iOS 18.0, *) {
+      if !controller.isTabBarHidden {
+        controller.setTabBarHidden(true, animated: false)
+      } else if forceReset || !controller.tabBar.isHidden {
+        controller.setTabBarHidden(false, animated: false)
+        controller.setTabBarHidden(true, animated: false)
+      }
+    }
+    if !controller.tabBar.isHidden {
+      controller.tabBar.isHidden = true
+    }
+    forcedHidden = true
+  }
+
+  private func releaseTabBarHidden() {
+    tabBarHiddenObservation?.invalidate()
+    tabBarHiddenObservation = nil
+    guard forcedHidden, let controller = observedController else { return }
+    isApplying = true
+    defer { isApplying = false }
+    controller.tabBar.isHidden = false
+    forcedHidden = false
+  }
+}

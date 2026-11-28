@@ -406,6 +406,7 @@ function subscriptionUsageProps(
           ? selectedWindows.map((window) => {
               const firstReset = window.resets[0];
               const upcoming = firstReset !== undefined && isUpcoming(firstReset);
+              const upcomingReset = upcoming ? firstReset : window.resets.find(isUpcoming);
               const pace = windowPaceTiming(window);
               return {
                 id: window.id,
@@ -417,11 +418,10 @@ function subscriptionUsageProps(
                     ? resolve(msg("Next reset {time}", { time: resetTime(firstReset.at) }))
                     : resolve(msg("Reset {time}", { time: resetTime(firstReset.at) }))
                   : resolve(msg("Reset time unavailable")),
-                ...(firstReset &&
-                  upcoming && {
-                    shortReset: clockLabel(firstReset.at, checkedAt),
-                    resetsAt: firstReset.at,
-                  }),
+                ...(upcomingReset && {
+                  shortReset: clockLabel(upcomingReset.at, checkedAt),
+                  resetsAt: upcomingReset.at,
+                }),
                 ...(window.pace && { pace: window.pace }),
                 ...pace,
                 accounts: widgetAccounts(window, resolve),

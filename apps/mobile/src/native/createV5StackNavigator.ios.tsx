@@ -186,6 +186,7 @@ export function V5CardStackView(
                 });
               }}
               onDidAppear={() => {
+                if (index > 0) props.onRootVisibilityChange?.(false);
                 const source = nativePopSource.current;
                 if (source === route.key) {
                   setNativePopSource(null);
