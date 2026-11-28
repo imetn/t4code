@@ -2855,6 +2855,8 @@
   "8d78d07244f8b4a1": "Download von {version} fehlgeschlagen. Klicke, um es erneut zu versuchen.",
   "2dafe72242295047": "Update verfügbar und bereit zum Download",
   "db7b3a938c45e56c": "Update {version} bereit zum Download",
+  "d98373347b1d4011": "Update {version} wird heruntergeladen ({percent}%)",
+  "bfd23dab48cdc7a8": "Update {version} wird heruntergeladen",
   "9a951140b69ba740": "Update wird heruntergeladen ({percent} %)",
   "7fdece033260e9fb": "Update wird heruntergeladen",
   "52e1d4a487c0cf4b": "Installation von {version} fehlgeschlagen. Klicke, um es erneut zu versuchen.",
@@ -2866,9 +2868,15 @@
   "a6c20a1f8be8cc5d": "Update {version} installieren und T4 Code neu starten?\n\nLaufende Aufgaben werden unterbrochen. Stelle sicher, dass du bereit bist, bevor du fortfährst.",
   "30adb55abbec7bf7": "Update installieren und T4 Code neu starten?\n\nLaufende Aufgaben werden unterbrochen. Stelle sicher, dass du bereit bist, bevor du fortfährst.",
   "9ed4d8a1531b9631": "Automatische Updates sind in diesem Build nicht verfügbar.",
+  "8bf01d9bb1aee8ad": "Aktuelle Version der Anwendung.",
+  "ade4a8a8a556fecb": "Update {version} ist zur Installation bereit.",
+  "4a3860ca2b89d18d": "Update ist zur Installation bereit.",
+  "7db8ed333e736d80": "Update {version} ist verfügbar.",
+  "a474bef3f2ff5815": "Update verfügbar.",
   "c8c23435e780a60c": "Updates nicht verfügbar",
   "1af5f9767371ffd7": "Nach Updates suchen",
   "3834ad66deeb40f0": "Versionshinweise können nicht geöffnet werden",
+  "aa3172300d041a08": "Update {version} heruntergeladen",
   "179817bafafe263b": "Update heruntergeladen",
   "cfd874b32f0c1855": "Mehr erfahren",
   "9592253e7bd2bc04": "Starte die App über die Update-Schaltfläche neu, um es zu installieren.",
@@ -3341,10 +3349,7 @@
     {
       "t": "span",
       "i": 2,
-      "c": [
-        " ",
-        "auf dem Computer, der diese Seite geöffnet hat"
-      ]
+      "c": [" ", "auf dem Computer, der diese Seite geöffnet hat"]
     }
   ],
   "b2d53b4d1d48fbef": [
@@ -3356,10 +3361,7 @@
     {
       "t": "span",
       "i": 2,
-      "c": [
-        " ",
-        "· wer es ausführt, erhält diesen Zugriff"
-      ]
+      "c": [" ", "· wer es ausführt, erhält diesen Zugriff"]
     }
   ],
   "c54cc9c75db9dc58": "Genehmige nur eine Anmeldung, die du gerade selbst gestartet hast.",
@@ -5086,8 +5088,8 @@
   "c9852e2500018a3c": "Sende eine Nachricht, bevor du Feedback gibst.",
   "837c3082352db701": "Wähle zuerst ein Projekt",
   "afd7fcc36ec8ad4c": "Dieser Entwurf verweist nicht mehr auf ein verfügbares Projekt.",
-  "6089053212c74376": "Wähle einen Basis-Branch, bevor du im Modus „Neuer Worktree“ sendest.",
   "371daaa4878aa8c9": "Der Entwurf hat sich während der Vorbereitung dieser Nachricht geändert. Prüfe ihn und sende erneut.",
+  "6089053212c74376": "Wähle einen Basis-Branch, bevor du im Modus „Neuer Worktree“ sendest.",
   "e328eb3ee46ef008": "Wiederhole oder entferne fehlgeschlagene Uploads vor dem Senden.",
   "0830bd81f19bb753": "Sende Feedback zur Genehmigung ohne Anhänge oder zusätzlichen Kontext.",
   "02934daf8913625f": "Sende erneut, wenn es bereit ist.",
@@ -8373,8 +8375,6 @@
   "2ed13ae3a2e16654": "Starte Tailscale, um HTTPS-Zugriff über MagicDNS einzurichten.",
   "91618dc7f31c3e8f": "This URL does not reach this backend yet, so pairing links leave it out.",
   "f060774ce36f44fb": "Tailscale Serve verwenden, um dieses Backend über eine MagicDNS-HTTPS-URL freizugeben.",
-  "bfd23dab48cdc7a8": "Update {version} wird heruntergeladen",
-  "aa3172300d041a08": "Update {version} heruntergeladen",
   "32ed25345c0b469c": "Update {version} verfügbar",
   "2ee2077700686fbb": "Update verfügbar",
   "331815682045e993": "SSH-Host oder Alias ist erforderlich.",
@@ -10450,8 +10450,6 @@
   "5004547dc22a40db": "Herunterladen",
   "7d04c4f0bdb67741": "Aktuell",
   "943047215ad556d5": "Nach Updates suchen",
-  "a474bef3f2ff5815": "Update verfügbar.",
-  "8bf01d9bb1aee8ad": "Aktuelle Version der Anwendung.",
   "04252d1e180b2731": "{policy} Nightly-Builds sind nicht verfügbar; wechsle zu Stable, um weiterhin Updates zu erhalten.",
   "7636fc45b55353dd": "{policy} Nightly-Builds sind nicht verfügbar.",
   "c14b0386a7b5ea1e": "{count, plural, one {{count} Rechner verwendet noch {track}.} other {{count} Rechner verwenden noch {track}.}}",

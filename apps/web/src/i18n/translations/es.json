@@ -2854,6 +2854,8 @@
   "8d78d07244f8b4a1": "Falló la descarga de {version}. Haz clic para reintentarlo.",
   "2dafe72242295047": "Actualización disponible lista para descargar",
   "db7b3a938c45e56c": "Actualización {version} lista para descargar",
+  "d98373347b1d4011": "Descargando actualización {version} ({percent}%)",
+  "bfd23dab48cdc7a8": "Descargando la actualización {version}",
   "9a951140b69ba740": "Descargando actualización ({percent} %)",
   "7fdece033260e9fb": "Descargando actualización",
   "52e1d4a487c0cf4b": "Falló la instalación de {version}. Haz clic para reintentarlo.",
@@ -2865,9 +2867,15 @@
   "a6c20a1f8be8cc5d": "¿Instalar la actualización {version} y reiniciar T4 Code?\n\nSe interrumpirán las tareas en curso. Asegúrate de estar listo antes de continuar.",
   "30adb55abbec7bf7": "¿Instalar la actualización y reiniciar T4 Code?\n\nSe interrumpirán las tareas en curso. Asegúrate de estar listo antes de continuar.",
   "9ed4d8a1531b9631": "Las actualizaciones automáticas no están disponibles en esta compilación.",
+  "8bf01d9bb1aee8ad": "Versión actual de la aplicación.",
+  "ade4a8a8a556fecb": "La actualización {version} está lista para instalar.",
+  "4a3860ca2b89d18d": "Actualización lista para instalar.",
+  "7db8ed333e736d80": "La actualización {version} está disponible.",
+  "a474bef3f2ff5815": "Actualización disponible.",
   "c8c23435e780a60c": "Actualizaciones no disponibles",
   "1af5f9767371ffd7": "Buscar actualizaciones",
   "3834ad66deeb40f0": "No se pueden abrir las notas de la versión",
+  "aa3172300d041a08": "Actualización {version} descargada",
   "179817bafafe263b": "Actualización descargada",
   "cfd874b32f0c1855": "Más información",
   "9592253e7bd2bc04": "Reinicia la app desde el botón de actualización para instalarla.",
@@ -3340,10 +3348,7 @@
     {
       "t": "span",
       "i": 2,
-      "c": [
-        " ",
-        "en el ordenador que abrió esta página"
-      ]
+      "c": [" ", "en el ordenador que abrió esta página"]
     }
   ],
   "b2d53b4d1d48fbef": [
@@ -3355,10 +3360,7 @@
     {
       "t": "span",
       "i": 2,
-      "c": [
-        " ",
-        "· quien lo ejecute obtiene este acceso"
-      ]
+      "c": [" ", "· quien lo ejecute obtiene este acceso"]
     }
   ],
   "c54cc9c75db9dc58": "Aprueba solo un inicio de sesión que acabes de iniciar.",
@@ -5083,8 +5085,8 @@
   "c9852e2500018a3c": "Envía un mensaje antes de enviar comentarios.",
   "837c3082352db701": "Elige primero un proyecto",
   "afd7fcc36ec8ad4c": "Este borrador ya no apunta a un proyecto disponible.",
-  "6089053212c74376": "Selecciona una rama base antes de enviar en el modo Nuevo worktree.",
   "371daaa4878aa8c9": "El borrador cambió mientras se preparaba este mensaje. Revísalo y vuelve a enviarlo.",
+  "6089053212c74376": "Selecciona una rama base antes de enviar en el modo Nuevo worktree.",
   "e328eb3ee46ef008": "Reintenta o quita las subidas fallidas antes de enviar.",
   "0830bd81f19bb753": "Envía los comentarios de aprobación sin adjuntos ni contexto añadido.",
   "02934daf8913625f": "Vuelve a enviar cuando esté listo.",
@@ -8372,8 +8374,6 @@
   "2ed13ae3a2e16654": "Inicia Tailscale para configurar el acceso HTTPS mediante MagicDNS.",
   "91618dc7f31c3e8f": "This URL does not reach this backend yet, so pairing links leave it out.",
   "f060774ce36f44fb": "Usa Tailscale Serve para exponer este backend mediante una URL HTTPS de MagicDNS.",
-  "bfd23dab48cdc7a8": "Descargando la actualización {version}",
-  "aa3172300d041a08": "Actualización {version} descargada",
   "32ed25345c0b469c": "Actualización {version} disponible",
   "2ee2077700686fbb": "Actualización disponible",
   "331815682045e993": "El host o alias SSH es obligatorio.",
@@ -10447,8 +10447,6 @@
   "5004547dc22a40db": "Descargar",
   "7d04c4f0bdb67741": "Actualizado",
   "943047215ad556d5": "Buscar actualizaciones",
-  "a474bef3f2ff5815": "Actualización disponible.",
-  "8bf01d9bb1aee8ad": "Versión actual de la aplicación.",
   "04252d1e180b2731": "{policy} Las compilaciones Nightly no están disponibles; cambia a Stable para seguir recibiendo actualizaciones.",
   "7636fc45b55353dd": "{policy} Las compilaciones Nightly no están disponibles.",
   "c14b0386a7b5ea1e": "{count, plural, one {{count} máquina aún ejecuta {track}.} other {{count} máquinas aún ejecutan {track}.}}",

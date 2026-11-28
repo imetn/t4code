@@ -42,9 +42,9 @@ import { CliCommandSettingsRow } from "./CliCommandSettingsRow";
 import { MobileAppSettingsRow } from "./MobileAppSettingsRow";
 import {
   canCheckForUpdate,
+  getDesktopUpdateAboutDescription,
   getDesktopUpdateActionError,
   getDesktopUpdateButtonTooltip,
-  getDesktopUpdateDisabledReason,
   getDesktopUpdateInstallConfirmationMessage,
   installDesktopUpdate,
   isDesktopUpdateButtonDisabled,
@@ -334,11 +334,7 @@ function AboutVersionSection() {
   };
   const buttonLabel =
     actionLabel[action] ?? statusLabel[updateState?.status ?? ""] ?? gt("Check for Updates");
-  const description =
-    action === "download" || action === "install"
-      ? gt("Update available.")
-      : (getDesktopUpdateDisabledReason(updateState, updatesDenial, messages) ??
-        gt("Current version of the application."));
+  const description = getDesktopUpdateAboutDescription(updateState, updatesDenial, messages);
 
   return (
     <>

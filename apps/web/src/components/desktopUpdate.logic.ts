@@ -139,10 +139,20 @@ export function getDesktopUpdateButtonTooltip(
       : resolve(msg("Update {version} ready to download", { version: state.availableVersion }));
   }
   if (state.status === "downloading") {
-    return typeof state.downloadPercent === "number"
-      ? resolve(
-          msg("Downloading update ({percent}%)", { percent: Math.floor(state.downloadPercent) }),
-        )
+    const percent =
+      typeof state.downloadPercent === "number" ? Math.floor(state.downloadPercent) : null;
+    if (state.availableVersion) {
+      return percent !== null
+        ? resolve(
+            msg("Downloading update {version} ({percent}%)", {
+              version: state.availableVersion,
+              percent,
+            }),
+          )
+        : resolve(msg("Downloading update {version}", { version: state.availableVersion }));
+    }
+    return percent !== null
+      ? resolve(msg("Downloading update ({percent}%)", { percent }))
       : resolve(msg("Downloading update"));
   }
   if (state.status === "downloaded") {
@@ -271,6 +281,84 @@ export function getDesktopUpdateDisabledReason(
   return (
     state.message?.trim() || resolve(msg("Automatic updates are not available in this build."))
   );
+}
+
+export function getDesktopUpdateAboutDescription(
+  state: DesktopUpdateState | null,
+  managedDenial?: string,
+  resolve: MessageResolver = m,
+): string {
+  const disabledReason = getDesktopUpdateDisabledReason(state, managedDenial, resolve);
+  if (disabledReason !== null) return disabledReason;
+  if (!state) return resolve(msg("Current version of the application."));
+
+  if (state.status === "downloading") {
+    const percent =
+      typeof state.downloadPercent === "number" ? Math.floor(state.downloadPercent) : null;
+    if (state.availableVersion) {
+      return percent !== null
+        ? resolve(
+            msg("Downloading update {version} ({percent}%)", {
+              version: state.availableVersion,
+              percent,
+            }),
+          )
+        : resolve(msg("Downloading update {version}", { version: state.availableVersion }));
+    }
+    return percent !== null
+      ? resolve(msg("Downloading update ({percent}%)", { percent }))
+      : resolve(msg("Downloading update"));
+  }
+
+  const action = resolveDesktopUpdateButtonAction(state);
+  if (action === "install") {
+    const version = getDesktopUpdateDownloadedVersion(state);
+    if (state.errorContext === "install" && state.downloadedVersion) {
+      return resolve(
+        msg("Install failed for {version}. Click to retry.", { version: state.downloadedVersion }),
+      );
+    }
+    if (state.notAppliedVersion !== undefined && version === state.notAppliedVersion) {
+      return resolve(
+        msg("Update {version} did not apply. Click to retry.", {
+          version: state.notAppliedVersion,
+        }),
+      );
+    }
+    return version
+      ? resolve(msg("Update {version} is ready to install.", { version }))
+      : resolve(msg("Update ready to install."));
+  }
+
+  if (action === "download") {
+    if (
+      state.notAppliedVersion !== undefined &&
+      state.availableVersion === state.notAppliedVersion
+    ) {
+      return resolve(
+        msg("Update {version} did not apply. Click to retry.", {
+          version: state.notAppliedVersion,
+        }),
+      );
+    }
+    if (state.errorContext === "download" && state.availableVersion) {
+      return resolve(
+        msg("Download failed for {version}. Click to retry.", { version: state.availableVersion }),
+      );
+    }
+    return state.availableVersion
+      ? resolve(msg("Update {version} is available.", { version: state.availableVersion }))
+      : resolve(msg("Update available."));
+  }
+
+  // Rechecks keep showing the downloaded version until a newer release replaces it.
+  if (state.status === "checking" && state.downloadedVersion) {
+    return resolve(
+      msg("Update {version} is ready to install.", { version: state.downloadedVersion }),
+    );
+  }
+
+  return resolve(msg("Current version of the application."));
 }
 
 export function getDesktopUpdateIdleTooltip(

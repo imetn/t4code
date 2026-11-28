@@ -2854,6 +2854,8 @@
   "8d78d07244f8b4a1": "Échec du téléchargement de {version}. Cliquez pour réessayer.",
   "2dafe72242295047": "Mise à jour disponible, prête à être téléchargée",
   "db7b3a938c45e56c": "Mise à jour {version} prête à être téléchargée",
+  "d98373347b1d4011": "Téléchargement de la mise à jour {version} ({percent}%)",
+  "bfd23dab48cdc7a8": "Téléchargement de la mise à jour {version}",
   "9a951140b69ba740": "Téléchargement de la mise à jour ({percent} %)",
   "7fdece033260e9fb": "Téléchargement de la mise à jour",
   "52e1d4a487c0cf4b": "Échec de l’installation de {version}. Cliquez pour réessayer.",
@@ -2865,9 +2867,15 @@
   "a6c20a1f8be8cc5d": "Installer la mise à jour {version} et redémarrer T4 Code ?\n\nToutes les tâches en cours seront interrompues. Assurez-vous d’être prêt avant de continuer.",
   "30adb55abbec7bf7": "Installer la mise à jour et redémarrer T4 Code ?\n\nToutes les tâches en cours seront interrompues. Assurez-vous d’être prêt avant de continuer.",
   "9ed4d8a1531b9631": "Les mises à jour automatiques ne sont pas disponibles dans cette version.",
+  "8bf01d9bb1aee8ad": "Version actuelle de l’application.",
+  "ade4a8a8a556fecb": "La mise à jour {version} est prête à être installée.",
+  "4a3860ca2b89d18d": "Mise à jour prête à être installée.",
+  "7db8ed333e736d80": "La mise à jour {version} est disponible.",
+  "a474bef3f2ff5815": "Mise à jour disponible.",
   "c8c23435e780a60c": "Mises à jour indisponibles",
   "1af5f9767371ffd7": "Rechercher des mises à jour",
   "3834ad66deeb40f0": "Impossible d’ouvrir les notes de version",
+  "aa3172300d041a08": "Mise à jour {version} téléchargée",
   "179817bafafe263b": "Mise à jour téléchargée",
   "cfd874b32f0c1855": "En savoir plus",
   "9592253e7bd2bc04": "Redémarrez l’app depuis le bouton de mise à jour pour l’installer.",
@@ -3340,10 +3348,7 @@
     {
       "t": "span",
       "i": 2,
-      "c": [
-        " ",
-        "sur l’ordinateur qui a ouvert cette page"
-      ]
+      "c": [" ", "sur l’ordinateur qui a ouvert cette page"]
     }
   ],
   "b2d53b4d1d48fbef": [
@@ -3355,10 +3360,7 @@
     {
       "t": "span",
       "i": 2,
-      "c": [
-        " ",
-        "· quiconque l’exécute obtient cet accès"
-      ]
+      "c": [" ", "· quiconque l’exécute obtient cet accès"]
     }
   ],
   "c54cc9c75db9dc58": "N’approuvez qu’une connexion que vous venez de lancer.",
@@ -5084,8 +5086,8 @@
   "c9852e2500018a3c": "Envoyez un message avant de soumettre des commentaires.",
   "837c3082352db701": "Choisissez d’abord un projet",
   "afd7fcc36ec8ad4c": "Ce brouillon ne renvoie plus à un projet disponible.",
-  "6089053212c74376": "Sélectionnez une branche de base avant d’envoyer en mode Nouveau worktree.",
   "371daaa4878aa8c9": "Le brouillon a changé pendant la préparation de ce message. Relisez-le et renvoyez-le.",
+  "6089053212c74376": "Sélectionnez une branche de base avant d’envoyer en mode Nouveau worktree.",
   "e328eb3ee46ef008": "Relancez ou retirez les envois en échec avant d’envoyer.",
   "0830bd81f19bb753": "Envoyez votre réponse à l’approbation sans pièces jointes ni contexte ajouté.",
   "02934daf8913625f": "Renvoyez quand ce sera prêt.",
@@ -8373,8 +8375,6 @@
   "2ed13ae3a2e16654": "Démarrez Tailscale pour configurer l’accès HTTPS via MagicDNS.",
   "91618dc7f31c3e8f": "This URL does not reach this backend yet, so pairing links leave it out.",
   "f060774ce36f44fb": "Utiliser Tailscale Serve pour exposer ce backend via une URL HTTPS MagicDNS.",
-  "bfd23dab48cdc7a8": "Téléchargement de la mise à jour {version}",
-  "aa3172300d041a08": "Mise à jour {version} téléchargée",
   "32ed25345c0b469c": "Mise à jour {version} disponible",
   "2ee2077700686fbb": "Mise à jour disponible",
   "331815682045e993": "L’hôte ou l’alias SSH est obligatoire.",
@@ -10449,8 +10449,6 @@
   "5004547dc22a40db": "Télécharger",
   "7d04c4f0bdb67741": "À jour",
   "943047215ad556d5": "Rechercher des mises à jour",
-  "a474bef3f2ff5815": "Mise à jour disponible.",
-  "8bf01d9bb1aee8ad": "Version actuelle de l’application.",
   "04252d1e180b2731": "{policy} Les builds Nightly ne sont pas disponibles ; passez à Stable pour continuer à recevoir les mises à jour.",
   "7636fc45b55353dd": "{policy} Les builds Nightly ne sont pas disponibles.",
   "c14b0386a7b5ea1e": "{count, plural, one {{count} machine exécute encore {track}.} other {{count} machines exécutent encore {track}.}}",

@@ -2854,6 +2854,8 @@
   "8d78d07244f8b4a1": "Nedladdningen av {version} misslyckades. Klicka för att försöka igen.",
   "2dafe72242295047": "En uppdatering är redo att laddas ned",
   "db7b3a938c45e56c": "Uppdateringen {version} är redo att laddas ned",
+  "d98373347b1d4011": "Hämtar uppdatering {version} ({percent}%)",
+  "bfd23dab48cdc7a8": "Laddar ned uppdateringen {version}",
   "9a951140b69ba740": "Laddar ned uppdatering ({percent} %)",
   "7fdece033260e9fb": "Laddar ned uppdatering",
   "52e1d4a487c0cf4b": "Installationen av {version} misslyckades. Klicka för att försöka igen.",
@@ -2865,9 +2867,15 @@
   "a6c20a1f8be8cc5d": "Installera uppdateringen {version} och starta om T4 Code?\n\nPågående uppgifter avbryts. Se till att du är redo innan du fortsätter.",
   "30adb55abbec7bf7": "Installera uppdateringen och starta om T4 Code?\n\nPågående uppgifter avbryts. Se till att du är redo innan du fortsätter.",
   "9ed4d8a1531b9631": "Automatiska uppdateringar är inte tillgängliga i den här versionen.",
+  "8bf01d9bb1aee8ad": "Programmets aktuella version.",
+  "ade4a8a8a556fecb": "Uppdatering {version} är klar att installeras.",
+  "4a3860ca2b89d18d": "Uppdatering är klar att installeras.",
+  "7db8ed333e736d80": "Uppdatering {version} är tillgänglig.",
+  "a474bef3f2ff5815": "Uppdatering tillgänglig.",
   "c8c23435e780a60c": "Uppdateringar är inte tillgängliga",
   "1af5f9767371ffd7": "Sök efter uppdateringar",
   "3834ad66deeb40f0": "Det gick inte att öppna versionsinformationen",
+  "aa3172300d041a08": "Uppdateringen {version} har laddats ned",
   "179817bafafe263b": "Uppdateringen har laddats ned",
   "cfd874b32f0c1855": "Läs mer",
   "9592253e7bd2bc04": "Starta om appen från uppdateringsknappen för att installera den.",
@@ -3340,10 +3348,7 @@
     {
       "t": "span",
       "i": 2,
-      "c": [
-        " ",
-        "på datorn som öppnade den här sidan"
-      ]
+      "c": [" ", "på datorn som öppnade den här sidan"]
     }
   ],
   "b2d53b4d1d48fbef": [
@@ -3355,10 +3360,7 @@
     {
       "t": "span",
       "i": 2,
-      "c": [
-        " ",
-        "· den som kör den får den här åtkomsten"
-      ]
+      "c": [" ", "· den som kör den får den här åtkomsten"]
     }
   ],
   "c54cc9c75db9dc58": "Godkänn bara en inloggning som du själv precis har startat.",
@@ -5084,8 +5086,8 @@
   "c9852e2500018a3c": "Skicka ett meddelande innan du skickar feedback.",
   "837c3082352db701": "Välj ett projekt först",
   "afd7fcc36ec8ad4c": "Det här utkastet pekar inte längre på ett tillgängligt projekt.",
-  "6089053212c74376": "Välj en basgren innan du skickar i läget Ny worktree.",
   "371daaa4878aa8c9": "Utkastet ändrades medan meddelandet förbereddes. Granska det och skicka igen.",
+  "6089053212c74376": "Välj en basgren innan du skickar i läget Ny worktree.",
   "e328eb3ee46ef008": "Försök igen eller ta bort misslyckade uppladdningar innan du skickar.",
   "0830bd81f19bb753": "Skicka feedback om godkännandet utan bilagor eller tillagd kontext.",
   "02934daf8913625f": "Skicka igen när det är redo.",
@@ -8378,8 +8380,6 @@
   "2ed13ae3a2e16654": "Starta Tailscale för att konfigurera HTTPS-åtkomst via MagicDNS.",
   "91618dc7f31c3e8f": "This URL does not reach this backend yet, so pairing links leave it out.",
   "f060774ce36f44fb": "Använd Tailscale Serve för att exponera den här backenden via en HTTPS-URL i MagicDNS.",
-  "bfd23dab48cdc7a8": "Laddar ned uppdateringen {version}",
-  "aa3172300d041a08": "Uppdateringen {version} har laddats ned",
   "32ed25345c0b469c": "Uppdateringen {version} är tillgänglig",
   "2ee2077700686fbb": "Uppdatering tillgänglig",
   "331815682045e993": "SSH-värd eller alias krävs.",
@@ -10457,8 +10457,6 @@
   "5004547dc22a40db": "Ladda ned",
   "7d04c4f0bdb67741": "Uppdaterad",
   "943047215ad556d5": "Sök efter uppdateringar",
-  "a474bef3f2ff5815": "Uppdatering tillgänglig.",
-  "8bf01d9bb1aee8ad": "Programmets aktuella version.",
   "04252d1e180b2731": "{policy} Nightly-versioner är inte tillgängliga; byt till Stable för att fortsätta få uppdateringar.",
   "7636fc45b55353dd": "{policy} Nightly-versioner är inte tillgängliga.",
   "c14b0386a7b5ea1e": "{count, plural, one {{count} dator kör fortfarande {track}.} other {{count} datorer kör fortfarande {track}.}}",

@@ -2854,6 +2854,8 @@
   "8d78d07244f8b4a1": "Falha ao baixar {version}. Clique para tentar novamente.",
   "2dafe72242295047": "Atualização disponível para baixar",
   "db7b3a938c45e56c": "Atualização {version} pronta para baixar",
+  "d98373347b1d4011": "Baixando atualização {version} ({percent}%)",
+  "bfd23dab48cdc7a8": "Baixando a atualização {version}",
   "9a951140b69ba740": "Baixando atualização ({percent}%)",
   "7fdece033260e9fb": "Baixando atualização",
   "52e1d4a487c0cf4b": "Falha ao instalar {version}. Clique para tentar novamente.",
@@ -2865,9 +2867,15 @@
   "a6c20a1f8be8cc5d": "Instalar a atualização {version} e reiniciar o T4 Code?\n\nAs tarefas em execução serão interrompidas. Verifique se está tudo pronto antes de continuar.",
   "30adb55abbec7bf7": "Instalar a atualização e reiniciar o T4 Code?\n\nAs tarefas em execução serão interrompidas. Verifique se está tudo pronto antes de continuar.",
   "9ed4d8a1531b9631": "Atualizações automáticas não estão disponíveis nesta versão.",
+  "8bf01d9bb1aee8ad": "Versão atual do aplicativo.",
+  "ade4a8a8a556fecb": "A atualização {version} está pronta para instalar.",
+  "4a3860ca2b89d18d": "Atualização pronta para instalar.",
+  "7db8ed333e736d80": "A atualização {version} está disponível.",
+  "a474bef3f2ff5815": "Atualização disponível.",
   "c8c23435e780a60c": "Atualizações indisponíveis",
   "1af5f9767371ffd7": "Verificar atualizações",
   "3834ad66deeb40f0": "Não foi possível abrir as notas da versão",
+  "aa3172300d041a08": "Atualização {version} baixada",
   "179817bafafe263b": "Atualização baixada",
   "cfd874b32f0c1855": "Saiba mais",
   "9592253e7bd2bc04": "Reinicie o app pelo botão de atualização para instalá-la.",
@@ -3340,10 +3348,7 @@
     {
       "t": "span",
       "i": 2,
-      "c": [
-        " ",
-        "no computador que abriu esta página"
-      ]
+      "c": [" ", "no computador que abriu esta página"]
     }
   ],
   "b2d53b4d1d48fbef": [
@@ -3355,10 +3360,7 @@
     {
       "t": "span",
       "i": 2,
-      "c": [
-        " ",
-        "· quem executar recebe este acesso"
-      ]
+      "c": [" ", "· quem executar recebe este acesso"]
     }
   ],
   "c54cc9c75db9dc58": "Aprove apenas um login que você acabou de iniciar.",
@@ -5083,8 +5085,8 @@
   "c9852e2500018a3c": "Envie uma mensagem antes de enviar feedback.",
   "837c3082352db701": "Escolha um projeto primeiro",
   "afd7fcc36ec8ad4c": "Este rascunho não aponta mais para um projeto disponível.",
-  "6089053212c74376": "Selecione um branch base antes de enviar no modo Novo worktree.",
   "371daaa4878aa8c9": "O rascunho mudou enquanto esta mensagem era preparada. Revise e envie novamente.",
+  "6089053212c74376": "Selecione um branch base antes de enviar no modo Novo worktree.",
   "e328eb3ee46ef008": "Tente novamente ou remova os uploads com falha antes de enviar.",
   "0830bd81f19bb753": "Envie o feedback da aprovação sem anexos nem contexto adicional.",
   "02934daf8913625f": "Envie novamente quando estiver pronto.",
@@ -8372,8 +8374,6 @@
   "2ed13ae3a2e16654": "Inicie o Tailscale para configurar o acesso HTTPS pelo MagicDNS.",
   "91618dc7f31c3e8f": "This URL does not reach this backend yet, so pairing links leave it out.",
   "f060774ce36f44fb": "Usa o Tailscale Serve para expor este backend por uma URL HTTPS do MagicDNS.",
-  "bfd23dab48cdc7a8": "Baixando a atualização {version}",
-  "aa3172300d041a08": "Atualização {version} baixada",
   "32ed25345c0b469c": "Atualização {version} disponível",
   "2ee2077700686fbb": "Atualização disponível",
   "331815682045e993": "O host ou alias SSH é obrigatório.",
@@ -10449,8 +10449,6 @@
   "5004547dc22a40db": "Baixar",
   "7d04c4f0bdb67741": "Atualizado",
   "943047215ad556d5": "Verificar atualizações",
-  "a474bef3f2ff5815": "Atualização disponível.",
-  "8bf01d9bb1aee8ad": "Versão atual do aplicativo.",
   "04252d1e180b2731": "{policy} As builds Nightly não estão disponíveis; mude para Estável para continuar recebendo atualizações.",
   "7636fc45b55353dd": "{policy} As builds Nightly não estão disponíveis.",
   "c14b0386a7b5ea1e": "{count, plural, one {{count} máquina ainda roda {track}.} other {{count} máquinas ainda rodam {track}.}}",

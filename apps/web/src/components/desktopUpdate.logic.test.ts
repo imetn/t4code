@@ -3,6 +3,7 @@ import type { DesktopUpdateState } from "@t3tools/contracts";
 
 import {
   canCheckForUpdate,
+  getDesktopUpdateAboutDescription,
   getDesktopUpdateButtonTooltip,
   getDesktopUpdateReleaseHistoryUrl,
   getDesktopUpdateActionError,
@@ -139,6 +140,33 @@ describe("desktop update button state", () => {
     expect(resolveDesktopUpdateButtonAction(state)).toBe("download");
   });
 
+  it("includes the target version in downloading tooltips", () => {
+    expect(
+      getDesktopUpdateButtonTooltip({
+        ...baseState,
+        status: "downloading",
+        availableVersion: "0.1.12-t4.18",
+        downloadPercent: 42.9,
+      }),
+    ).toBe("Downloading update 0.1.12-t4.18 (42%)");
+    expect(
+      getDesktopUpdateButtonTooltip({
+        ...baseState,
+        status: "downloading",
+        availableVersion: "0.1.12-t4.18",
+        downloadPercent: null,
+      }),
+    ).toBe("Downloading update 0.1.12-t4.18");
+    expect(
+      getDesktopUpdateButtonTooltip({
+        ...baseState,
+        status: "downloading",
+        availableVersion: null,
+        downloadPercent: 18,
+      }),
+    ).toBe("Downloading update (18%)");
+  });
+
   it("hides the install action while checking for a newer release", () => {
     const state: DesktopUpdateState = {
       ...baseState,
@@ -148,6 +176,133 @@ describe("desktop update button state", () => {
       downloadPercent: 100,
     };
     expect(resolveDesktopUpdateButtonAction(state)).toBe("none");
+  });
+});
+
+describe("getDesktopUpdateAboutDescription", () => {
+  it("shows the remote target version when an update is available", () => {
+    expect(
+      getDesktopUpdateAboutDescription({
+        ...baseState,
+        status: "available",
+        availableVersion: "0.1.12-t4.18",
+      }),
+    ).toBe("Update 0.1.12-t4.18 is available.");
+    expect(
+      getDesktopUpdateAboutDescription({
+        ...baseState,
+        status: "available",
+        availableVersion: null,
+      }),
+    ).toBe("Update available.");
+  });
+
+  it("shows the target version and download progress while downloading", () => {
+    expect(
+      getDesktopUpdateAboutDescription({
+        ...baseState,
+        status: "downloading",
+        availableVersion: "0.1.12-t4.18",
+        downloadPercent: 67.8,
+      }),
+    ).toBe("Downloading update 0.1.12-t4.18 (67%)");
+    expect(
+      getDesktopUpdateAboutDescription({
+        ...baseState,
+        status: "downloading",
+        availableVersion: "0.1.12-t4.18",
+        downloadPercent: null,
+      }),
+    ).toBe("Downloading update 0.1.12-t4.18");
+    expect(
+      getDesktopUpdateAboutDescription({
+        ...baseState,
+        status: "downloading",
+        availableVersion: null,
+        downloadPercent: 25,
+      }),
+    ).toBe("Downloading update (25%)");
+    expect(
+      getDesktopUpdateAboutDescription({
+        ...baseState,
+        status: "downloading",
+        availableVersion: null,
+        downloadPercent: null,
+      }),
+    ).toBe("Downloading update");
+  });
+
+  it("shows the downloaded target version when ready to install or rechecking", () => {
+    expect(
+      getDesktopUpdateAboutDescription({
+        ...baseState,
+        status: "downloaded",
+        availableVersion: "0.1.12-t4.18",
+        downloadedVersion: "0.1.12-t4.18",
+      }),
+    ).toBe("Update 0.1.12-t4.18 is ready to install.");
+    expect(
+      getDesktopUpdateAboutDescription({
+        ...baseState,
+        status: "checking",
+        availableVersion: "0.1.12-t4.18",
+        downloadedVersion: "0.1.12-t4.18",
+      }),
+    ).toBe("Update 0.1.12-t4.18 is ready to install.");
+  });
+
+  it("surfaces retryable download, install, and not-applied errors with version", () => {
+    expect(
+      getDesktopUpdateAboutDescription({
+        ...baseState,
+        status: "error",
+        availableVersion: "0.1.12-t4.18",
+        errorContext: "download",
+        canRetry: true,
+      }),
+    ).toBe("Download failed for 0.1.12-t4.18. Click to retry.");
+    expect(
+      getDesktopUpdateAboutDescription({
+        ...baseState,
+        status: "downloaded",
+        availableVersion: "0.1.12-t4.18",
+        downloadedVersion: "0.1.12-t4.18",
+        errorContext: "install",
+        canRetry: true,
+      }),
+    ).toBe("Install failed for 0.1.12-t4.18. Click to retry.");
+    expect(
+      getDesktopUpdateAboutDescription({
+        ...baseState,
+        status: "available",
+        availableVersion: "0.1.12-t4.18",
+        notAppliedVersion: "0.1.12-t4.18",
+      }),
+    ).toBe("Update 0.1.12-t4.18 did not apply. Click to retry.");
+  });
+
+  it("respects managed denial, disabled updates, and idle state", () => {
+    expect(
+      getDesktopUpdateAboutDescription(
+        {
+          ...baseState,
+          status: "available",
+          availableVersion: "0.1.12-t4.18",
+        },
+        "Updates are managed by your organization.",
+      ),
+    ).toBe("Updates are managed by your organization.");
+    expect(
+      getDesktopUpdateAboutDescription({
+        ...baseState,
+        enabled: false,
+        status: "disabled",
+      }),
+    ).toBe("Automatic updates are not available in this build.");
+    expect(getDesktopUpdateAboutDescription({ ...baseState, status: "up-to-date" })).toBe(
+      "Current version of the application.",
+    );
+    expect(getDesktopUpdateAboutDescription(null)).toBe("Current version of the application.");
   });
 });
 
