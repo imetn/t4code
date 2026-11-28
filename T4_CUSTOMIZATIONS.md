@@ -234,3 +234,17 @@ Each entry uses `<!-- t4-lock: <id> -->` and explicit path prefixes/files so `sc
 - **Non-Negotiable Invariants**:
   - Right-sidebar `Context` section displays a multi-segment color-coded context bar, interactive breakdown rows (Messages, MCP tools, System prompt, Skills, Memory files, deferred tools, Autocompact buffer, Free space), and expandable MCP tools / Memory files detail lists powered by `provider.thread.inspect`.
   - Right-sidebar `Connectors` row opens the connector management view with per-server status, reconnect (`provider.mcp.reconnect`), enable/disable toggle (`provider.mcp.toggle`), and OAuth sign-in actions.
+
+### 13. Mobile Stacked Multi-Photo Deck in Chat Feed
+
+<!-- t4-lock: mobile-stacked-photo-deck -->
+
+- **Status**: `Locked`
+- **Surfaces**: Mobile
+- **Protected Paths**:
+  - `apps/mobile/src/features/threads/StackedPhotoDeck.tsx`
+  - `apps/mobile/src/features/threads/stacked-photo-deck.ts`
+  - `apps/mobile/src/features/threads/ThreadFeed.tsx`
+- **Non-Negotiable Invariants**:
+  - Multi-image user messages (`>= 2` images) render by default as an interactive stacked photo deck with up to 3 layered cards, horizontal swipe cycling with haptic feedback, single-tap full-screen gallery preview, and a left-side `Expand N` (`展开 N`) pill that toggles into an expanded 2/3-column photo grid with a `Collapse` (`收起`) button.
+

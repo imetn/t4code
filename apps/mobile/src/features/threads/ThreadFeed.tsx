@@ -341,6 +341,7 @@ import {
 } from "./ThreadMarkdownImage";
 import { MediaActionsMenu } from "../../components/MediaActionsMenu";
 import { useMediaActions } from "../../state/mediaActions";
+import { StackedPhotoDeck } from "./StackedPhotoDeck";
 import { ZoomableImagePressable } from "./ZoomableImagePressable";
 import { openSettings } from "../settings/settings-navigation";
 import { loopbackUrlForDevice } from "../browser/browserTabs";
@@ -841,17 +842,68 @@ function UserMessageMedia(props: {
 }) {
   const attachments = [...props.pendingAttachments, ...props.attachments];
   const collage = attachments.length > 1 && attachments.every(isImageAttachment);
-  const imageProps = (index: number) => ({
+
+  if (collage) {
+    const pendingCount = props.pendingAttachments.length;
+    const renderPhotoCard = (index: number, height: number) => {
+      if (index < pendingCount) {
+        const attachment = props.pendingAttachments[index]!;
+        if (attachment.uploadedAttachmentId) {
+          return (
+            <MessageAttachmentImage
+              environmentId={props.environmentId}
+              attachmentId={attachment.uploadedAttachmentId}
+              name={attachment.name}
+              mimeType={attachment.mimeType}
+              className="w-full bg-user-bubble-foreground/15"
+              height={height}
+              {...handoffProps(sentImageHandoff(props.messageId, index, attachment.id))}
+              onImageLoad={(loaded) => rememberSentImage(props.messageId, index, loaded)}
+              onPressPreview={props.onPressPreview}
+            />
+          );
+        }
+        return (
+          <PendingMessageImage
+            attachment={attachment}
+            className="w-full bg-user-bubble-foreground/15"
+            height={height}
+            {...handoffProps(sentImageHandoff(props.messageId, index, attachment.id))}
+            onImageLoad={(image) => rememberSentImage(props.messageId, index, image)}
+            onPressPreview={props.onPressPreview}
+          />
+        );
+      }
+      const settledIndex = index - pendingCount;
+      const attachment = props.attachments[settledIndex]!;
+      return (
+        <MessageAttachmentImage
+          environmentId={props.environmentId}
+          attachmentId={attachment.id}
+          name={attachment.name}
+          mimeType={attachment.mimeType}
+          className="w-full bg-user-bubble-foreground/15"
+          height={height}
+          {...handoffProps(sentImageHandoff(props.messageId, settledIndex))}
+          onPressPreview={props.onPressPreview}
+        />
+      );
+    };
+    return (
+      <StackedPhotoDeck
+        messageId={props.messageId}
+        count={attachments.length}
+        maxWidth={props.maxWidth}
+        renderCard={renderPhotoCard}
+      />
+    );
+  }
+
+  const imageProps = {
     className: "w-full bg-user-bubble-foreground/15",
-    maxWidth: collage ? undefined : props.maxWidth,
-    height: !collage
-      ? undefined
-      : attachments.length === 2 || (attachments.length === 3 && index === 0)
-        ? 192
-        : attachments.length === 3
-          ? (192 - StyleSheet.hairlineWidth) / 2
-          : 96,
-  });
+    maxWidth: props.maxWidth,
+    height: undefined,
+  };
   const media = [
     ...props.pendingAttachments.map((attachment, index) => {
       const image = isImageAttachment(attachment);
@@ -864,7 +916,7 @@ function UserMessageMedia(props: {
               attachmentId={attachment.uploadedAttachmentId}
               name={attachment.name}
               mimeType={attachment.mimeType}
-              {...imageProps(index)}
+              {...imageProps}
               {...handoffProps(sentImageHandoff(props.messageId, index, attachment.id))}
               onImageLoad={(loaded) => rememberSentImage(props.messageId, index, loaded)}
               onPressPreview={props.onPressPreview}
@@ -885,7 +937,7 @@ function UserMessageMedia(props: {
           ) : (
             <PendingMessageImage
               attachment={attachment}
-              {...imageProps(index)}
+              {...imageProps}
               {...handoffProps(sentImageHandoff(props.messageId, index, attachment.id))}
               onImageLoad={(image) => rememberSentImage(props.messageId, index, image)}
               onPressPreview={props.onPressPreview}
@@ -901,7 +953,7 @@ function UserMessageMedia(props: {
           attachmentId={attachment.id}
           name={attachment.name}
           mimeType={attachment.mimeType}
-          {...imageProps(props.pendingAttachments.length + index)}
+          {...imageProps}
           {...handoffProps(sentImageHandoff(props.messageId, index))}
           onPressPreview={props.onPressPreview}
         />
@@ -917,37 +969,7 @@ function UserMessageMedia(props: {
       ) : null,
     })),
   ];
-  return collage ? (
-    <View
-      className="overflow-hidden rounded-[20px] bg-border"
-      style={{ width: 320, maxWidth: "100%", alignSelf: "flex-end", gap: StyleSheet.hairlineWidth }}
-    >
-      {media.length === 3 ? (
-        <View className="flex-row" style={{ gap: StyleSheet.hairlineWidth }}>
-          <View className="min-w-0" style={{ flex: 3 }}>
-            {media[0]!.content}
-          </View>
-          <View className="min-w-0" style={{ flex: 2, gap: StyleSheet.hairlineWidth }}>
-            {media[1]!.content}
-            {media[2]!.content}
-          </View>
-        </View>
-      ) : (
-        media
-          .filter((_, index) => index % 2 === 0)
-          .map((item, index) => (
-            // oxlint-disable-next-line react/no-array-index-key -- delivery re-ids attachments; position is the stable identity
-            <View key={index} className="flex-row" style={{ gap: StyleSheet.hairlineWidth }}>
-              <View className="min-w-0 flex-1">{item.content}</View>
-              {media[index * 2 + 1] ? (
-                <View className="min-w-0 flex-1">{media[index * 2 + 1]!.content}</View>
-              ) : null}
-            </View>
-          ))
-      )}
-      <View pointerEvents="none" className="absolute inset-0 rounded-[20px] border border-border" />
-    </View>
-  ) : (
+  return (
     <View className="items-end gap-2">
       {media.map((item, index) => (
         <View

@@ -4683,6 +4683,8 @@
   "9605dc349bd2c872": "Référence de {label} dans {source}",
   "51e507aa054ee63b": "Enregistrer de façon sécurisée",
   "4ba3eff83827c2d4": "Refuser",
+  "35eba31dbe20c0ec": "Replier",
+  "8326f46f519bfafb": "Déplier ({count})",
   "1c4391ec5c411ba7": "Impossible d’arrêter le workflow",
   "fece74611dcf4173": "Impossible d’arrêter l’agent",
   "9ce30f31a483c017": "Arrêt du workflow {label}",
