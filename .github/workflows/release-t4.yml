@@ -852,7 +852,10 @@ jobs:
             exit 1
           fi
           if [[ "$RELEASE_MODE" == "append-existing" ]]; then
-            mac_files=(release-assets/*.dmg release-assets/*.zip release-assets/latest-mac.yml)
+            mac_files=(release-assets/*.dmg release-assets/*.zip release-assets/*.dmg.blockmap release-assets/*.zip.blockmap)
+            if [[ -e release-assets/latest-mac.yml ]]; then
+              mac_files+=(release-assets/latest-mac.yml)
+            fi
             if [[ ${#mac_files[@]} -ne 0 ]]; then
               echo "Refusing to overwrite macOS assets in append-existing mode: ${mac_files[*]}" >&2
               exit 1
