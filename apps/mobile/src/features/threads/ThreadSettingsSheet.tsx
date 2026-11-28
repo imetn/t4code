@@ -21,9 +21,8 @@ import type {
   ServerSettings,
   ThreadId,
 } from "@t3tools/contracts";
-import type { LegendListRenderItemProps } from "@legendapp/list/react-native";
+import { LegendList, type LegendListRenderItemProps } from "@legendapp/list/react-native";
 import { RegistryContext, useAtomMount, useAtomValue } from "@effect/atom-react";
-import { AnimatedLegendList } from "@legendapp/list/reanimated";
 import {
   getProviderOptionCurrentLabel,
   getProviderOptionCurrentValue,
@@ -56,10 +55,11 @@ import { withUniwind } from "uniwind";
 import { READABLE_WIDTH_STYLE, ROW_MIN_HEIGHT } from "../../components/ui/listMetrics";
 import { RefreshControl } from "../../components/ui/RefreshControl";
 import Animated, {
-  FadeIn,
-  FadeOut,
-  LinearTransition,
+  ReduceMotion,
+  useAnimatedStyle,
   useReducedMotion,
+  useSharedValue,
+  withTiming,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
@@ -137,10 +137,6 @@ const THREAD_SETTINGS_MAINTAIN_VISIBLE_CONTENT_POSITION = {
   data: false,
   size: true,
 } as const;
-const THREAD_SETTINGS_CATALOG_LAYOUT_TRANSITION = LinearTransition.duration(160);
-const THREAD_SETTINGS_TAB_LAYOUT_TRANSITION = LinearTransition.duration(150);
-const THREAD_SETTINGS_CATALOG_ENTER_TRANSITION = FadeIn.duration(120);
-const THREAD_SETTINGS_CATALOG_EXIT_TRANSITION = FadeOut.duration(100);
 const EMPTY_MODEL_FAVORITES: ReadonlyArray<{
   readonly provider: ProviderInstanceId;
   readonly model: string;
@@ -687,11 +683,7 @@ function subProviderCatalogItems(
   group: ProviderGroup,
   models: ReadonlyArray<ModelOption>,
 ): ReadonlyArray<ThreadSettingsCatalogItem> | null {
-  if (
-    !group.subProviders?.length ||
-    session.searchQuery.trim().length > 0 ||
-    session.activeTab === "favorites"
-  ) {
+  if (!group.subProviders?.length || session.searchQuery.trim().length > 0) {
     return null;
   }
   const { ungrouped, groups } = groupModelsBySubProvider(
@@ -951,18 +943,46 @@ function ThreadSettingsTopBar(props: {
   const tabsScrollRef = useRef<ScrollViewInstance>(null);
   const tabLayoutsRef = useRef(new Map<string, { readonly x: number; readonly width: number }>());
   const tabsViewportWidthRef = useRef(0);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the active provider tab centered in the horizontal ScrollView after swipe switches
-  useEffect(() => {
-    const layout = tabLayoutsRef.current.get(session.activeTab);
-    if (!layout || tabsViewportWidthRef.current <= 0) return;
-    const targetX = Math.max(0, layout.x + layout.width / 2 - tabsViewportWidthRef.current / 2);
-    tabsScrollRef.current?.scrollTo({ x: targetX, animated: true });
-  }, [session.activeTab]);
 
   const reducedMotion = useReducedMotion();
   const reduceMotionEnabled = useReduceMotionEnabled();
-  const tabLayoutTransition =
-    !reducedMotion && !reduceMotionEnabled ? THREAD_SETTINGS_TAB_LAYOUT_TRANSITION : undefined;
+  const animateIndicator = !reducedMotion && !reduceMotionEnabled;
+  const indicatorX = useSharedValue(0);
+  const indicatorWidth = useSharedValue(0);
+  const indicatorOpacity = useSharedValue(0);
+  const indicatorReadyRef = useRef(false);
+
+  const syncIndicatorToTab = useEffectEvent((tabKey: string, animated: boolean) => {
+    const layout = tabLayoutsRef.current.get(tabKey);
+    if (!layout || layout.width <= 0) return;
+    if (!indicatorReadyRef.current || !animated || !animateIndicator) {
+      indicatorReadyRef.current = true;
+      indicatorX.set(layout.x);
+      indicatorWidth.set(layout.width);
+      indicatorOpacity.set(1);
+    } else {
+      indicatorX.set(withTiming(layout.x, { duration: 150, reduceMotion: ReduceMotion.System }));
+      indicatorWidth.set(
+        withTiming(layout.width, { duration: 150, reduceMotion: ReduceMotion.System }),
+      );
+      indicatorOpacity.set(1);
+    }
+    if (tabsViewportWidthRef.current > 0) {
+      const targetX = Math.max(0, layout.x + layout.width / 2 - tabsViewportWidthRef.current / 2);
+      tabsScrollRef.current?.scrollTo({ x: targetX, animated });
+    }
+  });
+
+  const indicatorStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: indicatorX.get() }],
+    width: indicatorWidth.get(),
+    opacity: indicatorOpacity.get(),
+  }));
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- glides the persistent native Liquid Glass pill and scrolls the horizontal tab bar when activeTab changes
+  useEffect(() => {
+    syncIndicatorToTab(session.activeTab, true);
+  }, [session.activeTab]);
 
   if (showSearch) {
     return (
@@ -1110,61 +1130,72 @@ function ThreadSettingsTopBar(props: {
         keyboardShouldPersistTaps="handled"
         onLayout={(event) => {
           tabsViewportWidthRef.current = event.nativeEvent.layout.width;
+          syncIndicatorToTab(session.activeTab, false);
         }}
         contentContainerStyle={{
+          position: "relative",
           alignItems: "center",
           gap: 6,
           paddingVertical: 1,
         }}
       >
         <Animated.View
-          layout={tabLayoutTransition}
+          pointerEvents="none"
+          style={[
+            {
+              position: "absolute",
+              top: 1,
+              left: 0,
+              height: 30,
+              borderRadius: 9999,
+            },
+            indicatorStyle,
+          ]}
+        >
+          <NativeGlassCapsule
+            isDarkMode={isDarkMode}
+            fallbackBackgroundColor={surface.activeTab}
+            interactive={false}
+            className="size-full"
+          >
+            <View className="size-full" />
+          </NativeGlassCapsule>
+        </Animated.View>
+
+        <Pressable
+          accessibilityLabel={gt("Favorites")}
+          accessibilityRole="tab"
+          accessibilityState={{ selected: favoritesActive }}
           onLayout={(event) => {
             tabLayoutsRef.current.set("favorites", {
               x: event.nativeEvent.layout.x,
               width: event.nativeEvent.layout.width,
             });
+            if (session.activeTab === "favorites") {
+              syncIndicatorToTab("favorites", indicatorReadyRef.current);
+            }
           }}
-        >
-          {favoritesActive ? (
-            <NativeGlassCapsule isDarkMode={isDarkMode} fallbackBackgroundColor={surface.activeTab}>
-              <Pressable
-                accessibilityLabel={gt("Favorites")}
-                accessibilityRole="tab"
-                accessibilityState={{ selected: true }}
-                onPress={() => {
-                  void Haptics.selectionAsync();
-                  session.setActiveTab("favorites");
-                }}
-                className="h-[30px] flex-row items-center justify-center gap-1.5 rounded-full px-3 active:opacity-70"
-              >
-                <SymbolView name="star.fill" size={15} tintColor="#f59e0b" type="monochrome" />
-                <Text className="text-[13px] font-t3-semibold text-foreground">
-                  {gt("Favorites")}
-                </Text>
-              </Pressable>
-            </NativeGlassCapsule>
-          ) : (
-            <Pressable
-              accessibilityLabel={gt("Favorites")}
-              accessibilityRole="tab"
-              accessibilityState={{ selected: false }}
-              onPress={() => {
-                void Haptics.selectionAsync();
-                session.setActiveTab("favorites");
-              }}
-              className="h-[30px] w-[34px] flex-row items-center justify-center rounded-full active:opacity-70"
-            >
-              <SymbolView
-                name="star.fill"
-                size={15}
-                tintColorClassName="accent-foreground"
-                style={{ opacity: 0.84 }}
-                type="monochrome"
-              />
-            </Pressable>
+          onPress={() => {
+            void Haptics.selectionAsync();
+            session.setActiveTab("favorites");
+          }}
+          className={cn(
+            "h-[30px] flex-row items-center justify-center rounded-full active:opacity-70",
+            favoritesActive ? "gap-1.5 px-3" : "w-[34px]",
           )}
-        </Animated.View>
+        >
+          <SymbolView
+            name="star.fill"
+            size={15}
+            tintColor={favoritesActive ? "#f59e0b" : undefined}
+            tintColorClassName={favoritesActive ? undefined : "accent-foreground"}
+            style={favoritesActive ? undefined : { opacity: 0.84 }}
+            type="monochrome"
+          />
+          {favoritesActive ? (
+            <Text className="text-[13px] font-t3-semibold text-foreground">{gt("Favorites")}</Text>
+          ) : null}
+        </Pressable>
 
         <View
           className="mx-0.5 h-3.5 w-px"
@@ -1177,55 +1208,36 @@ function ThreadSettingsTopBar(props: {
           const driver = group.models[0]?.providerDriver ?? group.providerKey;
           const iconUrl = group.models[0]?.providerIconUrl;
           return (
-            <Animated.View
+            <Pressable
               key={group.providerKey}
-              layout={tabLayoutTransition}
+              accessibilityLabel={group.providerLabel}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: isActive }}
               onLayout={(event) => {
                 tabLayoutsRef.current.set(group.providerKey, {
                   x: event.nativeEvent.layout.x,
                   width: event.nativeEvent.layout.width,
                 });
+                if (session.activeTab === group.providerKey) {
+                  syncIndicatorToTab(group.providerKey, indicatorReadyRef.current);
+                }
               }}
-            >
-              {isActive ? (
-                <NativeGlassCapsule
-                  isDarkMode={isDarkMode}
-                  fallbackBackgroundColor={surface.activeTab}
-                >
-                  <Pressable
-                    accessibilityLabel={group.providerLabel}
-                    accessibilityRole="tab"
-                    accessibilityState={{ selected: true }}
-                    onPress={() => {
-                      void Haptics.selectionAsync();
-                      session.setActiveTab(group.providerKey);
-                    }}
-                    className="h-[30px] flex-row items-center justify-center gap-1.5 rounded-full px-3 active:opacity-70"
-                  >
-                    <ProviderIcon iconUrl={iconUrl} provider={driver} size={17} />
-                    <Text
-                      className="text-[13px] font-t3-semibold text-foreground"
-                      numberOfLines={1}
-                    >
-                      {group.providerLabel}
-                    </Text>
-                  </Pressable>
-                </NativeGlassCapsule>
-              ) : (
-                <Pressable
-                  accessibilityLabel={group.providerLabel}
-                  accessibilityRole="tab"
-                  accessibilityState={{ selected: false }}
-                  onPress={() => {
-                    void Haptics.selectionAsync();
-                    session.setActiveTab(group.providerKey);
-                  }}
-                  className="h-[30px] w-[34px] flex-row items-center justify-center rounded-full active:opacity-70"
-                >
-                  <ProviderIcon iconUrl={iconUrl} provider={driver} size={17} />
-                </Pressable>
+              onPress={() => {
+                void Haptics.selectionAsync();
+                session.setActiveTab(group.providerKey);
+              }}
+              className={cn(
+                "h-[30px] flex-row items-center justify-center rounded-full active:opacity-70",
+                isActive ? "gap-1.5 px-3" : "w-[34px]",
               )}
-            </Animated.View>
+            >
+              <ProviderIcon iconUrl={iconUrl} provider={driver} size={17} />
+              {isActive ? (
+                <Text className="text-[13px] font-t3-semibold text-foreground" numberOfLines={1}>
+                  {group.providerLabel}
+                </Text>
+              ) : null}
+            </Pressable>
           );
         })}
       </ScrollView>
@@ -1761,17 +1773,11 @@ function ThreadSettingsSheetBody(props: { readonly onClose: () => void }) {
       });
   };
 
-  const [listLoaded, setListLoaded] = useState(false);
-  const reducedMotion = useReducedMotion();
-  const reduceMotionEnabled = useReduceMotionEnabled();
-  const animationsReady = listLoaded && !reducedMotion && !reduceMotionEnabled;
-
   const isSearching = session.searchQuery.trim().length > 0;
   const tabKeys: readonly ActiveTab[] = [
     "favorites",
     ...session.providerGroups.map((group) => group.providerKey),
   ];
-  const activeTabIndex = Math.max(0, tabKeys.indexOf(session.activeTab));
   const pagerRef = useRef<ScrollViewInstance>(null);
   const [pagerWidth, setPagerWidth] = useState(0);
   const lastPagerWidthRef = useRef(0);
@@ -1873,15 +1879,7 @@ function ThreadSettingsSheetBody(props: { readonly onClose: () => void }) {
       );
     }
 
-    return (
-      <Animated.View
-        key={item.key}
-        entering={animationsReady ? THREAD_SETTINGS_CATALOG_ENTER_TRANSITION : undefined}
-        exiting={animationsReady ? THREAD_SETTINGS_CATALOG_EXIT_TRANSITION : undefined}
-      >
-        {content}
-      </Animated.View>
-    );
+    return content;
   };
 
   const favoriteOrderSignature = session.favoriteOrderKeys.join(",");
@@ -1890,10 +1888,11 @@ function ThreadSettingsSheetBody(props: { readonly onClose: () => void }) {
     const items = buildCatalogItemsForTab(session, tab, m, locale);
     const data: ReadonlyArray<ThreadSettingsCatalogItem> =
       items.length === 0 ? [{ kind: "empty", key: `empty:${tab}` }] : items;
+    const extraData = `${tab}:${session.displayedModelSelection?.model ?? ""}:${favoriteOrderSignature}:${isDarkMode ? "d" : "l"}`;
     return (
       <View className="relative min-h-0 flex-1 overflow-hidden">
         {/* oxlint-disable-next-line t3code/require-registered-list-scroll -- Sheet content; sits above the sticky thumb deck. */}
-        <AnimatedLegendList
+        <LegendList
           alwaysBounceVertical
           nestedScrollEnabled
           className="flex-1"
@@ -1901,15 +1900,8 @@ function ThreadSettingsSheetBody(props: { readonly onClose: () => void }) {
           contentContainerStyle={{ paddingTop: 4, paddingBottom: 10 }}
           data={data}
           estimatedItemSize={39}
-          extraData={[
-            animationsReady,
-            tab,
-            session.displayedModelSelection?.model,
-            favoriteOrderSignature,
-            isDarkMode,
-          ]}
+          extraData={extraData}
           getItemType={(item) => item.kind}
-          itemLayoutAnimation={THREAD_SETTINGS_CATALOG_LAYOUT_TRANSITION}
           keyExtractor={(item) => item.key}
           keyboardDismissMode="on-drag"
           keyboardShouldPersistTaps="handled"
@@ -1920,7 +1912,6 @@ function ThreadSettingsSheetBody(props: { readonly onClose: () => void }) {
               <RefreshControl refreshing={isRefreshingProviders} onRefresh={refreshProviders} />
             ) : undefined
           }
-          onLoad={() => setListLoaded(true)}
           renderItem={renderCatalogItem}
           showsVerticalScrollIndicator={false}
         />
@@ -1983,7 +1974,6 @@ function ThreadSettingsSheetBody(props: { readonly onClose: () => void }) {
               scrollEventThrottle={16}
               showsHorizontalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
-              contentOffset={{ x: activeTabIndex * pagerWidth, y: 0 }}
               onScrollBeginDrag={() => {
                 programmaticTargetIndexRef.current = null;
               }}
