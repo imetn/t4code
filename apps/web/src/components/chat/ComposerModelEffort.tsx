@@ -8,8 +8,8 @@ import type { ProviderOptionDescriptor, RuntimeMode } from "@t3tools/contracts";
 import type { EffortDisplay } from "@t3tools/contracts/settings";
 import { getProviderOptionCurrentLabel } from "@t3tools/shared/model";
 import { msg, T, useGT, useMessages } from "gt-react";
-import { CheckIcon, ChevronRightIcon, ChevronUpIcon, WorkflowIcon } from "lucide-react";
-import { type KeyboardEvent, type ReactNode, use, useRef, useState } from "react";
+import { ChevronDownIcon, ChevronUpIcon, WorkflowIcon } from "lucide-react";
+import { type KeyboardEvent, type PointerEvent, type ReactNode, useRef, useState } from "react";
 
 import { m, type MessageResolver } from "~/i18n/messages";
 import { cn } from "~/lib/utils";
@@ -27,7 +27,6 @@ import type { ComposerControlSize } from "./ComposerControl";
 import { ComposerPermissionsSection, type RuntimeModeOption } from "./ComposerFooterControls";
 import { composerFloatingLayerProps, focusCheckedPermission } from "./composerEventScope";
 import { EffortGlyph, FastBolt, resolveEffortGlyph } from "./EffortGlyph";
-import { DockedPickerContext } from "./ProviderModelPicker";
 import {
   getTraitsSectionVisibility,
   type TraitsSelectionInput,
@@ -38,7 +37,6 @@ import {
 type SelectDescriptor = Extract<ProviderOptionDescriptor, { type: "select" }>;
 type BooleanDescriptor = Extract<ProviderOptionDescriptor, { type: "boolean" }>;
 
-/** Service tiers, Claude's Fast mode, and Ultracode sit in the footer, not the column. */
 function splitSpeed(
   selects: ReadonlyArray<SelectDescriptor>,
   toggles: ReadonlyArray<BooleanDescriptor>,
@@ -61,10 +59,6 @@ type ColumnControl =
   | { kind: "select"; descriptor: SelectDescriptor }
   | { kind: "boolean"; descriptor: BooleanDescriptor };
 
-/**
- * The column lists the model's reasoning levels under the header that names it. Other options,
- * such as an agent's session mode, sit below as one row each.
- */
 function columnControls(
   selects: ReadonlyArray<SelectDescriptor>,
   toggles: ReadonlyArray<BooleanDescriptor>,
@@ -76,6 +70,164 @@ function columnControls(
   ];
   const effort = controls.find((control) => isReasoningControl(control.descriptor)) ?? null;
   return { effort, others: controls.filter((control) => control !== effort) };
+}
+
+type PowerTier = "neutral" | "cobalt" | "prism";
+type StarfieldDensity = "low" | "med" | "high" | "max";
+
+const PRISM_LEVEL_IDS = new Set(["max", "ultra", "ultracode", "ultrathink"]);
+const COBALT_LEVEL_IDS = new Set(["high", "xhigh", "extra_high", "extra-high", "extrahigh"]);
+const LOW_LEVEL_IDS = new Set(["none", "off", "minimal", "low"]);
+
+function resolvePowerVisuals(input: {
+  selectedId: string | undefined;
+  selectedIndex: number;
+  count: number;
+}): {
+  tier: PowerTier;
+  density: StarfieldDensity;
+  percent: number;
+} {
+  const normalizedId = input.selectedId?.toLowerCase() ?? "";
+  const safeCount = Math.max(input.count, 1);
+  const ratio =
+    safeCount <= 1 ? 1 : Math.max(0, Math.min(1, input.selectedIndex / (safeCount - 1)));
+  // Keep minimum fill wide enough for the 22px circular thumb; full width on the final stop.
+  const percent =
+    safeCount <= 1
+      ? 100
+      : input.selectedIndex <= 0
+        ? LOW_LEVEL_IDS.has(normalizedId) && (normalizedId === "none" || normalizedId === "off")
+          ? 12
+          : 24
+        : Math.round(24 + ratio * 76);
+
+  if (
+    PRISM_LEVEL_IDS.has(normalizedId) ||
+    (safeCount >= 4 && input.selectedIndex === safeCount - 1 && !COBALT_LEVEL_IDS.has(normalizedId))
+  ) {
+    return { tier: "prism", density: "max", percent };
+  }
+  if (COBALT_LEVEL_IDS.has(normalizedId) || ratio >= 0.65) {
+    return { tier: "cobalt", density: "high", percent };
+  }
+  if (LOW_LEVEL_IDS.has(normalizedId) || ratio <= 0.25) {
+    return { tier: "neutral", density: "low", percent };
+  }
+  return { tier: "neutral", density: "med", percent };
+}
+
+/**
+ * Pure circular particle starfield flowing left-to-right (zero 4-point sparkles).
+ * Tiled twice across 0..600 so translating -50% -> 0% loops seamlessly.
+ */
+function PowerSliderStarfield(props: { density: StarfieldDensity }) {
+  const showMedium = props.density !== "low";
+  const showHigh = props.density === "high" || props.density === "max";
+  const showMax = props.density === "max";
+  return (
+    <svg
+      aria-hidden="true"
+      className="model-picker-starfield"
+      data-density={props.density}
+      viewBox="0 0 600 28"
+      preserveAspectRatio="none"
+    >
+      {[0, 300].map((offset) => (
+        <g key={offset} transform={`translate(${offset} 0)`}>
+          <circle cx="24" cy="9" r="0.95" fill="currentColor" opacity="0.55" />
+          <circle cx="76" cy="20" r="1.05" fill="currentColor" opacity="0.65" />
+          <circle cx="142" cy="11" r="0.9" fill="currentColor" opacity="0.5" />
+          <circle cx="212" cy="19" r="1.15" fill="currentColor" opacity="0.72" />
+          <circle cx="268" cy="10" r="1.0" fill="currentColor" opacity="0.6" />
+          {showMedium ? (
+            <>
+              <circle cx="48" cy="18" r="0.85" fill="currentColor" opacity="0.52" />
+              <circle cx="110" cy="8" r="1.1" fill="currentColor" opacity="0.7" />
+              <circle cx="176" cy="21" r="0.95" fill="currentColor" opacity="0.6" />
+              <circle cx="240" cy="14" r="1.15" fill="currentColor" opacity="0.76" />
+            </>
+          ) : null}
+          {showHigh ? (
+            <>
+              <line
+                x1="60"
+                y1="10"
+                x2="72"
+                y2="10"
+                stroke="currentColor"
+                strokeOpacity="0.34"
+                strokeWidth="1"
+                strokeLinecap="round"
+              />
+              <line
+                x1="158"
+                y1="19"
+                x2="174"
+                y2="19"
+                stroke="currentColor"
+                strokeOpacity="0.4"
+                strokeWidth="1.1"
+                strokeLinecap="round"
+              />
+              <line
+                x1="234"
+                y1="9"
+                x2="248"
+                y2="9"
+                stroke="currentColor"
+                strokeOpacity="0.38"
+                strokeWidth="1.05"
+                strokeLinecap="round"
+              />
+              <circle cx="94" cy="16" r="1.2" fill="currentColor" opacity="0.84" />
+              <circle cx="192" cy="8" r="1.25" fill="currentColor" opacity="0.86" />
+              <circle cx="284" cy="18" r="1.15" fill="currentColor" opacity="0.8" />
+            </>
+          ) : null}
+          {showMax ? (
+            <>
+              <line
+                x1="16"
+                y1="20"
+                x2="32"
+                y2="20"
+                stroke="currentColor"
+                strokeOpacity="0.45"
+                strokeWidth="1.15"
+                strokeLinecap="round"
+              />
+              <line
+                x1="106"
+                y1="12"
+                x2="124"
+                y2="12"
+                stroke="currentColor"
+                strokeOpacity="0.5"
+                strokeWidth="1.2"
+                strokeLinecap="round"
+              />
+              <line
+                x1="200"
+                y1="16"
+                x2="220"
+                y2="16"
+                stroke="currentColor"
+                strokeOpacity="0.54"
+                strokeWidth="1.25"
+                strokeLinecap="round"
+              />
+              <circle cx="34" cy="20" r="1.3" fill="currentColor" opacity="0.94" />
+              <circle cx="126" cy="12" r="1.4" fill="currentColor" opacity="0.96" />
+              <circle cx="222" cy="16" r="1.45" fill="currentColor" opacity="0.96" />
+              <circle cx="152" cy="8" r="1.15" fill="currentColor" opacity="0.85" />
+              <circle cx="260" cy="22" r="1.2" fill="currentColor" opacity="0.88" />
+            </>
+          ) : null}
+        </g>
+      ))}
+    </svg>
+  );
 }
 
 /**
@@ -107,7 +259,6 @@ export function describeComposerEffort(
     },
     resolve,
   );
-  // The same reasoning control the column lists, wherever the agent put it among its options.
   const reasoning =
     columnControls(visibility.selectDescriptors, visibility.booleanDescriptors).effort
       ?.descriptor ?? null;
@@ -121,7 +272,6 @@ export function describeComposerEffort(
             : getDescriptorStringValue(reasoning, modelSelection, traits.reportedModelSelection),
         )
       : null;
-  // Workflow levels such as Ultracode always show their name; the setting names every level.
   const word = glyph
     ? (glyph.special ?? (effortDisplay === "label" ? glyph.label : null))
     : !reasoning
@@ -138,7 +288,6 @@ export function describeComposerEffort(
               traits.reportedModelSelection,
             ) ?? (reasoning.id === "thinking" ? reasoning.label : null));
   const fast = display.speedLabel === "Fast" || display.speedLabel === "Ultrafast";
-  // Agent options such as modes live in the picker; the trigger adds only the context window.
   const contextWindow =
     visibility.contextWindowDescriptor &&
     getProviderOptionCurrentLabel(
@@ -154,7 +303,6 @@ export function describeComposerEffort(
       <span
         className={cn(
           "flex shrink-0 items-center gap-1.5 text-muted-foreground group-hover/model-trigger:text-foreground group-data-pressed/model-trigger:text-foreground group-data-popup-open/model-trigger:text-foreground",
-          // A word space after the model name: the regular trigger's gap is wider than one.
           size === "sm" && "-ms-0.5",
         )}
       >
@@ -171,7 +319,6 @@ export function describeComposerEffort(
         ) : null}
         {contextWindow ? (
           <span
-            // A label, so icon-only footers drop it; compacted rows drop it before the model.
             data-composer-control-label
             data-composer-secondary-trait
             className="max-w-24 truncate text-xs"
@@ -182,65 +329,6 @@ export function describeComposerEffort(
       </span>
     ),
   };
-}
-
-const COLUMN_ROW =
-  "flex h-8 w-full shrink-0 cursor-pointer items-center gap-2 rounded-sm px-2 text-left text-sm text-foreground outline-none hover:bg-foreground/[0.09] focus-visible:bg-foreground/[0.09] disabled:cursor-not-allowed disabled:opacity-64";
-const COLUMN_LABEL = "px-2 pt-1.5 pb-1 font-medium text-muted-foreground text-xs";
-
-function ColumnRow(props: {
-  label: string;
-  /** Shown on hover; the column is too narrow to print it under the label. */
-  description?: string | undefined;
-  selected: boolean;
-  /** The column's one tab stop: the selected level, else the first when none shows as selected. */
-  tabStop: boolean;
-  isDefault?: boolean | undefined;
-  disabled?: boolean;
-  onPick: () => void;
-}) {
-  const gt = useGT();
-  const rowProps = {
-    type: "button",
-    role: "radio",
-    "aria-checked": props.selected,
-    disabled: props.disabled,
-    "data-effort-row": true,
-    // Focus lands on a level after a model pick, and a typed letter finds one by its label.
-    "data-effort-level": props.label,
-    // Up and Down move between rows.
-    tabIndex: props.tabStop ? 0 : -1,
-    className: COLUMN_ROW,
-    onClick: props.onPick,
-  } as const;
-  const content = (
-    <>
-      <span className="min-w-0 flex-1 truncate">{props.label}</span>
-      {props.selected ? (
-        <>
-          {props.isDefault ? (
-            <span className="sr-only">
-              {gt("Default", { $context: "marks the default option" })}
-            </span>
-          ) : null}
-          <CheckIcon aria-hidden="true" className="size-3.5" />
-        </>
-      ) : props.isDefault ? (
-        <span className="text-muted-foreground/70 text-xs">
-          {gt("Default", { $context: "marks the default option" })}
-        </span>
-      ) : null}
-    </>
-  );
-  if (!props.description) return <button {...rowProps}>{content}</button>;
-  return (
-    <Tooltip>
-      <TooltipTrigger render={<button {...rowProps} />}>{content}</TooltipTrigger>
-      <TooltipPopup side="right" className="max-w-56">
-        {props.description}
-      </TooltipPopup>
-    </Tooltip>
-  );
 }
 
 function moveBetweenRows(event: KeyboardEvent<HTMLElement>) {
@@ -255,7 +343,6 @@ function moveBetweenRows(event: KeyboardEvent<HTMLElement>) {
       event.nativeEvent.isComposing)
   )
     return;
-  // An option's side menu is a React child here, but it moves through its own items.
   if (!event.currentTarget.contains(event.target as Node)) return;
   const rows = Array.from(
     event.currentTarget.querySelectorAll<HTMLButtonElement>("[data-effort-row]:not(:disabled)"),
@@ -273,132 +360,175 @@ function moveBetweenRows(event: KeyboardEvent<HTMLElement>) {
   next.scrollIntoView({ block: "nearest" });
 }
 
-function EffortLevels(props: { traits: TraitsSelectionInput }) {
-  const traits = useTraitsSelection(props.traits);
-  const { effort, others } = columnControls(traits.selectDescriptors, traits.booleanDescriptors);
-  if (traits.modelIsUnavailable) {
-    return (
-      <>
-        {traits.descriptors.map((descriptor) => {
-          const value = traits.currentLabel(descriptor);
-          return value ? (
-            <div key={descriptor.id}>
-              <div className={COLUMN_LABEL}>{descriptor.label}</div>
-              <div className="px-2 pb-1.5 text-muted-foreground/80 text-xs">{value}</div>
-            </div>
-          ) : null;
-        })}
-      </>
-    );
-  }
-  if (!effort && others.length === 0) return <NoEffortRow />;
-  // Ultrathink in the prompt locks the levels; the first option then holds the tab stop.
-  const locked =
-    effort?.descriptor.id === traits.primarySelectDescriptor?.id && traits.ultrathinkInBodyText;
+type SliderChoice = {
+  readonly id: string;
+  readonly label: string;
+  readonly description?: string | undefined;
+};
+
+function ReasoningPowerSlider(props: {
+  ariaLabel: string;
+  choices: ReadonlyArray<SliderChoice>;
+  selectedId: string;
+  disabled?: boolean;
+  onSelect: (id: string) => void;
+}) {
+  const trackRef = useRef<HTMLDivElement>(null);
+  const draggingRef = useRef(false);
+  const selectedIndex = Math.max(
+    0,
+    props.choices.findIndex((choice) => choice.id === props.selectedId),
+  );
+  const shown = props.choices.some((choice) => choice.id === props.selectedId);
+  const activeChoice = props.choices[selectedIndex];
+  const visuals = resolvePowerVisuals({
+    selectedId: activeChoice?.id,
+    selectedIndex,
+    count: props.choices.length,
+  });
+  const labelFitsInside = visuals.percent >= 28;
+
+  const pickAtClientX = (clientX: number) => {
+    if (props.disabled || props.choices.length === 0) return;
+    const rect = trackRef.current?.getBoundingClientRect();
+    if (!rect || rect.width <= 0) return;
+    const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    const nextIndex =
+      props.choices.length <= 1 ? 0 : Math.round(ratio * (props.choices.length - 1));
+    const target = props.choices[nextIndex];
+    if (target && target.id !== props.selectedId) {
+      props.onSelect(target.id);
+    }
+  };
+
+  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    if (props.disabled || event.button !== 0) return;
+    draggingRef.current = true;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    pickAtClientX(event.clientX);
+  };
+
+  const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    if (!draggingRef.current || props.disabled) return;
+    pickAtClientX(event.clientX);
+  };
+
+  const handlePointerUp = () => {
+    draggingRef.current = false;
+  };
+
   return (
-    <>
-      {effort ? <EffortRows control={effort} traits={traits} locked={locked} /> : null}
-      {others.length > 0 ? (
-        <div
-          className={cn("flex flex-col gap-0.5", effort && "mt-1 border-t border-border/70 pt-1")}
-        >
-          {others.map((control, index) =>
-            control.kind === "boolean" ? (
-              <OptionSwitchRow
-                key={control.descriptor.id}
-                descriptor={control.descriptor}
-                traits={traits}
-                tabStop={(!effort || locked) && index === 0}
-              />
-            ) : (
-              <OptionMenuRow
-                key={control.descriptor.id}
-                descriptor={control.descriptor}
-                traits={traits}
-                tabStop={(!effort || locked) && index === 0}
-              />
-            ),
-          )}
-        </div>
+    <div
+      ref={trackRef}
+      role="radiogroup"
+      aria-label={props.ariaLabel}
+      className={cn(
+        "model-picker-power-track w-full",
+        props.disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer",
+      )}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+    >
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 z-1 flex items-center justify-between px-3.5"
+      >
+        {props.choices.map((choice) => (
+          <span key={choice.id} className="size-1 rounded-full bg-foreground/20" />
+        ))}
+      </div>
+
+      <div
+        className="model-picker-power-fill pointer-events-none"
+        data-power-tier={visuals.tier}
+        style={{ width: `${visuals.percent}%` }}
+      >
+        <PowerSliderStarfield density={visuals.density} />
+        {labelFitsInside && activeChoice ? (
+          <span className="model-picker-power-label">{activeChoice.label}</span>
+        ) : null}
+        <span className="model-picker-power-thumb" />
+      </div>
+
+      {!labelFitsInside && activeChoice ? (
+        <span className="model-picker-power-label-outside">{activeChoice.label}</span>
       ) : null}
-    </>
+
+      {/* Accessible radio stops span the track so click, Tab, arrows, and first-letter focus work natively. */}
+      <div className="absolute inset-0 z-5 flex">
+        {props.choices.map((choice, index) => {
+          const isChecked = choice.id === props.selectedId;
+          return (
+            <button
+              key={choice.id}
+              type="button"
+              role="radio"
+              aria-checked={isChecked}
+              aria-label={choice.label}
+              disabled={props.disabled}
+              data-effort-row
+              data-effort-level={choice.label}
+              tabIndex={shown ? (isChecked ? 0 : -1) : index === 0 ? 0 : -1}
+              className="h-full flex-1 cursor-pointer rounded-full bg-transparent outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset disabled:cursor-not-allowed"
+              onClick={() => props.onSelect(choice.id)}
+            />
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
 type TraitsSelection = ReturnType<typeof useTraitsSelection>;
 
-function EffortRows(props: { control: ColumnControl; traits: TraitsSelection; locked: boolean }) {
+function EffortSliderSection(props: {
+  control: ColumnControl;
+  traits: TraitsSelection;
+  locked: boolean;
+}) {
   const gt = useGT();
   const messages = useMessages();
-  const { control, traits } = props;
-  const { descriptor } = control;
+  const { control, traits, locked } = props;
   if (control.kind === "boolean") {
+    const choices: ReadonlyArray<SliderChoice> = [
+      { id: "false", label: gt("Off", { $context: "option state" }) },
+      { id: "true", label: gt("On", { $context: "option state" }) },
+    ];
     return (
-      <div role="radiogroup" aria-label={descriptor.label} className="flex flex-col gap-0.5">
-        {([true, false] as const).map((value) => (
-          <ColumnRow
-            key={String(value)}
-            label={
-              value
-                ? gt("On", { $context: "option state" })
-                : gt("Off", { $context: "option state" })
-            }
-            selected={(control.descriptor.currentValue === true) === value}
-            tabStop={(control.descriptor.currentValue === true) === value}
-            onPick={() => traits.changeBoolean(descriptor.id, value)}
-          />
-        ))}
-      </div>
+      <ReasoningPowerSlider
+        ariaLabel={control.descriptor.label}
+        choices={choices}
+        selectedId={control.descriptor.currentValue === true ? "true" : "false"}
+        onSelect={(id) => traits.changeBoolean(control.descriptor.id, id === "true")}
+      />
     );
   }
-  const { locked } = props;
   const value = traits.selectValue(control.descriptor);
   const choices = selectableProviderOptionChoices(control.descriptor);
-  // An "Ultrathink:" prefix selects a level the column does not offer.
-  const shown = choices.some((option) => option.id === value);
   return (
-    <div role="radiogroup" aria-label={descriptor.label} className="flex flex-col gap-0.5">
+    <div className="flex flex-col gap-1.5">
       {locked ? (
-        <div className="px-2 pb-1.5 text-muted-foreground/80 text-xs">
-          {messages(ULTRATHINK_IN_BODY_NOTE)}
-        </div>
+        <div className="text-xs text-muted-foreground/80">{messages(ULTRATHINK_IN_BODY_NOTE)}</div>
       ) : null}
-      {choices.map((option, index) => (
-        <ColumnRow
-          key={option.id}
-          label={option.label}
-          selected={option.id === value}
-          tabStop={shown ? option.id === value : index === 0}
-          description={option.description}
-          isDefault={option.isDefault}
-          disabled={locked}
-          onPick={() => traits.changeSelect(control.descriptor, option.id)}
-        />
-      ))}
+      <ReasoningPowerSlider
+        ariaLabel={control.descriptor.label}
+        choices={choices}
+        selectedId={value}
+        disabled={locked}
+        onSelect={(id) => traits.changeSelect(control.descriptor, id)}
+      />
     </div>
   );
 }
 
-const OPTION_ROW = cn(COLUMN_ROW, "h-auto py-1");
+const OPTION_CHIP =
+  "flex h-7 max-w-full cursor-pointer items-center gap-1.5 rounded-md px-2 text-left text-xs text-muted-foreground outline-none transition-colors hover:bg-foreground/8 hover:text-foreground focus-visible:bg-foreground/8 focus-visible:text-foreground";
 
-/** An option's name over its current value. */
-function OptionRowText(props: { label: string; value: string }) {
-  return (
-    <span className="flex min-w-0 flex-1 flex-col">
-      <span className="truncate text-muted-foreground text-xs">{props.label}</span>
-      <span className="truncate">{props.value}</span>
-    </span>
-  );
-}
-
-/**
- * One select besides reasoning, such as an agent's session mode. It names the current choice and
- * opens the rest beside the column, so any number of options leaves the levels in place.
- */
 function OptionMenuRow(props: {
   descriptor: SelectDescriptor;
   traits: TraitsSelection;
-  /** Holds the column's tab stop when the model has no levels. */
   tabStop: boolean;
 }) {
   const gt = useGT();
@@ -411,7 +541,6 @@ function OptionMenuRow(props: {
   return (
     <Menu
       open={open}
-      // A modal menu would cover the picker, so the next click there would only close it.
       modal={false}
       onOpenChange={setOpen}
       onOpenChangeComplete={(isOpen) => {
@@ -423,7 +552,6 @@ function OptionMenuRow(props: {
         checked?.scrollIntoView({ block: "nearest" });
       }}
     >
-      {/* No hover opening: an opened menu takes focus, which would steal typing from search. */}
       <MenuTrigger
         render={
           <button
@@ -431,7 +559,10 @@ function OptionMenuRow(props: {
             data-effort-row
             tabIndex={props.tabStop ? 0 : -1}
             aria-label={`${descriptor.label}: ${current}`}
-            className={cn(OPTION_ROW, "data-popup-open:bg-foreground/[0.09]")}
+            className={cn(
+              OPTION_CHIP,
+              "data-popup-open:bg-foreground/8 data-popup-open:text-foreground",
+            )}
             onKeyDown={(event) => {
               if (event.key !== "ArrowRight") return;
               event.preventDefault();
@@ -441,18 +572,18 @@ function OptionMenuRow(props: {
           />
         }
       >
-        <OptionRowText label={descriptor.label} value={current} />
-        <ChevronRightIcon
-          aria-hidden="true"
-          className="-me-1 size-3.5 shrink-0 text-muted-foreground"
-        />
+        <span className="truncate text-muted-foreground">{descriptor.label}</span>
+        <span className="text-muted-foreground/50" aria-hidden="true">
+          ·
+        </span>
+        <span className="truncate font-medium text-foreground">{current}</span>
+        <ChevronDownIcon aria-hidden="true" className="size-3 shrink-0 text-muted-foreground" />
       </MenuTrigger>
       <MenuPopup
         ref={popupRef}
-        side="right"
+        side="top"
         align="start"
         sideOffset={6}
-        // A full-width column on phones leaves no room beside it, so fall below or above.
         collisionAvoidance={{ fallbackAxisSide: "end" }}
         className="max-w-72"
         data-model-picker-option-menu
@@ -477,13 +608,13 @@ function OptionMenuRow(props: {
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate">{choice.label}</span>
                   {choice.description ? (
-                    <span className="line-clamp-2 text-muted-foreground text-xs">
+                    <span className="line-clamp-2 text-xs text-muted-foreground">
                       {choice.description}
                     </span>
                   ) : null}
                 </span>
                 {choice.isDefault ? (
-                  <span className="text-muted-foreground/70 text-xs">
+                  <span className="text-xs text-muted-foreground/70">
                     {gt("Default", { $context: "marks the default option" })}
                   </span>
                 ) : null}
@@ -497,23 +628,16 @@ function OptionMenuRow(props: {
   );
 }
 
-/** A two-state option toggles in place; a menu would add a click for nothing. */
 function OptionSwitchRow(props: {
   descriptor: BooleanDescriptor;
   traits: TraitsSelection;
   tabStop: boolean;
 }) {
-  const gt = useGT();
   const { descriptor, traits } = props;
   const checked = descriptor.currentValue === true;
   return (
-    <label className={cn(OPTION_ROW, "has-focus-visible:bg-foreground/[0.09]")}>
-      <OptionRowText
-        label={descriptor.label}
-        value={
-          checked ? gt("On", { $context: "option state" }) : gt("Off", { $context: "option state" })
-        }
-      />
+    <label className={cn(OPTION_CHIP, "has-focus-visible:bg-foreground/8")}>
+      <span className="truncate text-foreground/85">{descriptor.label}</span>
       <Switch
         size="sm"
         checked={checked}
@@ -526,80 +650,46 @@ function OptionSwitchRow(props: {
   );
 }
 
-function NoEffortRow() {
-  return (
-    <div className="flex h-8 items-center px-2 text-muted-foreground text-sm">
-      <T>No effort levels</T>
-    </div>
-  );
-}
-
-/** The model picker's effort column: the selected model's levels and its other options. */
-export function ComposerEffortColumn(props: { traits: TraitsSelectionInput | null }) {
-  const gt = useGT();
-  const messages = useMessages();
-  const picker = use(DockedPickerContext);
-  const visibility = props.traits
-    ? getTraitsSectionVisibility({ ...props.traits, resolve: messages })
-    : null;
-  const controls =
-    props.traits && visibility
-      ? columnControls(visibility.selectDescriptors, visibility.booleanDescriptors)
-      : null;
-  return (
-    <>
-      {/* Matches the search row's box, so one rule runs across the top of the popup. */}
-      <div className="shrink-0 px-3 pt-2.5">
-        <div className="flex h-8.25 -translate-y-px items-center gap-2 border-b border-border/70 pb-1.5 text-sm">
-          <span className="text-muted-foreground">
-            {controls?.effort?.descriptor.label ??
-              (controls?.others.length
-                ? gt("Options", { $context: "heading for model options" })
-                : gt("Effort", { $context: "heading for reasoning effort levels" }))}
-          </span>
-          <span className="ms-auto min-w-0 truncate text-muted-foreground text-xs">
-            {picker.modelLabel}
-          </span>
-        </div>
-      </div>
-      {/* pt-2.5 puts the first level on the same line as the first model. */}
-      <div
-        className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto overscroll-contain px-2 pt-2.5 pb-1.5"
-        // Capture, so Up and Down on an option row move rows instead of opening its menu.
-        onKeyDownCapture={moveBetweenRows}
-      >
-        {props.traits ? <EffortLevels traits={props.traits} /> : <NoEffortRow />}
-      </div>
-    </>
-  );
-}
-
-const FOOTER_SEGMENT =
-  "flex h-6 cursor-pointer items-center justify-center gap-1 px-2 text-muted-foreground text-xs outline-none first:rounded-l-md last:rounded-r-md hover:text-foreground data-checked:bg-input/72 data-checked:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
-
 function SpeedSegment(props: {
   checked: boolean;
   label: string;
-  /** The untranslated speed name that picks the bolt, when `label` is translated. */
+  compact?: boolean;
   speed?: string;
   description?: string | undefined;
   onPick: () => void;
 }) {
   const speed = props.speed ?? props.label;
+  const isFast = speed === "Fast" || speed === "Ultrafast";
+  const shortLabel =
+    props.compact && speed === "Standard"
+      ? "Std"
+      : props.compact && speed === "Ultrafast" && !props.checked
+        ? ""
+        : props.compact && speed === "Fast" && !props.checked
+          ? ""
+          : props.compact && speed === "Ultrafast"
+            ? "Ultra"
+            : speed === "Standard"
+              ? "Std"
+              : props.label;
   const buttonProps = {
     type: "button",
     role: "radio",
     "aria-checked": props.checked,
-    "data-checked": props.checked || undefined,
-    className: FOOTER_SEGMENT,
+    "aria-label": props.label,
+    "data-checked": props.checked ? "true" : undefined,
+    className:
+      "model-picker-speed-option focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
     onClick: props.onPick,
   } as const;
   const content = (
     <>
-      {speed === "Fast" || speed === "Ultrafast" ? (
-        <FastBolt ultra={speed === "Ultrafast"} />
+      {isFast ? (
+        <span className={cn("inline-flex items-center", props.checked && "text-warning")}>
+          <FastBolt ultra={speed === "Ultrafast"} />
+        </span>
       ) : null}
-      {props.label}
+      {shortLabel ? <span>{shortLabel}</span> : null}
     </>
   );
   if (!props.description) return <button {...buttonProps}>{content}</button>;
@@ -611,26 +701,29 @@ function SpeedSegment(props: {
   );
 }
 
-function SpeedControl(props: { traits: TraitsSelectionInput }) {
+function SpeedControl(props: { traits: TraitsSelection }) {
   const gt = useGT();
-  const traits = useTraitsSelection(props.traits);
+  const { traits } = props;
   const { speedSelect, fastToggle } = splitSpeed(
     traits.selectDescriptors,
     traits.booleanDescriptors,
   );
   if (traits.modelIsUnavailable || (!speedSelect && !fastToggle)) return null;
+  const choices = speedSelect ? selectableProviderOptionChoices(speedSelect) : [];
+  const compact = choices.length >= 3;
   return (
     <div
       role="radiogroup"
       aria-label={speedSelect?.label ?? fastToggle?.label}
-      className="flex rounded-lg bg-input/40 p-0.5"
+      className="model-picker-speed-group shrink-0"
     >
       {speedSelect
-        ? selectableProviderOptionChoices(speedSelect).map((option) => (
+        ? choices.map((option) => (
             <SpeedSegment
               key={option.id}
               checked={option.id === traits.selectValue(speedSelect)}
               label={option.label}
+              compact={compact}
               description={option.description}
               onPick={() => traits.changeSelect(speedSelect, option.id)}
             />
@@ -660,12 +753,12 @@ function UltracodeControl(props: { traits: TraitsSelectionInput }) {
   if (traits.modelIsUnavailable || !ultracodeToggle) return null;
   const on = ultracodeToggle.currentValue === true;
   return (
-    <div className="flex rounded-lg bg-input/40 p-0.5">
+    <div className="model-picker-speed-group">
       <button
         type="button"
         aria-pressed={on}
-        data-checked={on || undefined}
-        className={FOOTER_SEGMENT}
+        data-checked={on ? "true" : undefined}
+        className="model-picker-speed-option focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
         onClick={() => traits.changeBoolean(ultracodeToggle.id, !on)}
       >
         <WorkflowIcon aria-hidden="true" className="size-3" />
@@ -673,6 +766,100 @@ function UltracodeControl(props: { traits: TraitsSelectionInput }) {
       </button>
     </div>
   );
+}
+
+function EffortSectionContent(props: { traits: TraitsSelectionInput }) {
+  const gt = useGT();
+  const traits = useTraitsSelection(props.traits);
+  const { effort, others } = columnControls(traits.selectDescriptors, traits.booleanDescriptors);
+  const { speedSelect, fastToggle } = splitSpeed(
+    traits.selectDescriptors,
+    traits.booleanDescriptors,
+  );
+  const hasSpeed = !traits.modelIsUnavailable && (speedSelect !== null || fastToggle !== null);
+
+  if (traits.modelIsUnavailable) {
+    if (traits.descriptors.length === 0) return null;
+    return (
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3.5 py-2.5">
+        {traits.descriptors.map((descriptor) => {
+          const value = traits.currentLabel(descriptor);
+          return value ? (
+            <div key={descriptor.id} className="flex items-center gap-1.5 text-xs">
+              <span className="text-muted-foreground">{descriptor.label}</span>
+              <span className="font-medium text-foreground/85">{value}</span>
+            </div>
+          ) : null;
+        })}
+      </div>
+    );
+  }
+
+  if (!effort && !hasSpeed && others.length === 0) {
+    return (
+      <div className="flex h-8 items-center px-3.5 text-xs text-muted-foreground">
+        <T>No effort levels</T>
+      </div>
+    );
+  }
+
+  const locked =
+    effort?.descriptor.id === traits.primarySelectDescriptor?.id && traits.ultrathinkInBodyText;
+  const heading =
+    effort?.descriptor.label ??
+    (hasSpeed
+      ? gt("Speed", { $context: "heading for model speed control" })
+      : gt("Options", { $context: "heading for model options" }));
+
+  return (
+    <div
+      className="flex flex-col gap-2.5 border-t border-border/60 bg-muted/20 px-3.5 py-2.5"
+      onKeyDownCapture={moveBetweenRows}
+    >
+      {effort || hasSpeed ? (
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs font-medium text-foreground/80">{heading}</span>
+          <SpeedControl traits={traits} />
+        </div>
+      ) : null}
+
+      {effort ? <EffortSliderSection control={effort} traits={traits} locked={locked} /> : null}
+
+      {others.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-1 pt-0.5">
+          {others.map((control, index) =>
+            control.kind === "boolean" ? (
+              <OptionSwitchRow
+                key={control.descriptor.id}
+                descriptor={control.descriptor}
+                traits={traits}
+                tabStop={(!effort || locked) && index === 0}
+              />
+            ) : (
+              <OptionMenuRow
+                key={control.descriptor.id}
+                descriptor={control.descriptor}
+                traits={traits}
+                tabStop={(!effort || locked) && index === 0}
+              />
+            ),
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** The model picker's power zone: full-capsule reasoning slider, inline speed toggle, and extra options. */
+export function ComposerEffortColumn(props: { traits: TraitsSelectionInput | null }) {
+  if (!props.traits) {
+    return (
+      <div className="flex h-8 items-center border-t border-border/60 bg-muted/20 px-3.5 text-xs text-muted-foreground">
+        <T>No effort levels</T>
+      </div>
+    );
+  }
+  return <EffortSectionContent traits={props.traits} />;
 }
 
 /** Permissions change rarely, so the footer names the mode and nests the choice in a menu. */
@@ -699,12 +886,12 @@ function PermissionsMenu(props: {
             type="button"
             data-composer-permissions-trigger
             aria-label={gt("Permissions: {mode}", { mode: current.label })}
-            className="ms-auto flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2 text-muted-foreground text-xs outline-none hover:bg-foreground/[0.09] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset data-popup-open:bg-foreground/[0.09] data-popup-open:text-foreground"
+            className="ms-auto flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground outline-none transition-colors hover:bg-foreground/8 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset data-popup-open:bg-foreground/8 data-popup-open:text-foreground"
           />
         }
       >
         <CurrentIcon aria-hidden="true" className="size-3.5" />
-        {current.label}
+        <span className="font-medium text-foreground/85">{current.label}</span>
         <ChevronUpIcon aria-hidden="true" className="size-3" />
       </MenuTrigger>
       <MenuPopup side="top" align="end" {...composerFloatingLayerProps}>
@@ -718,7 +905,7 @@ function PermissionsMenu(props: {
   );
 }
 
-/** The model picker's footer: speed stays one click away, permissions sit one menu deeper. */
+/** The model picker's quiet bottom strip: Ultracode (when present) and permissions menu. */
 export function ComposerPickerFooter(props: {
   traits: TraitsSelectionInput | null;
   runtimeMode: RuntimeMode;
@@ -726,8 +913,7 @@ export function ComposerPickerFooter(props: {
   onRuntimeModeChange: (mode: RuntimeMode) => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 border-t border-border/70 bg-muted/40 px-3 py-2">
-      {props.traits ? <SpeedControl traits={props.traits} /> : null}
+    <div className="flex min-h-9 flex-wrap items-center gap-2 border-t border-border/60 bg-muted/30 px-3 py-1">
       {props.traits ? <UltracodeControl traits={props.traits} /> : null}
       <PermissionsMenu
         runtimeMode={props.runtimeMode}

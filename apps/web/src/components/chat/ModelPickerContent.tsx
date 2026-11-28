@@ -27,23 +27,21 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { ChevronRightIcon } from "lucide-react";
+import { ChevronRightIcon, SearchIcon, XIcon } from "lucide-react";
 import { ModelListRow } from "./ModelListRow";
 import { ModelPickerSidebar } from "./ModelPickerSidebar";
 import { useProviderWorkspaceSnapshotRefresh } from "./useProviderWorkspaceSnapshotRefresh";
 import { getProviderStatusMessage, hasProviderSetup } from "./ProviderStatusBanner";
 import {
-  modelPickerLegacySectionKey,
   modelPickerModelKey,
   modelPickerSubProviderSectionKey,
-  parseModelPickerLegacySectionKey,
   parseModelPickerModelKey,
 } from "./modelPickerKeys";
 import { rankModelPickerSearch } from "@t3tools/client-runtime/model-search";
 import {
   Combobox,
   ComboboxEmpty,
-  ComboboxSearchInput,
+  ComboboxInput,
   ComboboxItem,
   ComboboxListVirtualized,
 } from "../ui/combobox";
@@ -63,7 +61,6 @@ import {
 } from "~/hooks/useSettings";
 import { announce } from "~/lib/announce";
 import { cn } from "~/lib/utils";
-import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
 import { TooltipProvider } from "../ui/tooltip";
 import { InlineButton } from "../ui/button";
 import { Badge } from "../ui/badge";
@@ -173,11 +170,7 @@ function adjacentModelPickerProvider(input: {
 }
 
 const EMPTY_MODEL_JUMP_LABELS = new Map<string, string>();
-const MODEL_LIST_ESTIMATED_ITEM_SIZE = 32;
-// Rendered heights in `--spacing` units. Chrome is the search box and list padding, plus a 1px border.
-const ROW_UNITS = 8;
-const ROW_SEPARATOR_UNITS = 0.5;
-const LIST_CHROME_UNITS = 15.5;
+const MODEL_LIST_ESTIMATED_ITEM_SIZE = 36;
 
 function ModelListSeparator() {
   return <div className="h-0.5" />;
@@ -226,9 +219,9 @@ function ModelPickerProviderNotices({
   return (
     <>
       {setupEntries.length > 0 ? (
-        <div className="max-h-44 shrink-0 overflow-y-auto border-t border-border/70 p-2">
+        <div className="max-h-40 shrink-0 overflow-y-auto border-t border-border/60 p-2.5">
           {setupEntries.map((entry) => (
-            <div key={entry.instanceId} className="px-1 py-1.5 text-xs leading-snug">
+            <div key={entry.instanceId} className="px-1 py-1 text-xs leading-snug">
               <p className="line-clamp-3 text-muted-foreground">
                 {getProviderStatusMessage(entry.snapshot, messages)}
               </p>
@@ -252,7 +245,7 @@ function ModelPickerProviderNotices({
       {updateRequiredNotices.map(({ instanceId, notice, canUpdateInSettings }) => (
         <p
           key={instanceId}
-          className="shrink-0 border-t border-border/70 px-3 py-2 text-xs leading-snug text-muted-foreground"
+          className="shrink-0 border-t border-border/60 px-3 py-2 text-xs leading-snug text-muted-foreground"
         >
           {notice}
           {canUpdateInSettings ? (
@@ -285,21 +278,20 @@ function ModelPickerList({
   extraData: unknown;
   renderItem: (props: { item: string; index: number }) => ReactNode;
 }) {
-  const [showTopScrollFade, setShowTopScrollFade] = useState(false);
   const [showBottomScrollFade, setShowBottomScrollFade] = useState(false);
   const updateScrollFades = () => {
     const metrics = listRef.current?.getState();
     if (!metrics) return;
-    setShowTopScrollFade(!metrics.isAtStart);
     setShowBottomScrollFade(!metrics.isAtEnd);
   };
   const scrollRef = useLegendListRef(listRef, updateScrollFades);
 
   return (
     <div
+      data-scroll-bottom={showBottomScrollFade && itemKeys.length > 5 ? "true" : undefined}
       className={cn(
-        "relative min-h-0 overflow-hidden pr-px",
-        itemKeys.length > 0 ? "flex-1" : "h-0",
+        "model-picker-list-fade relative min-h-0 overflow-hidden",
+        itemKeys.length > 0 ? "h-52 max-h-52 shrink-0" : "h-0",
       )}
     >
       <ComboboxListVirtualized>
@@ -312,18 +304,12 @@ function ModelPickerList({
           estimatedItemSize={MODEL_LIST_ESTIMATED_ITEM_SIZE}
           drawDistance={480}
           recycleItems
-          contentContainerClassName="pl-2 pr-px"
+          contentContainerClassName="px-2 py-1.5"
           ItemSeparatorComponent={ModelListSeparator}
           onLayout={updateScrollFades}
           onScroll={updateScrollFades}
           onReady={updateScrollFades}
-          className={cn(
-            "scrollbar-gutter-stable h-full overflow-x-hidden overscroll-y-contain py-1.5 [&::-webkit-scrollbar-track]:my-2",
-            getVirtualizedScrollFadeClassName({
-              top: showTopScrollFade,
-              bottom: showBottomScrollFade,
-            }),
-          )}
+          className="model-picker-scrollbar-none h-full overflow-x-hidden overscroll-y-contain"
         />
       </ComboboxListVirtualized>
     </div>
@@ -346,7 +332,6 @@ function WindowKeyDownListener({ onKeyDown }: { onKeyDown: (event: KeyboardEvent
 
 export const ModelPickerContent = memo(function ModelPickerContent(props: {
   environmentId: EnvironmentId | null;
-  /** Keeps the open provider tab's catalog fresh for this directory. */
   workspaceCwd?: string | null;
   activeInstanceId: ProviderInstanceId;
   model: string;
@@ -362,13 +347,9 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   onOpenProviderSetup?: (instanceId: ProviderInstanceId) => void;
   getModelDisabledReason?: (instanceId: ProviderInstanceId, model: string) => string | null;
   onInstanceModelChange: (instanceId: ProviderInstanceId, model: string) => void;
-  /** The owning popup moves focus here when it opens (its `initialFocus`). */
   searchInputRef: RefObject<HTMLInputElement | null>;
-  /** Sits beside an effort column: fills the shared row, and stacks above it on narrow screens. */
   docked?: boolean;
-  /** Right at the end of the search text moves into the popup's effort column. */
   onFocusEffort?: () => void;
-  /** Closes the list column, inside the popup's fixed height. */
   listFooter?: ReactNode;
 }) {
   const gt = useGT();
@@ -386,6 +367,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     onOpenProviderSetup,
   } = props;
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchExpanded, setSearchExpanded] = useState(false);
   const modelListRef = useRef<LegendListRef | null>(null);
   const pickerContentRef = useRef<HTMLDivElement>(null);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- publishes this picker's mount to global keydown handlers
@@ -469,16 +451,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     instanceId: selectedInstanceId === "favorites" ? undefined : selectedInstanceId,
   });
   const favoritesSet = new Set(favorites.map((fav) => providerModelKey(fav.provider, fav.model)));
-  const [expandedLegacyInstances, setExpandedLegacyInstances] = useState(
-    () =>
-      new Set<ProviderInstanceId>(
-        activeModel?.isLegacy &&
-          !favoritesSet.has(providerModelKey(props.activeInstanceId, activeModelSlug))
-          ? [props.activeInstanceId]
-          : [],
-      ),
-  );
-  // The thread's backend opens expanded, so its models show without a click.
   const [expandedSubProviderKeys, setExpandedSubProviderKeys] = useState(
     () =>
       new Set<string>(
@@ -489,7 +461,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   );
   const serverKeybindings = useAtomValue(primaryServerKeybindingsAtom);
   const keybindings = providedKeybindings ?? serverKeybindings;
-  const [searchHeight, setSearchHeight] = useState(0);
   const toggleFavorite = useToggleEnvironmentModelFavorite(props.environmentId);
 
   const focusSearchInput = () => {
@@ -498,22 +469,9 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
 
   const handleSelectInstance = (instanceId: ProviderInstanceId | "favorites") => {
     setSelectedInstanceId(instanceId);
-    // Focusing the search on touch raises the on-screen keyboard on every provider tap.
     if (window.matchMedia("(pointer: coarse)").matches) return;
     window.requestAnimationFrame(() => {
       focusSearchInput();
-    });
-  };
-
-  const toggleLegacySection = (instanceId: ProviderInstanceId) => {
-    setExpandedLegacyInstances((expanded) => {
-      const next = new Set(expanded);
-      if (next.has(instanceId)) {
-        next.delete(instanceId);
-      } else {
-        next.add(instanceId);
-      }
-      return next;
     });
   };
 
@@ -641,33 +599,8 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   );
   const isLocked = lockedProvider !== null;
   const isSearching = searchQuery.trim().length > 0;
-  // Fit the tallest tab so switching tabs never resizes the popup and moves the rail under the cursor.
-  const tallestTabUnits = (() => {
-    const unitsByTab = new Map<ProviderInstanceId | "favorites", number>();
-    const addRow = (tab: ProviderInstanceId | "favorites") => {
-      const previous = unitsByTab.get(tab);
-      unitsByTab.set(
-        tab,
-        previous === undefined ? ROW_UNITS : previous + ROW_SEPARATOR_UNITS + ROW_UNITS,
-      );
-    };
-    const tabsWithLegacyRow = new Set<ProviderInstanceId>();
-    for (const model of flatModels) {
-      if (!matchesLockedProvider(model)) continue;
-      const isFavorite = favoritesSet.has(providerModelKey(model.instanceId, model.slug));
-      if (isFavorite) addRow("favorites");
-      if (model.isLegacy && !isFavorite) {
-        tabsWithLegacyRow.add(model.instanceId);
-      } else {
-        addRow(model.instanceId);
-      }
-    }
-    for (const instanceId of tabsWithLegacyRow) addRow(instanceId);
-    for (const [instanceId, subProviders] of subProvidersByInstance) {
-      for (const _subProvider of subProviders) addRow(instanceId);
-    }
-    return Math.max(0, ...unitsByTab.values());
-  })();
+  const showSearchBar = isSearching || searchExpanded;
+
   const lockedDisabledInstanceIds = (() => {
     if (!isLocked) {
       return undefined;
@@ -696,13 +629,13 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     }
     return [...available, ...disabled];
   })();
-  const showSidebar = !isSearching && sidebarInstanceEntries.length > 0;
+  const showSidebar = !showSearchBar && sidebarInstanceEntries.length > 0;
   const instanceOrder = instanceEntries.map((entry) => entry.instanceId);
 
   const filteredModels = (() => {
     let result = flatModels;
 
-    if (searchQuery.trim()) {
+    if (isSearching) {
       const candidates =
         lockedProvider !== null ? result.filter((m) => matchesLockedProvider(m)) : result;
       return rankModelPickerSearch(candidates, searchQuery, (model) => ({
@@ -729,37 +662,23 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       result = result.filter((m) => m.instanceId === selectedInstanceId);
     }
 
-    return sortProviderModelItems(result, {
+    const sorted = sortProviderModelItems(result, {
       favoriteModelKeys: favoritesSet,
       groupFavorites: selectedInstanceId !== "favorites",
       instanceOrder: selectedInstanceId === "favorites" ? instanceOrder : [],
     });
-  })();
-
-  const legacySection = (() => {
-    if (isSearching || selectedInstanceId === "favorites") {
-      return null;
-    }
-    const currentModels: ModelPickerItem[] = [];
-    const legacyModels: ModelPickerItem[] = [];
-    for (const model of filteredModels) {
+    if (selectedInstanceId === "favorites") return sorted;
+    // Keep non-legacy models first and trail legacy models below so direct scrolling reveals all.
+    const current: ModelPickerItem[] = [];
+    const legacy: ModelPickerItem[] = [];
+    for (const model of sorted) {
       const isLegacy =
         model.isLegacy && !favoritesSet.has(providerModelKey(model.instanceId, model.slug));
-      (isLegacy ? legacyModels : currentModels).push(model);
+      (isLegacy ? legacy : current).push(model);
     }
-    if (legacyModels.length === 0) {
-      return null;
-    }
-    return {
-      key: modelPickerLegacySectionKey(selectedInstanceId),
-      currentModels,
-      legacyModels,
-      isExpanded: expandedLegacyInstances.has(selectedInstanceId),
-    };
+    return [...current, ...legacy];
   })();
 
-  // A provider whose models run on several backends, such as fx, lists each
-  // backend as a collapsible heading. Search and Favorites stay flat.
   const subProviderSections = (() => {
     const subProviders =
       isSearching || selectedInstanceId === "favorites"
@@ -798,13 +717,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
         ),
       ];
     }
-    if (!legacySection) {
-      return filteredModels;
-    }
-    return [
-      ...legacySection.currentModels,
-      ...(legacySection.isExpanded ? legacySection.legacyModels : []),
-    ];
+    return filteredModels;
   })();
 
   const selectedEntry =
@@ -848,11 +761,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     .map((model) => modelPickerModelKey(model.instanceId, model.slug));
   const allItemKeys = ((): string[] => [
     ...flatModels.map((model) => modelPickerModelKey(model.instanceId, model.slug)),
-    ...new Set(
-      flatModels
-        .filter((model) => model.isLegacy)
-        .map((model) => modelPickerLegacySectionKey(model.instanceId)),
-    ),
     ...[...subProvidersByInstance].flatMap(([instanceId, subProviders]) =>
       subProviders.map((subProvider) =>
         modelPickerSubProviderSectionKey(instanceId, subProvider.name),
@@ -870,9 +778,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
         ]),
       ];
     }
-    const modelKeys = visibleModels.map(keyOf);
-    // The toggle trails the list, so expanding it reveals older models above it.
-    return legacySection ? [...modelKeys, legacySection.key] : modelKeys;
+    return visibleModels.map(keyOf);
   })();
   const filteredModelByKey = ((): ReadonlyMap<string, ModelPickerItem> =>
     new Map(
@@ -897,6 +803,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     modelJumpLabelByKey,
     activeModelKey,
     selectedModelKeySet,
+    showProviderIcon: isSearching || selectedInstanceId === "favorites",
   };
 
   const onWindowKeyDown = (event: globalThis.KeyboardEvent) => {
@@ -925,6 +832,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
         selectableUnavailableInstanceIds,
       });
       setSearchQuery("");
+      setSearchExpanded(false);
       handleSelectInstance(next);
       announce(
         next === "favorites" ? gt("Favorites") : (entryByInstanceId.get(next)?.displayName ?? next),
@@ -955,48 +863,34 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     announce(gt("Model: {name}", { name: name ?? selectedSlug }), "model-picker");
   };
 
+  const openSearch = () => {
+    setSearchExpanded(true);
+    window.requestAnimationFrame(() => {
+      focusSearchInput();
+    });
+  };
+
+  const closeSearch = () => {
+    setSearchQuery("");
+    setSearchExpanded(false);
+    if (!window.matchMedia("(pointer: coarse)").matches) {
+      window.requestAnimationFrame(() => {
+        focusSearchInput();
+      });
+    }
+  };
+
   return (
     <TooltipProvider delay={0}>
       <WindowKeyDownListener onKeyDown={onWindowKeyDown} />
       <div
         ref={pickerContentRef}
         className={cn(
-          "relative flex w-screen max-w-90 flex-row overflow-hidden",
-          props.docked ? "max-sm:h-56 max-sm:w-full max-sm:max-w-none" : "max-h-86.5",
+          "relative flex flex-col overflow-hidden bg-popover",
+          props.docked ? "w-full" : "w-84 max-w-full",
         )}
-        // Docked, the popup sets the height; a minimum here would overflow short windows.
-        style={
-          props.docked
-            ? undefined
-            : isSearching
-              ? { height: searchHeight }
-              : {
-                  minHeight: `min(calc(var(--spacing) * ${tallestTabUnits + LIST_CHROME_UNITS} + 1px), calc(var(--spacing) * 86.5))`,
-                }
-        }
         data-model-picker-content="true"
       >
-        {showSidebar && (
-          <ModelPickerSidebar
-            selectedInstanceId={selectedInstanceId}
-            onSelectInstance={handleSelectInstance}
-            onFocusSearch={focusSearchInput}
-            instanceEntries={sidebarInstanceEntries}
-            showFavorites
-            {...(selectableUnavailableInstanceIds ? { selectableUnavailableInstanceIds } : {})}
-            {...(lockedDisabledInstanceIds
-              ? {
-                  disabledInstanceIds: lockedDisabledInstanceIds,
-                  getDisabledInstanceTooltip: (entry: ProviderInstanceEntry) =>
-                    gt(
-                      "{provider} is unavailable in this thread. Start a new thread to switch providers.",
-                      { provider: entry.displayName },
-                    ),
-                }
-              : {})}
-          />
-        )}
-
         <Combobox<string, boolean>
           inline
           items={allItemKeys}
@@ -1024,11 +918,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
             if (typeof modelKey !== "string") {
               return;
             }
-            const legacyInstanceId = parseModelPickerLegacySectionKey(modelKey);
-            if (legacyInstanceId) {
-              toggleLegacySection(legacyInstanceId);
-              return;
-            }
             if (subProviderSectionByKey.has(modelKey)) {
               toggleSubProviderSection(modelKey);
               return;
@@ -1043,132 +932,170 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
             }
           }}
         >
-          <div
-            className={cn(
-              "flex min-h-0 flex-1 flex-col overflow-hidden bg-muted/40",
-              showSidebar && "border-l border-border/70",
-            )}
-          >
-            <ComboboxSearchInput
-              ref={searchInputRef}
-              placeholder={gt("Search models...")}
-              value={searchQuery}
-              onChange={(e) => {
-                if (!isSearching) setSearchHeight(pickerContentRef.current?.offsetHeight ?? 0);
-                setSearchQuery(e.target.value);
-              }}
-              onKeyDown={(e) => {
-                if (e.nativeEvent.isComposing || e.keyCode === 229) {
-                  (e as typeof e & { preventBaseUIHandler?: () => void }).preventBaseUIHandler?.();
-                  e.stopPropagation();
-                  return;
+          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+            {showSidebar ? (
+              <ModelPickerSidebar
+                selectedInstanceId={selectedInstanceId}
+                onSelectInstance={handleSelectInstance}
+                onFocusSearch={focusSearchInput}
+                instanceEntries={sidebarInstanceEntries}
+                showFavorites
+                {...(selectableUnavailableInstanceIds ? { selectableUnavailableInstanceIds } : {})}
+                {...(lockedDisabledInstanceIds
+                  ? {
+                      disabledInstanceIds: lockedDisabledInstanceIds,
+                      getDisabledInstanceTooltip: (entry: ProviderInstanceEntry) =>
+                        gt(
+                          "{provider} is unavailable in this thread. Start a new thread to switch providers.",
+                          { provider: entry.displayName },
+                        ),
+                    }
+                  : {})}
+                trailing={
+                  <button
+                    type="button"
+                    aria-label={gt("Search models")}
+                    onClick={openSearch}
+                    className="flex size-7 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground focus-visible:bg-foreground/10 focus-visible:outline-none"
+                  >
+                    <SearchIcon className="size-3.5" aria-hidden="true" />
+                  </button>
                 }
-                if (
-                  showSidebar &&
-                  !e.altKey &&
-                  !e.ctrlKey &&
-                  !e.metaKey &&
-                  ((e.key === "ArrowLeft" && !e.shiftKey && searchQuery.length === 0) ||
-                    (e.key === "Tab" && e.shiftKey))
-                ) {
-                  const sidebar = e.currentTarget
-                    .closest("[data-model-picker-content]")
-                    ?.querySelector("[data-model-picker-sidebar]");
-                  const button =
-                    sidebar?.querySelector<HTMLButtonElement>(
-                      'button[aria-pressed="true"]:not(:disabled)',
-                    ) ?? sidebar?.querySelector<HTMLButtonElement>("button:not(:disabled)");
-                  if (button) {
+              />
+            ) : null}
+
+            {/* Persistent input keeps initialFocus and type-to-search active even while provider pills are shown. */}
+            <div
+              className={cn(
+                showSearchBar || sidebarInstanceEntries.length === 0
+                  ? "flex h-11 shrink-0 items-center gap-2 border-b border-border/60 px-3"
+                  : "sr-only",
+              )}
+            >
+              <SearchIcon
+                aria-hidden="true"
+                className="size-3.5 shrink-0 text-muted-foreground/70"
+              />
+              <ComboboxInput
+                ref={searchInputRef}
+                placeholder={gt("Search models...")}
+                value={searchQuery}
+                showTrigger={false}
+                size="sm"
+                unstyled
+                className="flex min-w-0 flex-1 [&_input]:h-7"
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  if (e.target.value.length > 0 && !searchExpanded) {
+                    setSearchExpanded(true);
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.nativeEvent.isComposing || e.keyCode === 229) {
+                    (
+                      e as typeof e & { preventBaseUIHandler?: () => void }
+                    ).preventBaseUIHandler?.();
+                    e.stopPropagation();
+                    return;
+                  }
+                  if (
+                    showSidebar &&
+                    !e.altKey &&
+                    !e.ctrlKey &&
+                    !e.metaKey &&
+                    ((e.key === "ArrowLeft" && !e.shiftKey && searchQuery.length === 0) ||
+                      (e.key === "Tab" && e.shiftKey))
+                  ) {
+                    const sidebar = e.currentTarget
+                      .closest("[data-model-picker-content]")
+                      ?.querySelector("[data-model-picker-sidebar]");
+                    const button =
+                      sidebar?.querySelector<HTMLButtonElement>(
+                        'button[aria-pressed="true"]:not(:disabled)',
+                      ) ?? sidebar?.querySelector<HTMLButtonElement>("button:not(:disabled)");
+                    if (button) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      button.focus();
+                      return;
+                    }
+                  }
+                  if (e.key === "Escape") {
                     e.preventDefault();
                     e.stopPropagation();
-                    button.focus();
+                    if (isSearching) {
+                      closeSearch();
+                      return;
+                    }
+                    onRequestClose?.();
                     return;
                   }
-                }
-                if (e.key === "Escape") {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  onRequestClose?.();
-                  return;
-                }
-                if (
-                  props.onFocusEffort &&
-                  e.key === "ArrowRight" &&
-                  !e.altKey &&
-                  !e.ctrlKey &&
-                  !e.metaKey &&
-                  !e.shiftKey &&
-                  e.currentTarget.selectionStart === searchQuery.length
-                ) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  // The column shows the selected model's effort, so a highlighted model is picked
-                  // first; the owning popup then moves focus to that model's levels.
-                  const highlighted = highlightedModelKeyRef.current
-                    ? parseModelPickerModelKey(highlightedModelKeyRef.current)
-                    : null;
-                  const pickedNew =
-                    highlighted !== null &&
-                    highlightedModelKeyRef.current !== activeModelKey &&
-                    handleModelSelect(highlighted.slug, highlighted.instanceId) !== null;
-                  if (!pickedNew) props.onFocusEffort();
-                  return;
-                }
-                if (e.key === "Enter" && highlightedModelKeyRef.current) {
-                  (e as typeof e & { preventBaseUIHandler?: () => void }).preventBaseUIHandler?.();
-                  e.preventDefault();
-                  e.stopPropagation();
-                  const legacyInstanceId = parseModelPickerLegacySectionKey(
-                    highlightedModelKeyRef.current,
-                  );
-                  if (legacyInstanceId) {
-                    toggleLegacySection(legacyInstanceId);
+                  if (
+                    props.onFocusEffort &&
+                    e.key === "ArrowRight" &&
+                    !e.altKey &&
+                    !e.ctrlKey &&
+                    !e.metaKey &&
+                    !e.shiftKey &&
+                    e.currentTarget.selectionStart === searchQuery.length
+                  ) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const highlighted = highlightedModelKeyRef.current
+                      ? parseModelPickerModelKey(highlightedModelKeyRef.current)
+                      : null;
+                    const pickedNew =
+                      highlighted !== null &&
+                      highlightedModelKeyRef.current !== activeModelKey &&
+                      handleModelSelect(highlighted.slug, highlighted.instanceId) !== null;
+                    if (!pickedNew) props.onFocusEffort();
                     return;
                   }
-                  if (subProviderSectionByKey.has(highlightedModelKeyRef.current)) {
-                    toggleSubProviderSection(highlightedModelKeyRef.current);
+                  if (e.key === "Enter" && highlightedModelKeyRef.current) {
+                    (
+                      e as typeof e & { preventBaseUIHandler?: () => void }
+                    ).preventBaseUIHandler?.();
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (subProviderSectionByKey.has(highlightedModelKeyRef.current)) {
+                      toggleSubProviderSection(highlightedModelKeyRef.current);
+                      return;
+                    }
+                    const model = parseModelPickerModelKey(highlightedModelKeyRef.current);
+                    if (model) {
+                      handleModelSelect(model.slug, model.instanceId, e.shiftKey);
+                    }
                     return;
                   }
-                  const model = parseModelPickerModelKey(highlightedModelKeyRef.current);
-                  if (model) {
-                    handleModelSelect(model.slug, model.instanceId, e.shiftKey);
-                  }
-                  return;
-                }
-                e.stopPropagation();
-              }}
-              onMouseDown={(e) => e.stopPropagation()}
-              onTouchStart={(e) => e.stopPropagation()}
-            />
+                  e.stopPropagation();
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+                onTouchStart={(e) => e.stopPropagation()}
+              />
+              {showSearchBar ? (
+                <button
+                  type="button"
+                  aria-label={gt("Clear search")}
+                  onClick={closeSearch}
+                  className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground"
+                >
+                  <XIcon className="size-3.5" aria-hidden="true" />
+                </button>
+              ) : null}
+            </div>
 
             <ModelPickerList
               listRef={modelListRef}
               itemKeys={filteredItemKeys}
               extraData={modelListExtraData}
               renderItem={({ item: modelKey, index }) => {
-                if (legacySection?.key === modelKey) {
-                  return (
-                    <ComboboxItem
-                      hideIndicator
-                      index={index}
-                      value={modelKey}
-                      aria-expanded={legacySection.isExpanded}
-                      className="group w-full cursor-pointer"
-                    >
-                      <span className="text-sm leading-snug text-muted-foreground group-hover:text-foreground group-data-highlighted:text-foreground">
-                        {legacySection.isExpanded
-                          ? gt("Show less", { $context: "collapses the list of older models" })
-                          : gt("Show more", { $context: "expands the list of older models" })}
-                      </span>
-                    </ComboboxItem>
-                  );
-                }
                 const subProviderSection = subProviderSectionByKey.get(modelKey);
                 if (subProviderSection) {
                   const unavailable = subProviderSection.unavailableReason !== undefined;
                   return (
                     <ComboboxItem
                       hideIndicator
+                      variant="picker"
                       index={index}
                       value={modelKey}
                       disabled={unavailable}
@@ -1186,7 +1113,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                             </Badge>
                           ) : null}
                         </div>
-                        <div className="mt-1 text-xs font-normal leading-snug text-muted-foreground">
+                        <div className="mt-0.5 text-xs font-normal leading-snug text-muted-foreground">
                           {subProviderSection.unavailableReason ??
                             gt("{count, plural, one {{count} model} other {{count} models}}", {
                               count: subProviderSection.models.length,
@@ -1230,6 +1157,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                         : modelKey === activeModelKey
                     }
                     favoriteStarOnHover={selectedInstanceId === "favorites" && !isSearching}
+                    showProviderIcon={isSearching || selectedInstanceId === "favorites"}
                     showInstanceBadge={badgedInstanceIds.has(model.instanceId)}
                     showNewBadge={model.badge === "new"}
                     unavailable={model.isUnavailable === true}

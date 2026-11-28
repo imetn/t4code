@@ -465,36 +465,32 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         {...(docked
           ? { side: "top" as const, collisionAvoidance: { side: "shift", align: "shift" } as const }
           : {})}
-        className="before:hidden"
+        variant="picker"
         padding="none"
         touchBackdrop
       >
         {props.effortColumn ? (
           <DockedPickerContext value={{ modelLabel: triggerTitle }}>
-            <div className="flex max-h-(--available-height) flex-col">
-              {/* One fixed height, so a model with more options never resizes the popup. Short
-                  windows shrink it and keep the footer. */}
-              <div className="flex h-86.5 min-h-0 max-sm:h-auto max-sm:flex-col">
-                {picker}
-                <div
-                  data-model-picker-effort
-                  className="flex min-h-0 w-48 flex-col sm:shrink-0 border-l border-border/70 bg-muted/40 max-sm:h-64 max-sm:w-full max-sm:border-t max-sm:border-l-0"
-                  onKeyDown={(event) => {
-                    if (event.key !== "ArrowLeft" || event.altKey || event.ctrlKey || event.metaKey)
-                      return;
-                    event.preventDefault();
-                    event.stopPropagation();
-                    searchInputRef.current?.focus();
-                  }}
-                >
-                  {props.effortColumn}
-                </div>
+            <div className="flex max-h-(--available-height) w-84 max-w-full flex-col overflow-hidden rounded-2xl">
+              {picker}
+              <div
+                data-model-picker-effort
+                className="flex shrink-0 flex-col"
+                onKeyDown={(event) => {
+                  if (event.key !== "ArrowLeft" || event.altKey || event.ctrlKey || event.metaKey)
+                    return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  searchInputRef.current?.focus();
+                }}
+              >
+                {props.effortColumn}
               </div>
               {props.footer}
             </div>
           </DockedPickerContext>
         ) : (
-          picker
+          <div className="w-84 max-w-full overflow-hidden rounded-2xl">{picker}</div>
         )}
         {props.selectedModels === undefined && !docked ? (
           <ChatGptSharingControl provider={activeEntry?.snapshot ?? null} />

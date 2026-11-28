@@ -47,7 +47,7 @@ function PopoverPopup({
   ...props
 }: PopoverPrimitive.Popup.Props & {
   padding?: keyof typeof popoverViewportPaddingClassName;
-  variant?: "default" | "panel";
+  variant?: "default" | "panel" | "picker";
   side?: PopoverPrimitive.Positioner.Props["side"];
   align?: PopoverPrimitive.Positioner.Props["align"];
   sideOffset?: PopoverPrimitive.Positioner.Props["sideOffset"];
@@ -104,6 +104,8 @@ function PopoverPopup({
               variant !== "panel" &&
               "shadow-[0_16px_40px_-18px_rgb(0_0_0/55%)] dark:shadow-[0_18px_44px_-18px_rgb(0_0_0/80%)]",
             width !== "auto" && ["max-w-[calc(100vw-2rem)]", popoverPopupWidthClassName[width]],
+            variant === "picker" &&
+              "rounded-2xl before:hidden [&>[data-slot=popover-viewport]]:rounded-2xl",
             variant === "panel" &&
               "w-full overflow-visible rounded-none border-0 bg-transparent shadow-none before:hidden [backdrop-filter:none] [-webkit-backdrop-filter:none]",
             className,
@@ -118,6 +120,7 @@ function PopoverPopup({
                 ? "py-1 [--viewport-inline-padding:--spacing(2)]"
                 : popoverViewportPaddingClassName[padding],
               !tooltipStyle && "not-data-transitioning:overflow-y-auto",
+              variant === "picker" && "rounded-2xl",
               variant === "panel" &&
                 "overflow-visible py-2 [--viewport-inline-padding:--spacing(2)]",
             )}

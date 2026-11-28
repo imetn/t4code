@@ -24,10 +24,9 @@ export const ModelListRow = memo(function ModelListRow(props: {
   acpRegistryAgentId?: string | undefined;
   acpRegistryIconUrl?: string | undefined;
   isFavorite: boolean;
-  /** In Favorites every row is starred, so the star shows only on hover. */
   favoriteStarOnHover?: boolean;
+  showProviderIcon?: boolean;
   isSelected: boolean;
-  /** Marks this instance apart from another of the same provider. */
   showInstanceBadge: boolean;
   showNewBadge?: boolean;
   unavailable?: boolean;
@@ -41,11 +40,13 @@ export const ModelListRow = memo(function ModelListRow(props: {
     name: props.name,
     subProvider: props.subProvider,
   };
+  const showProviderIcon = props.showProviderIcon ?? true;
 
   const row = (
     <ComboboxItem
       hideIndicator
-      selectedFill={false}
+      selectedFill
+      variant="picker"
       index={props.index}
       value={modelPickerModelKey(props.instanceId, props.slug)}
       disabled={Boolean(props.disabledReason)}
@@ -55,33 +56,34 @@ export const ModelListRow = memo(function ModelListRow(props: {
           "data-disabled:pointer-events-auto data-disabled:cursor-not-allowed",
       )}
     >
-      {/* One row shape in every tab: the logo names the provider, so Favorites needs no second line. */}
-      <ProviderInstanceIcon
-        driverKind={props.driverKind}
-        displayName={props.providerDisplayName}
-        accentColor={props.providerAccentColor}
-        acpRegistryAgentId={props.acpRegistryAgentId}
-        acpRegistryIconUrl={props.acpRegistryIconUrl}
-        showBadge={props.showInstanceBadge}
-        className="size-4"
-        iconClassName="size-4"
-        indicatorBackground="var(--popover)"
-        badgeClassName="right-[-0.125rem] bottom-[-0.125rem] h-3 min-w-3 px-0.5 text-5xs"
-      />
-      <div className="flex min-w-0 flex-1 items-center gap-2 text-left">
+      {showProviderIcon ? (
+        <ProviderInstanceIcon
+          driverKind={props.driverKind}
+          displayName={props.providerDisplayName}
+          accentColor={props.providerAccentColor}
+          acpRegistryAgentId={props.acpRegistryAgentId}
+          acpRegistryIconUrl={props.acpRegistryIconUrl}
+          showBadge={props.showInstanceBadge}
+          className="size-4"
+          iconClassName="size-3.5"
+          indicatorBackground="var(--popover)"
+          badgeClassName="right-[-0.125rem] bottom-[-0.125rem] h-3 min-w-3 px-0.5 text-5xs"
+        />
+      ) : null}
+      <div className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
         <div
-          className="min-w-0 truncate text-sm font-normal leading-snug"
-          // Names the row in full on hover only when it is cut off.
+          className={cn(
+            "min-w-0 truncate text-sm leading-snug",
+            props.isSelected ? "font-medium text-foreground" : "font-normal text-foreground/85",
+          )}
           onPointerEnter={(event) => {
             const name = event.currentTarget;
             name.title = name.scrollWidth > name.clientWidth ? getDisplayModelName(model) : "";
           }}
         >
           {getDisplayModelName(model)}
-          {/* The logo is decorative, so name the provider for screen readers. */}
           <span className="sr-only">, {props.providerDisplayName}</span>
         </div>
-        {props.isSelected ? <CheckIcon className="size-3.5 shrink-0" aria-hidden="true" /> : null}
         {props.subProvider ? (
           <span className="min-w-0 shrink truncate text-xs text-muted-foreground/70">
             {props.subProvider}
@@ -89,7 +91,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
         ) : null}
         {props.showNewBadge ? (
           <span
-            className="shrink-0 rounded border border-update/35 bg-update/15 px-0.5 py-px text-3xs font-bold uppercase leading-none tracking-wide text-update-foreground"
+            className="shrink-0 rounded-full bg-foreground/8 px-1.5 py-0.5 text-3xs font-semibold leading-none text-muted-foreground"
             aria-label={gt("New model")}
           >
             {gt("New", { $context: "badge on a newly added model" })}
@@ -103,6 +105,9 @@ export const ModelListRow = memo(function ModelListRow(props: {
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5">
+        {props.isSelected ? (
+          <CheckIcon className="size-3.5 shrink-0 text-foreground" aria-hidden="true" />
+        ) : null}
         <Tooltip>
           <TooltipTrigger
             render={
@@ -121,10 +126,13 @@ export const ModelListRow = memo(function ModelListRow(props: {
               >
                 <StarIcon
                   className={cn(
-                    "size-3.5 sm:size-3",
-                    props.isFavorite && "fill-current text-warning",
-                    (!props.isFavorite || props.favoriteStarOnHover) &&
-                      "opacity-0 group-hover:opacity-100 group-data-highlighted:opacity-100 in-focus-visible:opacity-100 pointer-coarse:opacity-100",
+                    "size-3.5 transition-opacity sm:size-3",
+                    props.isFavorite
+                      ? "fill-current text-warning"
+                      : "opacity-25 group-hover:opacity-80 group-data-highlighted:opacity-80 in-focus-visible:opacity-100 pointer-coarse:opacity-45",
+                    props.favoriteStarOnHover &&
+                      props.isFavorite &&
+                      "opacity-85 group-hover:opacity-100",
                   )}
                 />
               </Button>
@@ -134,7 +142,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
             {props.isFavorite ? gt("Remove from favorites") : gt("Add to favorites")}
           </TooltipPopup>
         </Tooltip>
-        {props.jumpLabel ? <Kbd>{props.jumpLabel}</Kbd> : null}
+        {props.jumpLabel ? <Kbd className="sr-only">{props.jumpLabel}</Kbd> : null}
       </div>
     </ComboboxItem>
   );

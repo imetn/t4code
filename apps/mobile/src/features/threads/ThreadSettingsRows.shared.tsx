@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { Pressable, View } from "react-native";
 import { AppText as Text } from "../../components/ui/AppText";
 import { SymbolView } from "../../components/ui/AppSymbol";
+import { ProviderIcon } from "../../components/ProviderIcon";
 import { cn } from "../../lib/cn";
 import type { ModelOption } from "../../lib/modelOptions";
 
@@ -15,6 +16,7 @@ export type ModelRowProps = {
   readonly onToggleFavorite: () => void;
   readonly onToggleHidden?: () => void;
   readonly hiddenUpdatePending?: boolean;
+  readonly showProviderIcon?: boolean;
   readonly isFirst: boolean;
   readonly isLast: boolean;
 };
@@ -46,10 +48,8 @@ export function ModelRowContent(
     <View
       style={props.minimumHeight === undefined ? undefined : { minHeight: props.minimumHeight }}
       className={cn(
-        "mx-4 min-h-[44px] flex-row items-center gap-2 bg-grouped-card px-4 android:min-h-[48px]",
-        props.selectedClassName,
-        props.isFirst && "rounded-t-2xl",
-        props.isLast ? "rounded-b-2xl" : "border-b border-border-subtle",
+        "mx-3 my-0.5 min-h-[46px] flex-row items-center gap-2 rounded-2xl px-3 android:min-h-[48px]",
+        props.selected ? (props.selectedClassName ?? "bg-subtle-strong") : "bg-transparent",
       )}
     >
       <Pressable
@@ -59,29 +59,34 @@ export function ModelRowContent(
           checked: props.selected,
           disabled: props.option.isUnavailable === true || props.option.isHidden === true,
         }}
-        className="min-h-[44px] min-w-0 flex-1 flex-row items-center gap-2 active:opacity-70 android:min-h-[48px]"
+        className="min-h-[46px] min-w-0 flex-1 flex-row items-center gap-2.5 active:opacity-70 android:min-h-[48px]"
         disabled={props.option.isUnavailable || props.option.isHidden}
         onPress={props.onPress}
       >
         {props.leadingSelection}
+        {props.showProviderIcon ? (
+          <ProviderIcon
+            iconUrl={props.option.providerIconUrl}
+            provider={props.option.providerDriver}
+            size={15}
+          />
+        ) : null}
         <View className="min-w-0 flex-1">
           <View className="flex-row items-center gap-2">
             <Text
-              className="min-w-0 shrink text-base font-t3-medium text-foreground"
+              className={cn(
+                "min-w-0 shrink text-base",
+                props.selected
+                  ? "font-t3-bold text-foreground"
+                  : "font-t3-medium text-foreground/90",
+              )}
               numberOfLines={props.labelNumberOfLines}
             >
               {props.option.label}
             </Text>
-            {props.option.isDefault ? (
-              <View className="rounded-md bg-subtle-strong px-1.5 py-0.5">
-                <Text className="text-3xs font-t3-bold text-foreground-muted">
-                  {gt("Default", { $context: "badge on the default model" })}
-                </Text>
-              </View>
-            ) : null}
             {props.option.isLegacy ? (
-              <View className="rounded-md bg-subtle px-1.5 py-0.5">
-                <Text className="text-3xs font-t3-bold text-foreground-muted">
+              <View className="rounded-full bg-subtle px-1.5 py-0.5">
+                <Text className="text-3xs font-t3-medium text-foreground-muted">
                   {gt("Legacy", { $context: "badge on an older model" })}
                 </Text>
               </View>
@@ -123,13 +128,13 @@ export function ModelRowContent(
           }
           accessibilityRole="button"
           accessibilityState={{ disabled: props.hiddenUpdatePending === true }}
-          className="min-h-[44px] min-w-[44px] items-center justify-center android:min-h-[48px] android:min-w-[48px]"
+          className="min-h-[40px] min-w-[36px] items-center justify-center"
           disabled={props.hiddenUpdatePending}
           onPress={props.onToggleHidden}
         >
           <SymbolView
             name={props.option.isHidden ? "eye.slash" : "eye"}
-            size={18}
+            size={16}
             tintColorClassName={props.option.isHidden ? "accent-icon-subtle" : "accent-icon"}
             type="monochrome"
           />
@@ -149,14 +154,16 @@ export function ModelRowContent(
         }
         accessibilityRole="button"
         accessibilityState={{ disabled: !props.favoritesLoaded, selected: props.isFavorite }}
-        className="min-h-[44px] min-w-[44px] items-center justify-center android:min-h-[48px] android:min-w-[48px]"
+        className="min-h-[40px] min-w-[36px] items-center justify-center"
         disabled={!props.favoritesLoaded}
         onPress={props.onToggleFavorite}
       >
         <SymbolView
           name={props.isFavorite ? "star.fill" : "star"}
-          size={18}
-          tintColorClassName={props.isFavorite ? "accent-icon" : "accent-icon-subtle"}
+          size={15}
+          tintColor={props.isFavorite ? "#f59e0b" : undefined}
+          tintColorClassName={props.isFavorite ? undefined : "accent-icon-subtle"}
+          style={props.isFavorite ? undefined : { opacity: 0.4 }}
           type="monochrome"
         />
       </Pressable>
