@@ -208,7 +208,7 @@ Each entry uses `<!-- t4-lock: <id> -->` and explicit path prefixes/files so `sc
   - **Zero telemetry / analytics** — never re-enable upstream OTLP/analytics/telemetry endpoints or PostHog/Sentry reporting.
   - **Self-hosted Relay & Reverse Proxy**: custom relay URL + custom Clerk publishable key / CLI OAuth client ID + live latency verification + `https` reverse-proxy issuer normalization + private-network HTTP peer linking + fail-closed relay allowlist.
   - **Tailscale auto-discovery & sign-in** (`tailnetSignIn` capability).
-  - **Signed & notarized macOS releases** via `scripts/release-t4.ts` (`Developer ID Application` + `xcrun stapler validate` + `spctl`).
+  - **Signed & notarized macOS releases** via `scripts/release-t4.ts` (`Developer ID Application` + `xcrun stapler validate` + `spctl`), paired with **GitHub Actions cloud append builds** in `.github/workflows/release-t4.yml` (`mode=append-existing`, default `targets=linux-and-windows`) that resolve and check out the exact commit of an existing `v<version>` tag, build `linux-x64` + `linux-arm64` single-executable CLI archives (with `t3-resource-monitor`, smoke tests, and `SHA256SUMS`) plus unsigned Windows `x64` NSIS installers (`T4-Code-<version>-x64.exe` / `.blockmap` / `latest.yml` on `windows-2025` with `T3CODE_TELEMETRY_CHANNEL=dev`, `T3CODE_DESKTOP_UPDATE_REPOSITORY=imetn/t4code`, static-CRT `x86_64-pc-windows-msvc` resource monitor, and embedded Linux `x64` WSL runtime), and upload non-destructively via `gh release upload --clobber` without touching locally signed macOS assets or release notes.
 
 ### 11. Antigravity & ACP Stability Guards
 
@@ -265,4 +265,3 @@ Each entry uses `<!-- t4-lock: <id> -->` and explicit path prefixes/files so `sc
   - `apps/web/src/index.css`
 - **Non-Negotiable Invariants**:
   - Native scrollbars are hidden globally (`scrollbar-width: none`, `::-webkit-scrollbar { display: none; width: 0; height: 0 }`, `--app-scrollbar-width: 0px`) across all scrollable containers, and `ScrollArea`'s overlay `ScrollBar` stays invisible (`pointer-events-none opacity-0`) during idle, hover, and scroll while preserving full scrolling behavior and Base UI thumb geometry.
-

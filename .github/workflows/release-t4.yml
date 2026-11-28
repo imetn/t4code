@@ -4,17 +4,35 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version without leading v (for example 0.1.14-t4.1)"
+        description: "Release version with or without leading v (for example 0.1.13-t4.20)"
         required: true
         type: string
+      mode:
+        description: "append-existing: upload Linux/Windows assets into an existing v<version> Release (preserves signed macOS assets & notes); full-release: create/update a Release"
+        required: false
+        default: append-existing
+        type: choice
+        options:
+          - append-existing
+          - full-release
+      targets:
+        description: "Build targets (append-existing defaults to linux-and-windows and blocks macOS to protect locally signed macOS assets)"
+        required: false
+        default: linux-and-windows
+        type: choice
+        options:
+          - linux-and-windows
+          - linux-only
+          - windows-only
+          - all
       draft:
-        description: "Create the GitHub Release as a draft"
+        description: "Create the GitHub Release as a draft (full-release mode only)"
         required: false
         default: false
         type: boolean
 
 concurrency:
-  group: release-t4-${{ github.ref }}
+  group: release-t4-${{ inputs.version || github.ref }}
   cancel-in-progress: false
 
 permissions:
@@ -31,42 +49,150 @@ jobs:
       tag: ${{ steps.meta.outputs.tag }}
       release_name: ${{ steps.meta.outputs.release_name }}
       ref: ${{ steps.meta.outputs.ref }}
+      mode: ${{ steps.meta.outputs.mode }}
+      include_mac: ${{ steps.meta.outputs.include_mac }}
+      include_linux: ${{ steps.meta.outputs.include_linux }}
+      include_windows: ${{ steps.meta.outputs.include_windows }}
       draft: ${{ steps.meta.outputs.draft }}
       make_latest: ${{ steps.meta.outputs.make_latest }}
     steps:
       - id: meta
-        name: Resolve release metadata
+        name: Resolve release metadata and target commit
         shell: bash
         env:
+          GH_TOKEN: ${{ github.token }}
           DISPATCH_VERSION: ${{ inputs.version }}
+          DISPATCH_MODE: ${{ inputs.mode }}
+          DISPATCH_TARGETS: ${{ inputs.targets }}
           DISPATCH_DRAFT: ${{ inputs.draft }}
         run: |
           set -euo pipefail
-          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
-            raw="${DISPATCH_VERSION}"
-          else
-            raw="${GITHUB_REF_NAME}"
-          fi
 
+          raw="$(printf '%s' "${DISPATCH_VERSION}" | xargs)"
           version="${raw#v}"
           if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-t4\.[0-9]+$ ]]; then
             echo "Invalid release version: $raw (expected X.Y.Z-t4.N)" >&2
             exit 1
           fi
 
+          tag="v$version"
+          mode="${DISPATCH_MODE:-append-existing}"
+          targets="${DISPATCH_TARGETS:-linux-and-windows}"
+
+          case "$mode" in
+            append-existing | full-release) ;;
+            *)
+              echo "Invalid mode: $mode" >&2
+              exit 1
+              ;;
+          esac
+
+          case "$targets" in
+            linux-and-windows | linux-only | windows-only | all) ;;
+            *)
+              echo "Invalid targets: $targets" >&2
+              exit 1
+              ;;
+          esac
+
+          if [[ "$mode" == "append-existing" && "$targets" == "all" ]]; then
+            echo "append-existing mode refuses targets=all to protect locally signed macOS assets; use linux-and-windows, linux-only, or windows-only, or switch mode to full-release." >&2
+            exit 1
+          fi
+
+          resolve_tag_commit() {
+            local target_tag="$1"
+            local ref_json obj_type obj_sha tag_json
+            if ! ref_json="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${target_tag}" 2>/dev/null)"; then
+              return 1
+            fi
+            obj_type="$(jq -r '.object.type' <<<"$ref_json")"
+            obj_sha="$(jq -r '.object.sha' <<<"$ref_json")"
+            while [[ "$obj_type" == "tag" ]]; do
+              tag_json="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${obj_sha}")"
+              obj_type="$(jq -r '.object.type' <<<"$tag_json")"
+              obj_sha="$(jq -r '.object.sha' <<<"$tag_json")"
+            done
+            if [[ "$obj_type" != "commit" || ! "$obj_sha" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "Tag ${target_tag} resolved to unexpected object (${obj_type}:${obj_sha})." >&2
+              return 1
+            fi
+            printf '%s' "$obj_sha"
+          }
+
+          if [[ "$mode" == "append-existing" ]]; then
+            if ! target_ref="$(resolve_tag_commit "$tag")"; then
+              echo "Tag ${tag} was not found in ${GITHUB_REPOSITORY}. Publish the macOS release first or switch mode to full-release." >&2
+              exit 1
+            fi
+            if ! release_json="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json url,name,tagName,isDraft 2>/dev/null)"; then
+              echo "GitHub Release ${tag} does not exist in ${GITHUB_REPOSITORY}. Create the macOS release first or switch mode to full-release." >&2
+              exit 1
+            fi
+            echo "Found existing release: $(jq -r '.name + " (" + .url + ")"' <<<"$release_json")"
+            echo "Resolved tag ${tag} -> commit ${target_ref}"
+          else
+            if target_ref="$(resolve_tag_commit "$tag")"; then
+              echo "Existing tag ${tag} resolved -> commit ${target_ref}"
+            else
+              target_ref="${GITHUB_SHA}"
+              echo "No existing tag ${tag}; building triggering commit ${target_ref}"
+            fi
+          fi
+
+          include_mac="false"
+          include_linux="false"
+          include_windows="false"
+          case "$targets" in
+            linux-and-windows)
+              include_linux="true"
+              include_windows="true"
+              ;;
+            linux-only)
+              include_linux="true"
+              ;;
+            windows-only)
+              include_windows="true"
+              ;;
+            all)
+              include_mac="true"
+              include_linux="true"
+              include_windows="true"
+              ;;
+          esac
+
           is_draft="false"
           make_latest="true"
-          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && "${DISPATCH_DRAFT}" == "true" ]]; then
+          if [[ "$mode" == "full-release" && "${DISPATCH_DRAFT}" == "true" ]]; then
             is_draft="true"
             make_latest="false"
           fi
 
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "tag=v$version" >> "$GITHUB_OUTPUT"
-          echo "release_name=T4 Code v$version" >> "$GITHUB_OUTPUT"
-          echo "ref=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-          echo "draft=$is_draft" >> "$GITHUB_OUTPUT"
-          echo "make_latest=$make_latest" >> "$GITHUB_OUTPUT"
+          {
+            echo "version=$version"
+            echo "tag=$tag"
+            echo "release_name=T4 Code $tag"
+            echo "ref=$target_ref"
+            echo "mode=$mode"
+            echo "include_mac=$include_mac"
+            echo "include_linux=$include_linux"
+            echo "include_windows=$include_windows"
+            echo "draft=$is_draft"
+            echo "make_latest=$make_latest"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### T4 Code Release Preflight"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Version | \`$version\` (\`$tag\`) |"
+            echo "| Mode | \`$mode\` |"
+            echo "| Target Commit | \`$target_ref\` |"
+            echo "| macOS arm64 | \`$include_mac\` |"
+            echo "| Linux CLI (x64 + arm64) | \`$include_linux\` |"
+            echo "| Windows x64 NSIS (unsigned) | \`$include_windows\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   build_bundle:
     name: Build JS bundle
@@ -80,6 +206,7 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ needs.preflight.outputs.ref }}
+          persist-credentials: false
           sparse-checkout: |
             /*
             !/.repos/
@@ -109,6 +236,7 @@ jobs:
   build_mac_arm64:
     name: Build macOS arm64 desktop
     needs: [preflight, build_bundle]
+    if: needs.preflight.outputs.include_mac == 'true'
     runs-on: macos-15
     timeout-minutes: 40
     env:
@@ -119,6 +247,7 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ needs.preflight.outputs.ref }}
+          persist-credentials: false
           sparse-checkout: |
             /*
             !/.repos/
@@ -134,7 +263,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: native/resource-monitor/target/aarch64-apple-darwin/release/t3-resource-monitor
-          key: resource-monitor-aarch64-apple-darwin-${{ hashFiles('.cargo/config.toml', 'native/resource-monitor/Cargo.lock', 'native/resource-monitor/Cargo.toml', 'native/resource-monitor/src/**') }}
+          key: resource-monitor-aarch64-apple-darwin-${{ hashFiles('.cargo/config.toml', 'native/resource-monitor/Cargo.lock', 'native/resource-monitor/Cargo.toml', 'native/resource-monitor/build.rs', 'native/resource-monitor/src/**') }}
 
       - name: Setup Rust
         if: steps.resource_monitor_cache.outputs.cache-hit != 'true'
@@ -255,6 +384,7 @@ jobs:
   build_linux_cli:
     name: Build Linux ${{ matrix.arch }} CLI
     needs: [preflight, build_bundle]
+    if: needs.preflight.outputs.include_linux == 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
@@ -274,6 +404,7 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ needs.preflight.outputs.ref }}
+          persist-credentials: false
           sparse-checkout: |
             /*
             !/.repos/
@@ -289,7 +420,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: native/resource-monitor/target/${{ matrix.rust_target }}/release/t3-resource-monitor
-          key: resource-monitor-${{ matrix.rust_target }}-${{ hashFiles('.cargo/config.toml', 'native/resource-monitor/Cargo.lock', 'native/resource-monitor/Cargo.toml', 'native/resource-monitor/src/**') }}
+          key: resource-monitor-${{ matrix.rust_target }}-${{ hashFiles('.cargo/config.toml', 'native/resource-monitor/Cargo.lock', 'native/resource-monitor/Cargo.toml', 'native/resource-monitor/build.rs', 'native/resource-monitor/src/**') }}
 
       - name: Setup Rust
         if: steps.resource_monitor_cache.outputs.cache-hit != 'true'
@@ -349,42 +480,395 @@ jobs:
           if-no-files-found: error
           compression-level: 0
 
+  build_windows_x64:
+    name: Build Windows x64 desktop (unsigned NSIS)
+    needs: [preflight, build_bundle, build_linux_cli]
+    if: >-
+      !cancelled() &&
+      needs.preflight.result == 'success' &&
+      needs.build_bundle.result == 'success' &&
+      needs.preflight.outputs.include_windows == 'true' &&
+      (needs.preflight.outputs.include_linux != 'true' || needs.build_linux_cli.result == 'success')
+    runs-on: windows-2025
+    timeout-minutes: 45
+    env:
+      T3CODE_TELEMETRY_CHANNEL: dev
+      T3CODE_DESKTOP_UPDATE_REPOSITORY: imetn/t4code
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ needs.preflight.outputs.ref }}
+          persist-credentials: false
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      # setup-vp's own cache restores a Linux-shaped store on Windows, and setup-ci-deps
+      # uses Git Bash paths for GITHUB_PATH on cache hits. Set up Vite+ natively and
+      # cache pnpm's Windows store directly.
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1.15.0
+        env:
+          VP_DOWNLOAD_TIMEOUT: "120"
+        with:
+          node-version-file: package.json
+          cache: false
+          run-install: false
+
+      - name: Resolve pnpm store path
+        id: pnpm_store
+        shell: pwsh
+        run: |
+          $storePath = (vp pm cache dir).Trim()
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "path=$storePath" -Encoding utf8NoBOM
+
+      - name: Cache pnpm store
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm_store.outputs.path }}
+          key: pnpm-win-desktop-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'package.json') }}
+          restore-keys: |
+            pnpm-win-desktop-v1-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Install dependencies
+        shell: pwsh
+        run: vp install --filter=@t3tools/desktop... --filter=t3... --filter=@t3tools/scripts...
+
+      - name: Cache resource monitor
+        id: resource_monitor_cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: native/resource-monitor/target/x86_64-pc-windows-msvc/release/t3-resource-monitor.exe
+          key: resource-monitor-x86_64-pc-windows-msvc-${{ hashFiles('.cargo/config.toml', 'native/resource-monitor/Cargo.lock', 'native/resource-monitor/Cargo.toml', 'native/resource-monitor/build.rs', 'native/resource-monitor/src/**') }}
+
+      - name: Setup Rust
+        if: steps.resource_monitor_cache.outputs.cache-hit != 'true'
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+          targets: x86_64-pc-windows-msvc
+
+      - name: Build resource monitor
+        if: steps.resource_monitor_cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: cargo build --locked --release --manifest-path native/resource-monitor/Cargo.toml --target x86_64-pc-windows-msvc
+
+      - name: Smoke-test resource monitor
+        shell: pwsh
+        env:
+          MONITOR: native/resource-monitor/target/x86_64-pc-windows-msvc/release/t3-resource-monitor.exe
+        run: |
+          @'
+          import { spawn } from "node:child_process";
+          const monitor = spawn(process.env.MONITOR, { stdio: ["pipe", "pipe", "inherit"] });
+          monitor.stdout.setEncoding("utf8");
+          let output = "";
+          const exited = new Promise((resolve) => monitor.on("close", resolve));
+          const hello = await new Promise((resolve, reject) => {
+            monitor.on("error", reject);
+            monitor.on("close", () => reject(new Error(`Resource monitor exited before hello: ${output}`)));
+            monitor.stdout.on("data", (chunk) => {
+              output += chunk;
+              const end = output.indexOf("\n");
+              if (end !== -1) resolve(JSON.parse(output.slice(0, end)));
+            });
+          });
+          if (hello.type !== "hello" || hello.arch !== "x86_64") {
+            throw new Error(`Unexpected hello: ${JSON.stringify(hello)}`);
+          }
+          const send = (message) => monitor.stdin.write(`${JSON.stringify({ version: hello.version, ...message })}\n`);
+          send({ type: "configure", rootPid: process.pid, sampleIntervalMs: 1000 });
+          send({ type: "sampleNow", requestId: "verify" });
+          monitor.stdin.end();
+          const exitCode = await exited;
+          const sample = output
+            .split("\n")
+            .filter((line) => line.trim())
+            .map((line) => JSON.parse(line))
+            .find((message) => message.requestId === "verify");
+          if (exitCode !== 0 || sample?.type !== "snapshot" || !sample.processes.some((p) => p.pid === process.pid)) {
+            throw new Error(`Resource monitor exited ${exitCode} with: ${output}`);
+          }
+          console.log(`Resource monitor sampled ${sample.scannedProcessCount} processes.`);
+          '@ | node --input-type=module
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Align package versions to release version
+        shell: pwsh
+        run: node scripts/update-release-package-versions.ts "${{ needs.preflight.outputs.version }}"
+
+      - name: Download JS bundle
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: js-bundle
+          path: apps
+
+      - name: Download Linux x64 CLI archive for WSL (from this run)
+        if: needs.preflight.outputs.include_linux == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: cli-linux-x64
+          path: wsl-runtime
+
+      - name: Download Linux x64 CLI archive for WSL (from existing release)
+        if: needs.preflight.outputs.include_linux != 'true' && needs.preflight.outputs.mode == 'append-existing'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          New-Item -ItemType Directory -Force -Path wsl-runtime | Out-Null
+          $pattern = "t3-$($env:RELEASE_VERSION)-linux-x64.tar.gz"
+          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --pattern $pattern --dir wsl-runtime
+          if ($LASTEXITCODE -ne 0) {
+            Write-Warning "No existing $pattern asset found on $($env:RELEASE_TAG); building Windows NSIS without embedded WSL runtime."
+            $global:LASTEXITCODE = 0
+          }
+
+      - name: Build Windows x64 NSIS installer (unsigned)
+        shell: pwsh
+        env:
+          T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR: "true"
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: |
+          $ErrorActionPreference = "Stop"
+          $buildArgs = @(
+            "--platform", "win",
+            "--target", "nsis",
+            "--arch", "x64",
+            "--build-version", "${{ needs.preflight.outputs.version }}",
+            "--skip-build",
+            "--verbose"
+          )
+          $wslArchive = Get-ChildItem -Path "wsl-runtime" -Filter "t3-*-linux-x64.tar.gz" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($null -ne $wslArchive) {
+            Write-Host "Embedding WSL runtime archive: $($wslArchive.FullName)"
+            $buildArgs += @("--wsl-runtime", $wslArchive.FullName)
+          } else {
+            Write-Host "Building without embedded WSL runtime archive."
+          }
+          vp run dist:desktop:artifact @buildArgs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Collect and verify Windows release assets
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force -Path release-publish | Out-Null
+          foreach ($pattern in @("release/*.exe", "release/*.exe.blockmap", "release/latest.yml")) {
+            Get-ChildItem -Path $pattern -ErrorAction SilentlyContinue | Copy-Item -Destination release-publish
+          }
+          Get-ChildItem -Path release-publish | Format-Table Name, Length -AutoSize
+          Get-Content -Path release-publish/latest.yml
+          @'
+          import fs from "node:fs";
+          import path from "node:path";
+
+          const dir = "release-publish";
+          const expectedVersion = process.env.RELEASE_VERSION;
+          const manifestPath = path.join(dir, "latest.yml");
+          if (!fs.existsSync(manifestPath)) {
+            throw new Error("Missing release-publish/latest.yml");
+          }
+          const raw = fs.readFileSync(manifestPath, "utf8");
+          const unquote = (value) => value.trim().replace(/^['"]|['"]$/g, "");
+          const versionMatch = /^version:\s*(.+)$/m.exec(raw);
+          const actualVersion = versionMatch ? unquote(versionMatch[1]) : "";
+          if (actualVersion !== expectedVersion) {
+            throw new Error(`latest.yml version mismatch: expected ${expectedVersion}, got ${actualVersion}`);
+          }
+          const pathMatch = /^path:\s*(.+)$/m.exec(raw);
+          const mainFile = pathMatch ? unquote(pathMatch[1]) : "";
+          const urls = [...raw.matchAll(/^\s*-\s*url:\s*(.+)$/gm)].map((match) => unquote(match[1]));
+          const targets = [...new Set([mainFile, ...urls].filter(Boolean))];
+          if (targets.length === 0) {
+            throw new Error("latest.yml lists no Windows installer files");
+          }
+          for (const file of targets) {
+            if (!file.startsWith("T4-Code-") || !file.endsWith(".exe")) {
+              throw new Error(`Unexpected Windows installer filename in latest.yml: ${file}`);
+            }
+            const fullPath = path.join(dir, file);
+            if (!fs.existsSync(fullPath)) {
+              throw new Error(`Installer referenced by latest.yml is missing: ${fullPath}`);
+            }
+            const blockmapPath = `${fullPath}.blockmap`;
+            if (!fs.existsSync(blockmapPath)) {
+              throw new Error(`Missing blockmap for installer: ${blockmapPath}`);
+            }
+          }
+          if (fs.existsSync(path.join(dir, "builder-debug.yml"))) {
+            throw new Error("builder-debug.yml must not be collected for release upload");
+          }
+          console.log(`Verified Windows release assets (${targets.join(", ")}) against latest.yml.`);
+          '@ | node --input-type=module
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload Windows desktop artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: desktop-win-x64
+          path: release-publish/*
+          if-no-files-found: error
+          compression-level: 0
+
   publish_release:
-    name: Publish GitHub Release
-    needs: [preflight, build_mac_arm64, build_linux_cli]
+    name: Publish or Append GitHub Release Assets
+    needs: [preflight, build_mac_arm64, build_linux_cli, build_windows_x64]
+    if: >-
+      !cancelled() &&
+      needs.preflight.result == 'success' &&
+      (needs.preflight.outputs.include_mac != 'true' || needs.build_mac_arm64.result == 'success') &&
+      (needs.preflight.outputs.include_linux != 'true' || needs.build_linux_cli.result == 'success') &&
+      (needs.preflight.outputs.include_windows != 'true' || needs.build_windows_x64.result == 'success')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: write
     steps:
       - name: Download macOS desktop artifacts
+        if: needs.preflight.outputs.include_mac == 'true'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: desktop-mac-arm64
           path: release-assets
 
       - name: Download Linux CLI archives
+        if: needs.preflight.outputs.include_linux == 'true'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: cli-linux-*
           merge-multiple: true
           path: release-assets
 
+      - name: Download Windows desktop artifacts
+        if: needs.preflight.outputs.include_windows == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: desktop-win-x64
+          path: release-assets
+
       - name: Write CLI archive checksums
+        if: needs.preflight.outputs.include_linux == 'true'
         shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.preflight.outputs.version }}
         run: |
           set -euo pipefail
           cd release-assets
-          shopt -s nullglob
-          archives=(t3-*.tar.gz)
-          if [[ ${#archives[@]} -eq 0 ]]; then
-            echo "No Linux CLI archives were produced." >&2
-            exit 1
-          fi
-          sha256sum "${archives[@]}" > SHA256SUMS
+          expected=(
+            "t3-${RELEASE_VERSION}-linux-arm64.tar.gz"
+            "t3-${RELEASE_VERSION}-linux-x64.tar.gz"
+          )
+          for archive in "${expected[@]}"; do
+            if [[ ! -f "$archive" ]]; then
+              echo "Missing expected Linux CLI archive: $archive" >&2
+              exit 1
+            fi
+          done
+          sha256sum "${expected[@]}" > SHA256SUMS
           cat SHA256SUMS
 
+      - name: Validate staged release assets
+        shell: bash
+        env:
+          RELEASE_MODE: ${{ needs.preflight.outputs.mode }}
+          INCLUDE_MAC: ${{ needs.preflight.outputs.include_mac }}
+          INCLUDE_LINUX: ${{ needs.preflight.outputs.include_linux }}
+          INCLUDE_WINDOWS: ${{ needs.preflight.outputs.include_windows }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          staged=(release-assets/*)
+          if [[ ${#staged[@]} -eq 0 ]]; then
+            echo "No release assets were staged." >&2
+            exit 1
+          fi
+          if [[ -e release-assets/builder-debug.yml ]]; then
+            echo "Refusing to upload builder-debug.yml." >&2
+            exit 1
+          fi
+          if [[ "$RELEASE_MODE" == "append-existing" ]]; then
+            mac_files=(release-assets/*.dmg release-assets/*.zip release-assets/latest-mac.yml)
+            if [[ ${#mac_files[@]} -ne 0 ]]; then
+              echo "Refusing to overwrite macOS assets in append-existing mode: ${mac_files[*]}" >&2
+              exit 1
+            fi
+          fi
+          if [[ "$INCLUDE_WINDOWS" == "true" ]]; then
+            win_exes=(release-assets/*.exe)
+            if [[ ${#win_exes[@]} -eq 0 || ! -f release-assets/latest.yml ]]; then
+              echo "Expected Windows NSIS installer (.exe) and latest.yml in release-assets." >&2
+              exit 1
+            fi
+          fi
+          ls -lh release-assets
+
+      - name: Append assets to existing GitHub Release
+        if: needs.preflight.outputs.mode == 'append-existing'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+          shopt -s nullglob
+          files=(release-assets/*)
+          echo "Appending ${#files[@]} asset(s) to existing release ${RELEASE_TAG}:"
+          printf '  - %s\n' "${files[@]}"
+          gh release upload "$RELEASE_TAG" "${files[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+          {
+            echo "### Appended Assets to \`${RELEASE_TAG}\`"
+            echo ""
+            echo "Uploaded via \`gh release upload --clobber\` (existing Release notes and macOS assets preserved):"
+            echo ""
+            for f in "${files[@]}"; do
+              echo "- \`$(basename "$f")\`"
+            done
+            echo ""
+            echo "#### All Assets Currently on \`${RELEASE_TAG}\`"
+            echo ""
+            gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name | "- `" + . + "`"'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - id: release_files
+        name: Resolve asset list for full release
+        if: needs.preflight.outputs.mode == 'full-release'
+        shell: bash
+        env:
+          INCLUDE_MAC: ${{ needs.preflight.outputs.include_mac }}
+          INCLUDE_LINUX: ${{ needs.preflight.outputs.include_linux }}
+          INCLUDE_WINDOWS: ${{ needs.preflight.outputs.include_windows }}
+        run: |
+          {
+            echo 'files<<EOF'
+            if [[ "$INCLUDE_MAC" == "true" ]]; then
+              echo 'release-assets/*.dmg'
+              echo 'release-assets/*.zip'
+              echo 'release-assets/*.dmg.blockmap'
+              echo 'release-assets/*.zip.blockmap'
+              echo 'release-assets/latest-mac.yml'
+            fi
+            if [[ "$INCLUDE_LINUX" == "true" ]]; then
+              echo 'release-assets/t3-*.tar.gz'
+              echo 'release-assets/SHA256SUMS'
+            fi
+            if [[ "$INCLUDE_WINDOWS" == "true" ]]; then
+              echo 'release-assets/*.exe'
+              echo 'release-assets/*.exe.blockmap'
+              echo 'release-assets/latest.yml'
+            fi
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
       - name: Publish GitHub Release
+        if: needs.preflight.outputs.mode == 'full-release'
         uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           tag_name: ${{ needs.preflight.outputs.tag }}
@@ -394,12 +878,6 @@ jobs:
           prerelease: false
           draft: ${{ needs.preflight.outputs.draft == 'true' }}
           make_latest: ${{ needs.preflight.outputs.make_latest }}
-          files: |
-            release-assets/*.dmg
-            release-assets/*.zip
-            release-assets/*.blockmap
-            release-assets/latest-mac.yml
-            release-assets/t3-*.tar.gz
-            release-assets/SHA256SUMS
+          files: ${{ steps.release_files.outputs.files }}
           fail_on_unmatched_files: true
           token: ${{ github.token }}
