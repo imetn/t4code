@@ -3,6 +3,7 @@ import {
   scopeThreadRef,
   scopedProjectKey,
 } from "@t3tools/client-runtime/environment";
+import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import {
   buildCalendarMonthGrid,
   localCalendarDayKey,
@@ -53,7 +54,7 @@ import {
 import { toastManager } from "~/components/ui/toast";
 import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
 import { cn } from "~/lib/utils";
-import { useProjects, useQuietThreadShells } from "~/state/entities";
+import { useProjects, useQuietThreadShells, useServerConfigs } from "~/state/entities";
 import {
   loadProjectTodoDispatchPrompt,
   projectTodoEnvironment,
@@ -69,6 +70,7 @@ import { newProjectTodoId, ProjectTodoFormDialog } from "./ProjectTodoFormDialog
 interface ProjectTodosCalendarViewProps {
   readonly environmentId: EnvironmentId | null;
   readonly projectId: ProjectId | null;
+  readonly defaultProjectId?: ProjectId | null;
   readonly onRequestNewTodo?: (projectId?: ProjectId) => void;
 }
 
@@ -110,6 +112,7 @@ export function ProjectTodosCalendarView(props: ProjectTodosCalendarViewProps) {
   const handleNewThread = useNewThreadHandler();
   const projects = useProjects();
   const threads = useQuietThreadShells();
+  const serverConfigs = useServerConfigs();
 
   const [today] = useState(() => todayLocalCalendarDay());
   const [visibleMonth, setVisibleMonth] = useState<{
@@ -149,12 +152,16 @@ export function ProjectTodosCalendarView(props: ProjectTodosCalendarViewProps) {
   const createCommand = useAtomCommand(projectTodoEnvironment.create, { reportFailure: false });
   const updateCommand = useAtomCommand(projectTodoEnvironment.update, { reportFailure: false });
 
+  const scratchWorkspaceRoot =
+    props.environmentId !== null
+      ? serverConfigs.get(props.environmentId)?.scratchWorkspaceRoot
+      : undefined;
   const envProjects = projects.filter(
     (project) =>
       props.environmentId !== null &&
       project.environmentId === props.environmentId &&
       project.archivedAt === null &&
-      !project.isScratch,
+      !isScratchProject(project, scratchWorkspaceRoot),
   );
   const projectNameById = new Map(
     envProjects.map((project) => [project.id, project.title] as const),
@@ -209,7 +216,24 @@ export function ProjectTodosCalendarView(props: ProjectTodosCalendarViewProps) {
     );
   }
 
-  const effectiveQuickProjectId = props.projectId ?? quickProjectId ?? envProjects[0]?.id ?? null;
+  const selectedDayBucket =
+    activeDay !== null ? byDayKey.get(localCalendarDayKey(activeDay)) : undefined;
+  const activeDayFirstProjectId =
+    selectedDayBucket?.unfinished[0]?.projectId ??
+    selectedDayBucket?.completed[0]?.projectId ??
+    null;
+  const preferredQuickProjectId =
+    (props.defaultProjectId != null &&
+    envProjects.some((project) => project.id === props.defaultProjectId)
+      ? props.defaultProjectId
+      : null) ??
+    (activeDayFirstProjectId !== null &&
+    envProjects.some((project) => project.id === activeDayFirstProjectId)
+      ? activeDayFirstProjectId
+      : null) ??
+    envProjects[0]?.id ??
+    null;
+  const effectiveQuickProjectId = props.projectId ?? quickProjectId ?? preferredQuickProjectId;
 
   const handleToggleCompleted = async (item: ProjectTodoSummary) => {
     if (!canOperate) return;
@@ -304,14 +328,18 @@ export function ProjectTodosCalendarView(props: ProjectTodosCalendarViewProps) {
       : null;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border/50 px-4 py-2">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-5 pb-4">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 pb-2.5">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1">
+          <h2 className="text-sm font-semibold tracking-tight text-foreground">
+            {formatMonthLabel(visibleMonth.year, visibleMonth.month)}
+          </h2>
+
+          <div className="flex items-center gap-0.5">
             <Button
               type="button"
               size="icon-xs"
-              variant="outline"
+              variant="ghost"
               aria-label={gt("Previous month")}
               onClick={() =>
                 setVisibleMonth((prev) => shiftLocalCalendarMonth(prev.year, prev.month, -1))
@@ -322,7 +350,7 @@ export function ProjectTodosCalendarView(props: ProjectTodosCalendarViewProps) {
             <Button
               type="button"
               size="xs"
-              variant="outline"
+              variant="ghost"
               onClick={() => setVisibleMonth({ year: today.year, month: today.month })}
             >
               <T>Today</T>
@@ -330,7 +358,7 @@ export function ProjectTodosCalendarView(props: ProjectTodosCalendarViewProps) {
             <Button
               type="button"
               size="icon-xs"
-              variant="outline"
+              variant="ghost"
               aria-label={gt("Next month")}
               onClick={() =>
                 setVisibleMonth((prev) => shiftLocalCalendarMonth(prev.year, prev.month, 1))
@@ -340,18 +368,12 @@ export function ProjectTodosCalendarView(props: ProjectTodosCalendarViewProps) {
             </Button>
           </div>
 
-          <h2 className="text-sm font-semibold tracking-tight text-foreground">
-            {formatMonthLabel(visibleMonth.year, visibleMonth.month)}
-          </h2>
-
-          <div className="hidden items-center gap-1.5 sm:flex">
-            <Badge size="sm" variant="warning">
-              {gt("{count} unfinished", { count: monthUnfinishedCount })}
-            </Badge>
-            <Badge size="sm" variant="success">
-              {gt("{count} completed", { count: monthCompletedCount })}
-            </Badge>
-          </div>
+          <span className="hidden text-xs text-muted-foreground sm:inline">
+            {gt("{open} unfinished · {done} completed", {
+              open: monthUnfinishedCount,
+              done: monthCompletedCount,
+            })}
+          </span>
 
           {reviewQuery.data?.calendarTruncated ? (
             <Badge size="sm" variant="secondary">
@@ -360,39 +382,25 @@ export function ProjectTodosCalendarView(props: ProjectTodosCalendarViewProps) {
           ) : null}
         </div>
 
-        <div className="flex items-center gap-2">
-          <div className="hidden items-center gap-3 text-2xs text-muted-foreground lg:flex">
-            <span className="inline-flex items-center gap-1">
-              <CircleIcon className="size-3 text-warning" />
-              <span>
-                <T>Unfinished</T>
-              </span>
-            </span>
-            <span className="inline-flex items-center gap-1">
-              <CheckCircle2Icon className="size-3 text-success" />
-              <span>
-                <T>Completed</T>
-              </span>
-            </span>
-          </div>
-
-          <Button type="button" size="xs" variant="outline" onClick={() => reviewQuery.refresh()}>
-            <RefreshCwIcon className="size-3" />
-            <span>
-              <T>Refresh</T>
-            </span>
-          </Button>
-        </div>
+        <Button
+          type="button"
+          size="icon-xs"
+          variant="ghost"
+          aria-label={gt("Refresh project todos")}
+          onClick={() => reviewQuery.refresh()}
+        >
+          <RefreshCwIcon className="size-3.5" />
+        </Button>
       </div>
 
       {reviewQuery.error ? (
-        <div className="mx-4 mt-3 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+        <div className="mb-3 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
           {reviewQuery.error}
         </div>
       ) : null}
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-auto">
-        <div className="grid min-w-180 shrink-0 grid-cols-7 border-b border-border/60 bg-muted/20">
+      <div className="flex min-h-0 flex-1 flex-col overflow-auto rounded-xl border border-border/60 bg-background">
+        <div className="grid min-w-180 shrink-0 grid-cols-7 border-b border-border/50 bg-muted/15">
           {weekdayHeaders.map((weekday) => (
             <div
               key={weekday.key}
@@ -574,7 +582,7 @@ export function ProjectTodosCalendarView(props: ProjectTodosCalendarViewProps) {
           if (!open) setActiveDay(null);
         }}
       >
-        <SheetPopup side="right" className="w-full max-w-md">
+        <SheetPopup side="right" layer="dialog" className="w-full max-w-md">
           <SheetHeader>
             <SheetTitle>
               <span className="inline-flex items-center gap-2">

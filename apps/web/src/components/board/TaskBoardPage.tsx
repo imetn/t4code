@@ -10,10 +10,10 @@ import { T, useGT } from "gt-react";
 import {
   AlertCircleIcon,
   CheckCircle2Icon,
+  ChevronDownIcon,
   CircleDotIcon,
   Columns4Icon,
   GitBranchIcon,
-  KanbanIcon,
   Loader2Icon,
   PinIcon,
   PinOffIcon,
@@ -31,6 +31,7 @@ import {
   type ReactNode,
 } from "react";
 
+import { isElectron } from "~/env";
 import { useHandleNewThread } from "../../hooks/useHandleNewThread";
 import { useThreadActions } from "../../hooks/useThreadActions";
 import { cn } from "../../lib/utils";
@@ -43,11 +44,14 @@ import {
 import { useEnvironments } from "../../state/environments";
 import { buildThreadRouteParams } from "../../threadRoutes";
 import { ProjectFavicon } from "../ProjectFavicon";
+import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem } from "../WorkspaceBreadcrumb";
+import { WorkspacePageHeader } from "../WorkspacePageHeader";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../ui/input-group";
+import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "../ui/menu";
 import { ScrollArea } from "../ui/scroll-area";
-import { SidebarInset, SidebarTrigger } from "../ui/sidebar";
+import { SidebarInset, useSidebar } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   classifyTaskBoardColumn,
@@ -60,6 +64,7 @@ import {
 import { TaskBoardThreadPane, type TaskBoardStatusBadge } from "./TaskBoardThreadPane";
 
 const SETTLED_PAGE_SIZE = 25;
+const ALL_FILTER_VALUE = "__all__";
 
 interface TaskBoardColumnDef {
   readonly id: TaskBoardColumnId;
@@ -130,6 +135,7 @@ export function TaskBoardPage() {
   const { environments: environmentPresentations } = useEnvironments();
   const { pinThread, unpinThread, settleThread, unsettleThread } = useThreadActions();
   const { handleNewThread, defaultProjectRef } = useHandleNewThread();
+  const { open: sidebarOpen, setOpen: setSidebarOpen, isMobile } = useSidebar();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedEnvironmentId, setSelectedEnvironmentId] = useState<EnvironmentId | null>(null);
@@ -141,6 +147,7 @@ export function TaskBoardPage() {
   const [selectedThreadRef, setSelectedThreadRef] = useState<ScopedThreadRef | null>(null);
   const [dockedColumnId, setDockedColumnId] = useState<TaskBoardColumnId>("working");
   const boardBodyRef = useRef<HTMLDivElement | null>(null);
+  const collapsedSidebarForSplitRef = useRef(false);
   const pendingFocusRef = useRef<
     | { readonly kind: "pane" }
     | { readonly kind: "card"; readonly key: string; readonly columnId: TaskBoardColumnId }
@@ -151,6 +158,23 @@ export function TaskBoardPage() {
   const selectedThreadKey = selectedThreadRef ? scopedThreadKey(selectedThreadRef) : null;
   const activeDockedColumnId = resolveDockedTaskBoardColumn(dockedColumnId, showSettled);
 
+  const restoreSidebarIfCollapsed = () => {
+    if (collapsedSidebarForSplitRef.current) {
+      collapsedSidebarForSplitRef.current = false;
+      setSidebarOpen(true);
+    }
+  };
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- restores the main sidebar open state if the board unmounts while split view collapsed it
+  useEffect(() => {
+    return () => {
+      if (collapsedSidebarForSplitRef.current) {
+        collapsedSidebarForSplitRef.current = false;
+        setSidebarOpen(true);
+      }
+    };
+  }, [setSidebarOpen]);
+
   const closeSplitView = () => {
     if (selectedThreadKey !== null) {
       pendingFocusRef.current = {
@@ -159,6 +183,7 @@ export function TaskBoardPage() {
         columnId: activeDockedColumnId,
       };
     }
+    restoreSidebarIfCollapsed();
     setSelectedThreadRef(null);
   };
 
@@ -206,11 +231,15 @@ export function TaskBoardPage() {
         key: selectedThreadKey,
         columnId: activeDockedColumnId,
       };
+      if (collapsedSidebarForSplitRef.current) {
+        collapsedSidebarForSplitRef.current = false;
+        setSidebarOpen(true);
+      }
       setSelectedThreadRef(null);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [activeDockedColumnId, selectedThreadKey]);
+  }, [activeDockedColumnId, selectedThreadKey, setSidebarOpen]);
 
   const environments = environmentPresentations.map((environment) => ({
     id: environment.environmentId,
@@ -265,6 +294,10 @@ export function TaskBoardPage() {
     }
     if (event) {
       pendingFocusRef.current = null;
+    }
+    if (selectedThreadRef === null && !isMobile && sidebarOpen) {
+      collapsedSidebarForSplitRef.current = true;
+      setSidebarOpen(false);
     }
     setDockedColumnId(item.column);
     setSelectedThreadRef(threadRef);
@@ -616,39 +649,57 @@ export function TaskBoardPage() {
     );
   };
 
+  const currentFilterMenuLabel =
+    selectedProjectScopedKey !== null
+      ? (projectNameByScopedKey.get(selectedProjectScopedKey) ?? gt("All projects"))
+      : selectedEnvironmentId !== null
+        ? (environmentLabelById.get(selectedEnvironmentId) ?? gt("All environments"))
+        : gt("All projects");
+
   return (
     <SidebarInset className="flex h-dvh min-w-0 flex-1 flex-col overflow-hidden">
-      <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border/60 px-4 py-2.5">
-        <div className="flex min-w-0 items-center gap-2">
-          <SidebarTrigger className="md:hidden" aria-label={gt("Toggle main sidebar")} />
-          <KanbanIcon className="size-4 shrink-0 text-muted-foreground" />
-          <h1 className="truncate text-sm font-semibold tracking-tight">
-            <T>Task board</T>
-          </h1>
-          <div className="hidden items-center gap-1.5 sm:flex">
+      <WorkspacePageHeader electron={isElectron} className="relative bg-background">
+        <WorkspaceBreadcrumb ariaLabel={gt("Task board breadcrumb")}>
+          <WorkspaceBreadcrumbItem current>
+            <h1 className="truncate">
+              <T>Task board</T>
+            </h1>
+          </WorkspaceBreadcrumbItem>
+        </WorkspaceBreadcrumb>
+
+        {selectedThreadRef !== null ? (
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost"
+            className="[-webkit-app-region:no-drag]"
+            onClick={closeSplitView}
+          >
+            <Columns4Icon className="size-3.5" />
+            <span>
+              <T>All columns</T>
+            </span>
+          </Button>
+        ) : columns.working.length > 0 || columns.attention.length > 0 ? (
+          <span className="hidden shrink-0 items-center gap-1.5 text-xs text-muted-foreground sm:inline-flex">
             {columns.working.length > 0 ? (
-              <Badge size="sm" variant="secondary">
-                {gt("{count} working", { count: columns.working.length })}
-              </Badge>
+              <span>{gt("{count} working", { count: columns.working.length })}</span>
+            ) : null}
+            {columns.working.length > 0 && columns.attention.length > 0 ? (
+              <span aria-hidden>·</span>
             ) : null}
             {columns.attention.length > 0 ? (
-              <Badge size="sm" variant="warning">
+              <span className="text-warning">
                 {gt("{count} waiting", { count: columns.attention.length })}
-              </Badge>
-            ) : null}
-          </div>
-          {selectedThreadRef !== null ? (
-            <Button type="button" size="xs" variant="outline" onClick={closeSplitView}>
-              <Columns4Icon className="size-3.5" />
-              <span>
-                <T>All columns</T>
               </span>
-            </Button>
-          ) : null}
-        </div>
+            ) : null}
+          </span>
+        ) : null}
 
-        <div className="flex flex-wrap items-center gap-2">
-          <InputGroup className="w-44 sm:w-56">
+        <div className="min-w-0 flex-1" />
+
+        <div className="flex shrink-0 items-center gap-1.5 [-webkit-app-region:no-drag]">
+          <InputGroup className="w-36 sm:w-48">
             <InputGroupAddon align="inline-start">
               <SearchIcon className="size-3.5 text-muted-foreground" />
             </InputGroupAddon>
@@ -674,89 +725,69 @@ export function TaskBoardPage() {
             ) : null}
           </InputGroup>
 
-          <Button
-            type="button"
-            size="sm"
-            variant={showSettled ? "secondary" : "outline"}
-            onClick={() => setShowSettled((prev) => !prev)}
-          >
-            {showSettled ? gt("Hide settled") : gt("Show settled")}
-          </Button>
-
-          <Button type="button" size="sm" onClick={handleCreateNewThread}>
-            <PlusIcon className="size-3.5" />
-            <span>
-              <T>New thread</T>
-            </span>
-          </Button>
-        </div>
-      </header>
-
-      {showEnvironmentFilter || activeProjects.length > 1 ? (
-        <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border/50 bg-muted/10 px-4 py-2">
-          {showEnvironmentFilter ? (
-            <div className="flex flex-wrap items-center gap-1">
-              <Button
-                type="button"
-                size="xs"
-                variant={selectedEnvironmentId === null ? "secondary" : "ghost"}
-                onClick={() => {
-                  setSelectedEnvironmentId(null);
-                  setSelectedProjectScopedKey(null);
-                }}
-              >
-                <T>All environments</T>
-              </Button>
-              {environments.map((environment) => {
-                const active = selectedEnvironmentId === environment.id;
-                return (
+          {showEnvironmentFilter || activeProjects.length > 1 ? (
+            <Menu>
+              <MenuTrigger
+                render={
                   <Button
-                    key={environment.id}
                     type="button"
                     size="xs"
-                    variant={active ? "secondary" : "ghost"}
-                    onClick={() => {
-                      setSelectedEnvironmentId(active ? null : environment.id);
+                    variant={
+                      selectedEnvironmentId !== null || selectedProjectScopedKey !== null
+                        ? "secondary"
+                        : "outline"
+                    }
+                  >
+                    <span className="max-w-28 truncate">{currentFilterMenuLabel}</span>
+                    <ChevronDownIcon className="size-3 opacity-70" />
+                  </Button>
+                }
+              />
+              <MenuPopup align="end">
+                {showEnvironmentFilter ? (
+                  <MenuRadioGroup
+                    value={selectedEnvironmentId ?? ALL_FILTER_VALUE}
+                    onValueChange={(value) => {
+                      setSelectedEnvironmentId(
+                        value === ALL_FILTER_VALUE ? null : (value as EnvironmentId),
+                      );
                       setSelectedProjectScopedKey(null);
                     }}
                   >
-                    {environment.label}
-                  </Button>
-                );
-              })}
-            </div>
-          ) : null}
-
-          {showEnvironmentFilter && activeProjects.length > 1 ? (
-            <span className="mx-1 h-4 w-px bg-border/60" aria-hidden />
-          ) : null}
-
-          {activeProjects.length > 1 ? (
-            <div className="flex flex-wrap items-center gap-1">
-              <Button
-                type="button"
-                size="xs"
-                variant={selectedProjectScopedKey === null ? "secondary" : "ghost"}
-                onClick={() => setSelectedProjectScopedKey(null)}
-              >
-                <T>All projects</T>
-              </Button>
-              {activeProjects.slice(0, 8).map((project) => {
-                const key = scopedProjectKey(scopeProjectRef(project.environmentId, project.id));
-                const active = selectedProjectScopedKey === key;
-                return (
-                  <Button
-                    key={key}
-                    type="button"
-                    size="xs"
-                    variant={active ? "secondary" : "ghost"}
-                    onClick={() => setSelectedProjectScopedKey(active ? null : key)}
+                    <MenuRadioItem value={ALL_FILTER_VALUE}>
+                      <T>All environments</T>
+                    </MenuRadioItem>
+                    {environments.map((environment) => (
+                      <MenuRadioItem key={environment.id} value={environment.id}>
+                        {environment.label}
+                      </MenuRadioItem>
+                    ))}
+                  </MenuRadioGroup>
+                ) : null}
+                {activeProjects.length > 1 ? (
+                  <MenuRadioGroup
+                    value={selectedProjectScopedKey ?? ALL_FILTER_VALUE}
+                    onValueChange={(value) => {
+                      setSelectedProjectScopedKey(value === ALL_FILTER_VALUE ? null : value);
+                    }}
                   >
-                    <span className="max-w-32 truncate">{project.title}</span>
-                  </Button>
-                );
-              })}
-            </div>
+                    <MenuRadioItem value={ALL_FILTER_VALUE}>
+                      <T>All projects</T>
+                    </MenuRadioItem>
+                    {activeProjects.map((project) => {
+                      const key = scopedProjectKey(
+                        scopeProjectRef(project.environmentId, project.id),
+                      );
+                      return (
+                        <MenuRadioItem key={key} value={key}>
+                          {project.title}
+                        </MenuRadioItem>
+                      );
+                    })}
+                  </MenuRadioGroup>
+                ) : null}
+              </MenuPopup>
+            </Menu>
           ) : null}
 
           {hasFilters ? (
@@ -764,7 +795,6 @@ export function TaskBoardPage() {
               type="button"
               size="xs"
               variant="ghost-muted"
-              className="ml-auto"
               onClick={() => {
                 setSearchQuery("");
                 setSelectedEnvironmentId(null);
@@ -774,59 +804,77 @@ export function TaskBoardPage() {
               <T>Reset filters</T>
             </Button>
           ) : null}
+
+          <Button
+            type="button"
+            size="xs"
+            variant={showSettled ? "secondary" : "ghost"}
+            onClick={() => setShowSettled((prev) => !prev)}
+          >
+            {showSettled ? gt("Hide settled") : gt("Show settled")}
+          </Button>
+
+          <Button type="button" size="xs" onClick={handleCreateNewThread}>
+            <PlusIcon className="size-3.5" />
+            <span>
+              <T>New thread</T>
+            </span>
+          </Button>
         </div>
-      ) : null}
+      </WorkspacePageHeader>
 
       <div ref={boardBodyRef} className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {selectedThreadRef !== null ? (
           <div
             data-testid="task-board-split-view"
-            className="flex min-h-0 flex-1 gap-3 overflow-hidden p-4"
+            className="flex min-h-0 flex-1 gap-3 overflow-hidden px-4 pt-1 pb-4"
           >
             <div
               data-testid="task-board-docked-column"
-              className="hidden min-h-0 w-[clamp(17.5rem,25%,22rem)] shrink-0 flex-col gap-2 md:flex"
+              className="hidden min-h-0 w-[clamp(17.5rem,23%,21rem)] shrink-0 flex-col gap-2 md:flex"
             >
               <div
                 role="tablist"
                 aria-label={gt("Task board columns")}
                 className={cn(
                   "grid shrink-0 gap-1",
-                  columnDefs.length === 4 ? "grid-cols-2" : "grid-cols-3",
+                  columnDefs.length === 4 ? "grid-cols-4" : "grid-cols-3",
                 )}
               >
                 {columnDefs.map((column) => {
                   const isActive = column.id === dockedColumn.id;
                   const isDropTarget = column.droppable && dragOverColumn === column.id;
                   return (
-                    <button
-                      key={column.id}
-                      type="button"
-                      role="tab"
-                      aria-selected={isActive}
-                      data-task-board-column-tab={column.id}
-                      onClick={() => setDockedColumnId(column.id)}
-                      onDragOver={(event) => handleColumnDragOver(event, column.id)}
-                      onDragLeave={() => {
-                        if (dragOverColumn === column.id) setDragOverColumn(null);
-                      }}
-                      onDrop={(event) => handleColumnDrop(event, column.id)}
-                      className={cn(
-                        "flex min-w-0 cursor-pointer items-center justify-between gap-1.5 rounded-lg border px-2 py-1.5 text-left text-xs font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                        isActive
-                          ? cn("text-foreground shadow-2xs", column.accentClass)
-                          : "border-border/50 bg-background text-muted-foreground hover:border-border hover:bg-accent/40 hover:text-foreground",
-                        isDropTarget && "ring-2 ring-inset ring-primary/60",
-                      )}
-                    >
-                      <span className="flex min-w-0 items-center gap-1.5">
+                    <Tooltip key={column.id}>
+                      <TooltipTrigger
+                        render={
+                          <button
+                            type="button"
+                            role="tab"
+                            aria-selected={isActive}
+                            aria-label={`${column.title} (${column.totalCount})`}
+                            data-task-board-column-tab={column.id}
+                            onClick={() => setDockedColumnId(column.id)}
+                            onDragOver={(event) => handleColumnDragOver(event, column.id)}
+                            onDragLeave={() => {
+                              if (dragOverColumn === column.id) setDragOverColumn(null);
+                            }}
+                            onDrop={(event) => handleColumnDrop(event, column.id)}
+                            className={cn(
+                              "flex min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                              isActive
+                                ? cn("text-foreground shadow-2xs", column.accentClass)
+                                : "border-border/50 bg-background text-muted-foreground hover:border-border hover:bg-accent/40 hover:text-foreground",
+                              isDropTarget && "ring-2 ring-inset ring-primary/60",
+                            )}
+                          />
+                        }
+                      >
                         {column.icon}
-                        <span className="truncate">{column.title}</span>
-                      </span>
-                      <span className="shrink-0 text-2xs tabular-nums text-muted-foreground">
-                        {column.totalCount}
-                      </span>
-                    </button>
+                        <span className="tabular-nums">{column.totalCount}</span>
+                      </TooltipTrigger>
+                      <TooltipPopup side="bottom">{column.title}</TooltipPopup>
+                    </Tooltip>
                   );
                 })}
               </div>
@@ -844,7 +892,7 @@ export function TaskBoardPage() {
             />
           </div>
         ) : (
-          <div className="flex min-h-0 flex-1 overflow-x-auto p-4">
+          <div className="flex min-h-0 flex-1 overflow-x-auto px-4 pt-1 pb-4">
             <div
               className={cn(
                 "grid min-h-0 min-w-full flex-1 gap-3",

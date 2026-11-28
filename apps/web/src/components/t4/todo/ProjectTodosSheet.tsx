@@ -1,4 +1,5 @@
 import { scopeProjectRef, scopedProjectKey } from "@t3tools/client-runtime/environment";
+import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import {
   AuthOrchestrationOperateScope,
   type EnvironmentId,
@@ -68,7 +69,7 @@ export function ProjectTodosHeaderTrigger(props: ProjectTodosHeaderTriggerProps)
       </Tooltip>
 
       <Sheet open={open} onOpenChange={setOpen}>
-        <SheetPopup side="right" className="w-full max-w-md">
+        <SheetPopup side="right" layer="dialog" className="w-full max-w-md">
           <SheetHeader>
             <SheetTitle>
               <span className="inline-flex min-w-0 items-center gap-2">
@@ -109,12 +110,14 @@ export function QuickTodoCaptureDialog(props: QuickTodoCaptureDialogProps) {
   const projects = useProjects();
   const serverConfigs = useServerConfigs();
 
-  const capableProjects = projects.filter(
-    (project) =>
+  const capableProjects = projects.filter((project) => {
+    const serverConfig = serverConfigs.get(project.environmentId);
+    return (
       project.archivedAt === null &&
-      !project.isScratch &&
-      serverConfigs.get(project.environmentId)?.environment.capabilities.projectTodos === true,
-  );
+      !isScratchProject(project, serverConfig?.scratchWorkspaceRoot) &&
+      serverConfig?.environment.capabilities.projectTodos === true
+    );
+  });
 
   const defaultKey =
     props.defaultEnvironmentId != null && props.defaultProjectId != null

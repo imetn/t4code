@@ -57,6 +57,8 @@ interface ChatHeaderProps {
   parentThreadLink: { threadId: ThreadId; title: string } | null;
   onOpenThread: (threadId: ThreadId) => void;
   rightPanelOpen: boolean;
+  inlineControls?: boolean | undefined;
+  boardPaneTitleTarget?: boolean | undefined;
   onNewThreadInProject: () => void;
   onOpenProjectSettings?: (() => void) | undefined;
   onFindInThread?: ((threadRef: ScopedThreadRef) => void) | undefined;
@@ -82,6 +84,8 @@ export const ChatHeader = memo(function ChatHeader({
   parentThreadLink,
   onOpenThread,
   rightPanelOpen,
+  inlineControls = false,
+  boardPaneTitleTarget = false,
   onNewThreadInProject,
   onOpenProjectSettings,
   onFindInThread,
@@ -256,7 +260,7 @@ export const ChatHeader = memo(function ChatHeader({
       ref={breadcrumbContainerRef}
       className={cn(
         "flex min-w-0 flex-1 items-center gap-2 sm:gap-3",
-        rightPanelOpen ? "pr-10" : "pr-24",
+        inlineControls ? "pr-0" : rightPanelOpen ? "pr-10" : "pr-24",
       )}
       onContextMenu={handleHeaderContextMenu}
     >
@@ -362,6 +366,7 @@ export const ChatHeader = memo(function ChatHeader({
                 render={
                   <button
                     type="button"
+                    data-task-board-pane-title={boardPaneTitleTarget ? "" : undefined}
                     aria-label={gt("Thread actions for {title}", { title: activeThreadTitle })}
                     aria-haspopup="menu"
                     onClick={openMenuFromTitle}

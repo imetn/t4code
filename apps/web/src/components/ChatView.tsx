@@ -137,6 +137,7 @@ import { useAtomValue } from "@effect/atom-react";
 import {
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
+  type ReactNode,
   type SetStateAction,
   use,
   useEffect,
@@ -458,6 +459,10 @@ type ChatViewProps =
       forceExpandedMobileComposer?: boolean;
       /** Embedded inside a side chat panel or the task board split view; hides workspace chrome. */
       embedded?: SideChatParentPanel | "board";
+      /** Optional leading controls rendered inside the board pane chat header (e.g. mobile back button). */
+      boardHeaderLeading?: ReactNode;
+      /** Optional trailing controls rendered inside the board pane chat header (e.g. status badge, maximize, close). */
+      boardHeaderActions?: ReactNode;
       routeKind: "server";
       draftId?: never;
     }
@@ -468,6 +473,8 @@ type ChatViewProps =
       reserveTitleBarControlInset?: boolean;
       forceExpandedMobileComposer?: boolean;
       embedded?: never;
+      boardHeaderLeading?: never;
+      boardHeaderActions?: never;
       routeKind: "draft";
       draftId: DraftId;
     };
@@ -487,10 +494,13 @@ export default function ChatView(props: ChatViewProps) {
     reserveTitleBarControlInset = true,
     forceExpandedMobileComposer = false,
     embedded: embeddedMode,
+    boardHeaderLeading,
+    boardHeaderActions,
   } = props;
   const parentPanel = typeof embeddedMode === "object" ? embeddedMode : undefined;
   const embedded = embeddedMode !== undefined;
   const embeddedInSidePane = parentPanel !== undefined;
+  const embeddedInBoard = embeddedMode === "board";
   const panelHostShell = useQuietThreadShell(parentPanel?.hostRef ?? null);
   const canOperateThread = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
   const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
@@ -1247,11 +1257,12 @@ export default function ChatView(props: ChatViewProps) {
     activePreviewMiniPlayer?.source ?? null,
     renderedRightPanelSurface,
   );
-  const canMaximizeRightPanel = rightPanelOpen;
+  const rightPanelUsesSheet = embeddedInBoard || shouldUsePlanSidebarSheet;
+  const canMaximizeRightPanel = rightPanelOpen && !embeddedInBoard;
   // An embedded side chat has no panel; a stale maximized flag would hide its own column.
   const rightPanelMaximized =
     !embedded && canMaximizeRightPanel && rightPanelState.maximized === true;
-  const inlineRightPanelOwnsTitleBar = rightPanelOpen && !shouldUsePlanSidebarSheet;
+  const inlineRightPanelOwnsTitleBar = rightPanelOpen && !rightPanelUsesSheet;
   const [threadPanelPopoverHandle] = useState(PopoverCreateHandle);
   const [chatCanvasStore] = useState(createChatCanvasStore);
 
@@ -1958,7 +1969,7 @@ export default function ChatView(props: ChatViewProps) {
           reportedModelSelection,
         );
   const showComposerContextStrip =
-    !embedded &&
+    !embeddedInSidePane &&
     shouldShowComposerContextStrip({
       isDraftHeroState,
       persistInActiveThreads: settings.persistComposerContextStrip,
@@ -3615,37 +3626,45 @@ export default function ChatView(props: ChatViewProps) {
         data-chat-column
         style={
           {
-            "--chat-header-height": embedded ? "0px" : "var(--workspace-topbar-height)",
+            "--chat-header-height": embeddedInSidePane ? "0px" : "var(--workspace-topbar-height)",
           } as CSSProperties
         }
         inert={rightPanelMaximized}
         onMouseUp={preventMiddleClickPasteOutsideEditable}
       >
-        {embedded ? null : (
+        {embeddedInSidePane ? null : (
           <header
             ref={threadPanelPopoverAnchorRef}
             data-chat-header
             className={cn(
-              "relative bg-background [[data-panel-animations=true]_&]:motion-safe:transition-[padding-left] [[data-panel-animations=true]_&]:motion-safe:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:motion-safe:ease-out",
-              isElectron
-                ? cn(
-                    "drag-region flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center px-3 sm:px-5",
-                    reserveTitleBarControlInset &&
-                      !inlineRightPanelOwnsTitleBar &&
-                      "wco:pr-(--workspace-native-controls-inset)",
-                  )
-                : "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center pl-(--workspace-gutter-start) pr-(--workspace-gutter-end)",
-              COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
+              "relative bg-background",
+              embeddedInBoard
+                ? "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center gap-2 border-b border-border/50 px-3 sm:px-4"
+                : cn(
+                    "[[data-panel-animations=true]_&]:motion-safe:transition-[padding-left] [[data-panel-animations=true]_&]:motion-safe:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:motion-safe:ease-out",
+                    isElectron
+                      ? cn(
+                          "drag-region flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center px-3 sm:px-5",
+                          reserveTitleBarControlInset &&
+                            !inlineRightPanelOwnsTitleBar &&
+                            "wco:pr-(--workspace-native-controls-inset)",
+                        )
+                      : "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center pl-(--workspace-gutter-start) pr-(--workspace-gutter-end)",
+                    COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
+                  ),
             )}
           >
-            {isElectron && rightPanelControlsAtRoot ? (
+            {!embeddedInBoard && isElectron && rightPanelControlsAtRoot ? (
               <span
                 aria-hidden
                 className="pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] h-[var(--workspace-topbar-height)] w-28 [-webkit-app-region:no-drag]"
               />
             ) : null}
-            {!rightPanelControlsAtRoot && !rightPanelControlsInPanel ? panelLayoutControls : null}
-            {inlineRightPanelOwnsTitleBar ? threadPanelHeaderControl : null}
+            {!embeddedInBoard && !rightPanelControlsAtRoot && !rightPanelControlsInPanel
+              ? panelLayoutControls
+              : null}
+            {!embeddedInBoard && inlineRightPanelOwnsTitleBar ? threadPanelHeaderControl : null}
+            {embeddedInBoard ? boardHeaderLeading : null}
             <ChatHeader
               activeThreadEnvironmentId={activeThread.environmentId}
               activeThreadId={activeThread.id}
@@ -3655,13 +3674,26 @@ export default function ChatView(props: ChatViewProps) {
               activeProject={activeProject ?? null}
               parentThreadLink={headerParentThreadLink}
               onOpenThread={onOpenRelatedThreadStable}
-              rightPanelOpen={inlineRightPanelOwnsTitleBar}
+              rightPanelOpen={!embeddedInBoard && inlineRightPanelOwnsTitleBar}
+              inlineControls={embeddedInBoard}
+              boardPaneTitleTarget={embeddedInBoard}
               onNewThreadInProject={handleNewThreadInActiveProjectStable}
               {...(activeDraftLogicalProjectKey
                 ? { onOpenProjectSettings: handleOpenDraftProjectSettingsStable }
                 : {})}
               {...(threadFindEnabled ? { onFindInThread: openThreadFindStable } : {})}
             />
+            {embeddedInBoard ? (
+              <div className="flex shrink-0 items-center gap-1">
+                <PanelLayoutControls
+                  {...panelToggleControlProps}
+                  showThreadPanelControl
+                  showTerminalControl
+                  showRightPanelControl
+                />
+                {boardHeaderActions}
+              </div>
+            ) : null}
           </header>
         )}
 
@@ -3727,7 +3759,7 @@ export default function ChatView(props: ChatViewProps) {
                   onCiteAssistantText={citeAssistantTextStable}
                   onReplyToResponse={replyToResponseStable}
                   {...(activeProject &&
-                  (!embedded || parentPanel !== undefined) &&
+                  (!embeddedInSidePane || parentPanel !== undefined) &&
                   !runsOutsideHostCheckout
                     ? { onRunShellCommand: parentPanel?.runShellCommand ?? runShellCommandStable }
                     : {})}
@@ -3786,7 +3818,7 @@ export default function ChatView(props: ChatViewProps) {
                   announceTurnStatus={!isProviderSubagent}
                   onOpenToolDiff={parentPanel?.openToolDiff ?? onOpenToolDiffStable}
                   // A fork would promote the side chat.
-                  {...(embedded ? {} : { onForkFromRun: onForkFromRunStable })}
+                  {...(embeddedInSidePane ? {} : { onForkFromRun: onForkFromRunStable })}
                   onOpenThread={onOpenRelatedThreadStable}
                   parentThreadLink={parentThreadLink}
                   workflowOpening={workflowOpening}
@@ -4181,7 +4213,7 @@ export default function ChatView(props: ChatViewProps) {
               />
             ) : null}
 
-            {embedded ? null : (
+            {embeddedInSidePane ? null : (
               <>
                 <BranchRestoreConfirmHost
                   threadKey={activeThreadKey}
@@ -4276,7 +4308,7 @@ export default function ChatView(props: ChatViewProps) {
           </ThreadFindCanvas>
         </div>
 
-        {embedded ? null : (
+        {embeddedInSidePane ? null : (
           <ChatTerminalDrawers
             activeThreadKey={activeThreadKey}
             activeTerminalOpen={Boolean(terminalUiState.terminalOpen)}
@@ -4292,9 +4324,9 @@ export default function ChatView(props: ChatViewProps) {
         )}
       </div>
 
-      {rightPanelPresent && activeThreadRef && !embedded ? (
+      {rightPanelPresent && activeThreadRef && !embeddedInSidePane ? (
         <ChatRightPanel
-          sheet={shouldUsePlanSidebarSheet}
+          sheet={rightPanelUsesSheet}
           workspaceLayoutElement={workspaceLayoutElement}
           widthStorageKey={`t3code:preview-panel-width:${activeThreadKey}`}
           sheetAnimationDurationMs={panelAnimationsActive ? panelAnimationDurationMs : 0}
@@ -4304,7 +4336,7 @@ export default function ChatView(props: ChatViewProps) {
           getShortcutContext={getShortcutContextStable}
           maximized={rightPanelMaximized}
           layoutControls={
-            rightPanelOpen ? (
+            rightPanelOpen && !embeddedInBoard ? (
               <div className="mr-px flex items-center gap-1">
                 <RightPanelMaximizeControl
                   maximized={rightPanelMaximized}
@@ -4366,7 +4398,7 @@ export default function ChatView(props: ChatViewProps) {
         worktreePath={activeThread?.worktreePath ?? null}
         onConfirm={onConfirmRevertStable}
       />
-      {embedded ? null : <LinkPullRequestDialogHost />}
+      {embeddedInSidePane ? null : <LinkPullRequestDialogHost />}
       <ThreadVisitWatermark threadRef={routeThreadRef} />
       <ExpandedImageDialogHost threadKey={routeThreadKey} />
     </div>

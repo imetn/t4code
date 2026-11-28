@@ -4,10 +4,11 @@ import type {
 } from "@t3tools/client-runtime/state/shell";
 import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
+import { page } from "vite-plus/test/browser";
 
 import "~/index.css";
 import { act, render } from "../../../test/render";
-import { SidebarProvider } from "../ui/sidebar";
+import { SidebarProvider, useSidebar } from "../ui/sidebar";
 
 const envId = EnvironmentId.make("env-1");
 const projId = ProjectId.make("proj-1");
@@ -159,10 +160,22 @@ vi.mock(import("../ProjectFavicon"), () => ({
 }));
 
 vi.mock(import("../ChatView"), () => ({
-  default: (props: { threadId: string; embedded?: unknown }) => {
+  default: (props: {
+    threadId: string;
+    embedded?: unknown;
+    boardHeaderLeading?: React.ReactNode;
+    boardHeaderActions?: React.ReactNode;
+  }) => {
     mocks.chatViewProps.push({ threadId: props.threadId, embedded: props.embedded });
     return (
       <div data-testid="mock-embedded-chat-view" data-thread-id={props.threadId}>
+        <div>
+          {props.boardHeaderLeading}
+          <button type="button" data-task-board-pane-title="">
+            {props.threadId}
+          </button>
+          {props.boardHeaderActions}
+        </div>
         Chat for {props.threadId}
       </div>
     );
@@ -297,5 +310,44 @@ describe("TaskBoardPage", () => {
       window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     });
     expect(document.activeElement?.getAttribute("data-task-board-column")).toBe("active");
+  });
+
+  it("auto-collapses an open main sidebar on split view open and restores it on close", async () => {
+    await page.viewport(1280, 800);
+    mocks.navigate.mockReset();
+    mocks.chatViewProps = [];
+    mocks.threads = [workingThread, activeThread];
+
+    function SidebarStateProbe() {
+      const { open } = useSidebar();
+      return <span data-testid="sidebar-open-probe">{String(open)}</span>;
+    }
+
+    await using _screen = await render(
+      <SidebarProvider defaultOpen={true}>
+        <SidebarStateProbe />
+        <TaskBoardPage />
+      </SidebarProvider>,
+    );
+
+    expect(document.querySelector('[data-testid="sidebar-open-probe"]')?.textContent).toBe("true");
+
+    const workingCard = document.querySelector<HTMLElement>(
+      `[data-task-board-card="${envId}:t-working"]`,
+    )!;
+    await act(async () => {
+      workingCard.click();
+    });
+
+    expect(document.querySelector('[data-testid="sidebar-open-probe"]')?.textContent).toBe("false");
+
+    const closeButton = document.querySelector<HTMLButtonElement>(
+      'button[aria-label="Back to board"]',
+    )!;
+    await act(async () => {
+      closeButton.click();
+    });
+
+    expect(document.querySelector('[data-testid="sidebar-open-probe"]')?.textContent).toBe("true");
   });
 });
