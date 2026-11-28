@@ -136,6 +136,7 @@ const THREAD_SETTINGS_MAINTAIN_VISIBLE_CONTENT_POSITION = {
   size: true,
 } as const;
 const THREAD_SETTINGS_CATALOG_LAYOUT_TRANSITION = LinearTransition.duration(160);
+const THREAD_SETTINGS_TAB_LAYOUT_TRANSITION = LinearTransition.duration(150);
 const THREAD_SETTINGS_CATALOG_ENTER_TRANSITION = FadeIn.duration(120);
 const THREAD_SETTINGS_CATALOG_EXIT_TRANSITION = FadeOut.duration(100);
 const EMPTY_MODEL_FAVORITES: ReadonlyArray<{
@@ -789,34 +790,34 @@ function modelSheetSurface(isDarkMode: boolean, useNativeGlass = NATIVE_LIQUID_G
   if (useNativeGlass) {
     return isDarkMode
       ? {
-          canvas: "rgba(15,15,20,0.68)",
-          card: "rgba(30,30,36,0.56)",
+          canvas: "rgba(18,18,22,0.88)",
+          card: "rgba(30,30,36,0.62)",
           cardBorder: "rgba(255,255,255,0.16)",
           tabTrack: "rgba(255,255,255,0.10)",
           tabTrackBorder: "rgba(255,255,255,0.16)",
-          activeTab: "rgba(255,255,255,0.22)",
-          activeTabBorder: "rgba(255,255,255,0.26)",
+          activeTab: "rgba(255,255,255,0.20)",
+          activeTabBorder: "rgba(255,255,255,0.24)",
           actionBtn: "rgba(255,255,255,0.12)",
           selectedRow: "rgba(255,255,255,0.14)",
-          dragRow: "rgba(44,44,52,0.94)",
-          divider: "rgba(255,255,255,0.13)",
-          pill: "rgba(255,255,255,0.15)",
-          speedActive: "rgba(255,255,255,0.26)",
+          dragRow: "rgba(44,44,52,0.96)",
+          divider: "rgba(255,255,255,0.11)",
+          pill: "rgba(255,255,255,0.14)",
+          speedActive: "rgba(255,255,255,0.24)",
         }
       : {
-          canvas: "rgba(248,248,251,0.80)",
-          card: "rgba(255,255,255,0.68)",
-          cardBorder: "rgba(255,255,255,0.84)",
-          tabTrack: "rgba(255,255,255,0.54)",
-          tabTrackBorder: "rgba(255,255,255,0.78)",
-          activeTab: "rgba(255,255,255,0.94)",
-          activeTabBorder: "rgba(255,255,255,0.98)",
-          actionBtn: "rgba(255,255,255,0.64)",
+          canvas: "rgba(250,250,252,0.92)",
+          card: "rgba(255,255,255,0.74)",
+          cardBorder: "rgba(255,255,255,0.88)",
+          tabTrack: "rgba(255,255,255,0.58)",
+          tabTrackBorder: "rgba(255,255,255,0.82)",
+          activeTab: "rgba(255,255,255,0.96)",
+          activeTabBorder: "rgba(0,0,0,0.08)",
+          actionBtn: "rgba(255,255,255,0.68)",
           selectedRow: "rgba(24,24,27,0.08)",
           dragRow: "rgba(255,255,255,0.98)",
-          divider: "rgba(0,0,0,0.09)",
-          pill: "rgba(24,24,27,0.085)",
-          speedActive: "rgba(255,255,255,0.96)",
+          divider: "rgba(0,0,0,0.085)",
+          pill: "rgba(24,24,27,0.08)",
+          speedActive: "rgba(255,255,255,0.98)",
         };
   }
   return isDarkMode
@@ -918,14 +919,17 @@ function ThreadSettingsTopBar(props: {
     tabsScrollRef.current?.scrollTo({ x: targetX, animated: true });
   }, [session.activeTab]);
 
+  const reducedMotion = useReducedMotion();
+  const reduceMotionEnabled = useReduceMotionEnabled();
+  const tabLayoutTransition =
+    !reducedMotion && !reduceMotionEnabled ? THREAD_SETTINGS_TAB_LAYOUT_TRANSITION : undefined;
+
   if (showSearch) {
     return (
       <View
         className="px-[22px] pb-2.5"
         style={{
           paddingTop: topPadding,
-          borderBottomWidth: 0.5,
-          borderBottomColor: surface.divider,
         }}
       >
         <View className="h-[34px] flex-row items-center gap-2">
@@ -992,8 +996,6 @@ function ThreadSettingsTopBar(props: {
       className="px-[22px] pb-2.5"
       style={{
         paddingTop: topPadding,
-        borderBottomWidth: 0.5,
-        borderBottomColor: surface.divider,
       }}
     >
       {/* Row 1: Aligned Title + Bare Action Icons (exact 34pt row height) */}
@@ -1075,72 +1077,88 @@ function ThreadSettingsTopBar(props: {
           paddingVertical: 1,
         }}
       >
-        <Pressable
-          accessibilityLabel={gt("Favorites")}
-          accessibilityRole="tab"
-          accessibilityState={{ selected: favoritesActive }}
+        <Animated.View
+          layout={tabLayoutTransition}
           onLayout={(event) => {
             tabLayoutsRef.current.set("favorites", {
               x: event.nativeEvent.layout.x,
               width: event.nativeEvent.layout.width,
             });
           }}
-          onPress={() => {
-            void Haptics.selectionAsync();
-            session.setActiveTab("favorites");
-          }}
-          className={cn(
-            "h-[30px] flex-row items-center justify-center rounded-full active:opacity-70",
-            favoritesActive ? "gap-1.5 px-3" : "w-[34px]",
-          )}
-          style={favoritesActive ? { backgroundColor: surface.activeTab } : undefined}
         >
-          <SymbolView
-            name="star.fill"
-            size={15}
-            tintColor={favoritesActive ? "#f59e0b" : undefined}
-            tintColorClassName={favoritesActive ? undefined : "accent-foreground"}
-            style={favoritesActive ? undefined : { opacity: 0.78 }}
-            type="monochrome"
-          />
-          {favoritesActive ? (
-            <Text className="text-[13px] font-t3-semibold text-foreground">{gt("Favorites")}</Text>
-          ) : null}
-        </Pressable>
+          <Pressable
+            accessibilityLabel={gt("Favorites")}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: favoritesActive }}
+            onPress={() => {
+              void Haptics.selectionAsync();
+              session.setActiveTab("favorites");
+            }}
+            className={cn(
+              "h-[30px] flex-row items-center justify-center rounded-full active:opacity-70",
+              favoritesActive ? "gap-1.5 px-3" : "w-[34px]",
+            )}
+            style={favoritesActive ? { backgroundColor: surface.activeTab } : undefined}
+          >
+            <SymbolView
+              name="star.fill"
+              size={15}
+              tintColor={favoritesActive ? "#f59e0b" : undefined}
+              tintColorClassName={favoritesActive ? undefined : "accent-foreground"}
+              style={favoritesActive ? undefined : { opacity: 0.78 }}
+              type="monochrome"
+            />
+            {favoritesActive ? (
+              <Text className="text-[13px] font-t3-semibold text-foreground">
+                {gt("Favorites")}
+              </Text>
+            ) : null}
+          </Pressable>
+        </Animated.View>
+
+        <View
+          className="mx-0.5 h-3.5 w-px"
+          style={{ backgroundColor: surface.divider }}
+          accessible={false}
+        />
 
         {session.providerGroups.map((group) => {
           const isActive = session.activeTab === group.providerKey;
           const driver = group.models[0]?.providerDriver ?? group.providerKey;
           const iconUrl = group.models[0]?.providerIconUrl;
           return (
-            <Pressable
+            <Animated.View
               key={group.providerKey}
-              accessibilityLabel={group.providerLabel}
-              accessibilityRole="tab"
-              accessibilityState={{ selected: isActive }}
+              layout={tabLayoutTransition}
               onLayout={(event) => {
                 tabLayoutsRef.current.set(group.providerKey, {
                   x: event.nativeEvent.layout.x,
                   width: event.nativeEvent.layout.width,
                 });
               }}
-              onPress={() => {
-                void Haptics.selectionAsync();
-                session.setActiveTab(group.providerKey);
-              }}
-              className={cn(
-                "h-[30px] flex-row items-center justify-center rounded-full active:opacity-70",
-                isActive ? "gap-1.5 px-3" : "w-[34px]",
-              )}
-              style={isActive ? { backgroundColor: surface.activeTab } : undefined}
             >
-              <ProviderIcon iconUrl={iconUrl} provider={driver} size={17} />
-              {isActive ? (
-                <Text className="text-[13px] font-t3-semibold text-foreground" numberOfLines={1}>
-                  {group.providerLabel}
-                </Text>
-              ) : null}
-            </Pressable>
+              <Pressable
+                accessibilityLabel={group.providerLabel}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: isActive }}
+                onPress={() => {
+                  void Haptics.selectionAsync();
+                  session.setActiveTab(group.providerKey);
+                }}
+                className={cn(
+                  "h-[30px] flex-row items-center justify-center rounded-full active:opacity-70",
+                  isActive ? "gap-1.5 px-3" : "w-[34px]",
+                )}
+                style={isActive ? { backgroundColor: surface.activeTab } : undefined}
+              >
+                <ProviderIcon iconUrl={iconUrl} provider={driver} size={17} />
+                {isActive ? (
+                  <Text className="text-[13px] font-t3-semibold text-foreground" numberOfLines={1}>
+                    {group.providerLabel}
+                  </Text>
+                ) : null}
+              </Pressable>
+            </Animated.View>
           );
         })}
       </ScrollView>
@@ -1360,8 +1378,6 @@ function ThreadSettingsThumbDeck() {
       style={{
         backgroundColor: "transparent",
         paddingBottom: bottomInset,
-        borderTopWidth: 0.5,
-        borderTopColor: surface.divider,
       }}
     >
       <ChatGptSharingStatus provider={selectedProvider} />
@@ -1674,29 +1690,63 @@ function ThreadSettingsSheetBody(props: { readonly onClose: () => void }) {
   const activeTabIndex = Math.max(0, tabKeys.indexOf(session.activeTab));
   const pagerRef = useRef<ScrollViewInstance>(null);
   const [pagerWidth, setPagerWidth] = useState(0);
+  const lastPagerWidthRef = useRef(0);
   const lastScrolledTabRef = useRef<ActiveTab>(session.activeTab);
+  const programmaticTargetIndexRef = useRef<number | null>(null);
   const didInitialScrollRef = useRef(false);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the native paging ScrollView aligned when the user taps a top provider tab or rotates the screen
   useEffect(() => {
     if (isSearching || pagerWidth <= 0) return;
     const targetIndex = Math.max(0, tabKeys.indexOf(session.activeTab));
-    const animated =
+    const widthChanged = lastPagerWidthRef.current !== pagerWidth;
+    const tabChangedProgrammatically =
       didInitialScrollRef.current && lastScrolledTabRef.current !== session.activeTab;
+    const isInitial = !didInitialScrollRef.current;
     didInitialScrollRef.current = true;
+    lastPagerWidthRef.current = pagerWidth;
     lastScrolledTabRef.current = session.activeTab;
-    pagerRef.current?.scrollTo({ x: targetIndex * pagerWidth, animated });
+    if (tabChangedProgrammatically) {
+      programmaticTargetIndexRef.current = targetIndex;
+      pagerRef.current?.scrollTo({ x: targetIndex * pagerWidth, animated: true });
+    } else if (isInitial || widthChanged) {
+      programmaticTargetIndexRef.current = null;
+      pagerRef.current?.scrollTo({ x: targetIndex * pagerWidth, animated: false });
+    }
   }, [isSearching, pagerWidth, session.activeTab, tabKeys]);
 
-  const handlePagerSettled = (offsetX: number) => {
+  const commitLiveTabForOffset = (offsetX: number, withHaptic: boolean) => {
     if (pagerWidth <= 0) return;
     const nextIndex = Math.max(0, Math.min(tabKeys.length - 1, Math.round(offsetX / pagerWidth)));
     const nextTab = tabKeys[nextIndex];
-    if (nextTab && nextTab !== session.activeTab) {
+    if (nextTab && nextTab !== lastScrolledTabRef.current) {
       lastScrolledTabRef.current = nextTab;
-      void Haptics.selectionAsync();
+      if (withHaptic) void Haptics.selectionAsync();
       session.setActiveTab(nextTab);
     }
+  };
+
+  const handlePagerScroll = (offsetX: number) => {
+    if (pagerWidth <= 0) return;
+    const target = programmaticTargetIndexRef.current;
+    if (target !== null) {
+      if (Math.abs(offsetX - target * pagerWidth) <= 2) {
+        programmaticTargetIndexRef.current = null;
+      }
+      return;
+    }
+    commitLiveTabForOffset(offsetX, true);
+  };
+
+  const handlePagerEndDrag = (offsetX: number, targetOffsetX: number | undefined) => {
+    if (pagerWidth <= 0) return;
+    programmaticTargetIndexRef.current = null;
+    commitLiveTabForOffset(targetOffsetX ?? offsetX, true);
+  };
+
+  const handlePagerSettled = (offsetX: number) => {
+    programmaticTargetIndexRef.current = null;
+    commitLiveTabForOffset(offsetX, false);
   };
 
   const renderCatalogItem = (itemProps: LegendListRenderItemProps<ThreadSettingsCatalogItem>) => {
@@ -1821,6 +1871,11 @@ function ThreadSettingsSheetBody(props: { readonly onClose: () => void }) {
         onRefresh={refreshProviders}
         onClose={props.onClose}
       />
+      <View
+        className="mx-[22px]"
+        style={{ height: 0.5, backgroundColor: surface.divider }}
+        accessible={false}
+      />
 
       {isSearching ? (
         <View className="min-h-0 flex-1 px-[18px]">{renderCardList(session.activeTab)}</View>
@@ -1841,9 +1896,20 @@ function ThreadSettingsSheetBody(props: { readonly onClose: () => void }) {
               pagingEnabled
               directionalLockEnabled
               decelerationRate="fast"
+              scrollEventThrottle={16}
               showsHorizontalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
               contentOffset={{ x: activeTabIndex * pagerWidth, y: 0 }}
+              onScrollBeginDrag={() => {
+                programmaticTargetIndexRef.current = null;
+              }}
+              onScroll={(event) => handlePagerScroll(event.nativeEvent.contentOffset.x)}
+              onScrollEndDrag={(event) =>
+                handlePagerEndDrag(
+                  event.nativeEvent.contentOffset.x,
+                  event.nativeEvent.targetContentOffset?.x,
+                )
+              }
               onMomentumScrollEnd={(event) => handlePagerSettled(event.nativeEvent.contentOffset.x)}
               className="flex-1"
             >
@@ -1859,6 +1925,11 @@ function ThreadSettingsSheetBody(props: { readonly onClose: () => void }) {
         </View>
       )}
 
+      <View
+        className="mx-[22px]"
+        style={{ height: 0.5, backgroundColor: surface.divider }}
+        accessible={false}
+      />
       {/* Permanently pinned thumb-zone bottom deck */}
       <ThreadSettingsThumbDeck />
     </View>
