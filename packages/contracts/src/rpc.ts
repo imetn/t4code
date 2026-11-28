@@ -516,6 +516,14 @@ import {
   ProjectTodoUpdateInput,
   ProjectTodoUpdateResult,
 } from "./t4/projectTodo.ts";
+import {
+  SyncedDraftClearInput,
+  SyncedDraftClearResult,
+  SyncedDraftError,
+  SyncedDraftEvent,
+  SyncedDraftUpsertInput,
+  SyncedDraftUpsertResult,
+} from "./t4/syncedDraft.ts";
 
 export const WS_METHODS = {
   projectsListEntries: "projects.listEntries",
@@ -761,6 +769,11 @@ export const WS_METHODS = {
   projectTodosCreate: "t4.projectTodos.create",
   projectTodosUpdate: "t4.projectTodos.update",
   projectTodosDelete: "t4.projectTodos.delete",
+
+  // T4 Code cross-device synced composer draft methods
+  syncedDraftsSubscribe: "t4.syncedDrafts.subscribe",
+  syncedDraftsUpsert: "t4.syncedDrafts.upsert",
+  syncedDraftsClear: "t4.syncedDrafts.clear",
 
   sourceControlLookupRepository: "sourceControl.lookupRepository",
   sourceControlCloneRepository: "sourceControl.cloneRepository",
@@ -1655,6 +1668,26 @@ const WsProjectTodosDeleteRpc = Rpc.make(WS_METHODS.projectTodosDelete, {
   payload: ProjectTodoDeleteInput,
   success: ProjectTodoDeleteResult,
   error: ProjectTodoRpcError,
+});
+
+const SyncedDraftRpcError = Schema.Union([SyncedDraftError, EnvironmentAuthorizationError]);
+
+const WsSyncedDraftsSubscribeRpc = Rpc.make(WS_METHODS.syncedDraftsSubscribe, {
+  success: SyncedDraftEvent,
+  error: SyncedDraftRpcError,
+  stream: true,
+});
+
+const WsSyncedDraftsUpsertRpc = Rpc.make(WS_METHODS.syncedDraftsUpsert, {
+  payload: SyncedDraftUpsertInput,
+  success: SyncedDraftUpsertResult,
+  error: SyncedDraftRpcError,
+});
+
+const WsSyncedDraftsClearRpc = Rpc.make(WS_METHODS.syncedDraftsClear, {
+  payload: SyncedDraftClearInput,
+  success: SyncedDraftClearResult,
+  error: SyncedDraftRpcError,
 });
 
 const IssueTrackerRpcError = Schema.Union([
@@ -2647,6 +2680,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsProjectTodosCreateRpc,
   WsProjectTodosUpdateRpc,
   WsProjectTodosDeleteRpc,
+  WsSyncedDraftsSubscribeRpc,
+  WsSyncedDraftsUpsertRpc,
+  WsSyncedDraftsClearRpc,
   WsGuestShareCreateRpc,
   WsServerProbeRpc,
   WsServerGetConfigRpc,

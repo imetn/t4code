@@ -7,7 +7,10 @@ import type { VideoThumbnail } from "expo-video";
 import { useState } from "react";
 import { StyleSheet } from "react-native";
 
-import type { DraftComposerFileAttachment } from "../lib/composerImages";
+import {
+  isFileBackedComposerAttachment,
+  type DraftComposerFileAttachment,
+} from "../lib/composerImages";
 import { loadLocalAttachmentPreview } from "../lib/localAttachmentPreview";
 import { cachedVideoThumbnail, loadVideoThumbnail } from "../lib/videoThumbnails";
 
@@ -25,7 +28,9 @@ const videoThumbnailAtom = Atom.family((target: VideoThumbnailTarget) =>
         async (sourceSignal) =>
           typeof target.source === "string"
             ? { uri: target.source, dispose: () => undefined }
-            : loadLocalAttachmentPreview(target.source, sourceSignal),
+            : isFileBackedComposerAttachment(target.source)
+              ? loadLocalAttachmentPreview(target.source, sourceSignal)
+              : null,
         signal,
       ),
     ),

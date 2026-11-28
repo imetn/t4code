@@ -311,17 +311,18 @@ export function createComposerDraftContextHistory() {
   return {
     restore(text: string, draft: ComposerDraft) {
       for (const attachment of draft.attachments) {
-        if (attachment.type !== "file") continue;
+        if (attachment.type !== "file" || attachment.fileUri === undefined) continue;
         const previous = files.get(attachment.id);
         files.delete(attachment.id);
         if (previous?.attachment.fileUri === attachment.fileUri) {
-          previous.attachment = attachment;
+          previous.attachment = { ...attachment, fileUri: attachment.fileUri };
           files.set(attachment.id, previous);
         } else {
           previous?.release();
+          const fileBacked = { ...attachment, fileUri: attachment.fileUri };
           files.set(attachment.id, {
-            attachment,
-            release: retainComposerAttachmentFileForPreview(attachment),
+            attachment: fileBacked,
+            release: retainComposerAttachmentFileForPreview(fileBacked),
           });
         }
       }
@@ -1777,6 +1778,48 @@ export function restoreComposerDraftSnapshotState(
     next[draftKey] = snapshot;
   }
   return next;
+}
+
+/**
+ * Replaces text and attachments from a cross-device synced draft while preserving local model,
+ * runtime, and interaction overrides. Cleans up replaced local files without deleting server
+ * pending uploads owned by other devices.
+ */
+export function applyRemoteSyncedComposerDraft(
+  draftKey: string,
+  incoming: {
+    readonly text: string;
+    readonly attachments: ReadonlyArray<DraftComposerAttachment>;
+  } | null,
+): void {
+  let removed: ReadonlyArray<DraftComposerAttachment> = [];
+  let changed = false;
+  updateComposerDrafts((current) => {
+    const existing = current[draftKey];
+    if (!existing && incoming === null) {
+      return current;
+    }
+    const base = normalizeDraft(existing);
+    const nextText = incoming?.text ?? "";
+    const nextAttachments = incoming?.attachments ?? [];
+    const retainedIds = new Set(nextAttachments.map((attachment) => attachment.id));
+    removed = base.attachments.filter((attachment) => !retainedIds.has(attachment.id));
+    const nextContext = referencedComposerContext(nextText, base.context);
+    const nextDraft: ComposerDraft = {
+      ...base,
+      text: nextText,
+      attachments: nextAttachments,
+      context: nextContext,
+    };
+    changed = true;
+    return withComposerDraft(current, draftKey, nextDraft);
+  });
+  if (changed) {
+    markComposerDraftReset(draftKey);
+  }
+  if (removed.length > 0) {
+    scheduleUnusedComposerAttachmentCleanup(removed.map(stripAttachmentUploadReference));
+  }
 }
 
 function stripAttachmentUploadReference(

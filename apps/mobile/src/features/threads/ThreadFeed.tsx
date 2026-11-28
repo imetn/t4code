@@ -983,7 +983,12 @@ function PendingMessageImage(props: {
   const preview = useLocalAttachmentPreview(fileBacked ? attachment : null);
   // The composer already showed this image; reuse its pixels and shape instead of a blank box.
   const uri =
-    handoff?.uri ?? (fileBacked ? preview.uri : (attachment.dataUrl ?? attachment.previewUri));
+    handoff?.uri ??
+    (fileBacked
+      ? preview.uri
+      : attachment.type === "image"
+        ? (attachment.dataUrl ?? attachment.previewUri)
+        : undefined);
   const mediaActions = useMediaActions(
     fileBacked
       ? { name: attachment.name, mimeType: attachment.mimeType, attachment }

@@ -168,6 +168,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.projectTodosList]: AuthOrchestrationReadScope,
   [WS_METHODS.projectTodosGet]: AuthOrchestrationReadScope,
   [WS_METHODS.projectTodosDailyReview]: AuthOrchestrationReadScope,
+  [WS_METHODS.syncedDraftsSubscribe]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsPreview]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsChecks]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsActivity]: AuthOrchestrationReadScope,

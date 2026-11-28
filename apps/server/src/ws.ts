@@ -279,6 +279,7 @@ import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import * as IssueService from "./issue/IssueService.ts";
 import * as ThreadIssueService from "./orchestration-v2/ThreadIssueService.ts";
 import * as ProjectTodoService from "./t4/todo/ProjectTodoService.ts";
+import * as SyncedDraftService from "./t4/drafts/SyncedDraftService.ts";
 import * as IssueTrackerConnections from "./issue/IssueTrackerConnections.ts";
 import * as PullRequestReviewGuideService from "./pullRequest/PullRequestReviewGuideService.ts";
 import { listLinkedPullRequestThreads } from "./pullRequest/linkedThreads.ts";
@@ -1671,6 +1672,7 @@ export const layerWsRpc = (
       const threadIssues = yield* ThreadIssueService.ThreadIssueService;
       const issueTrackers = yield* IssueTrackerConnections.IssueTrackerConnections;
       const projectTodos = yield* ProjectTodoService.ProjectTodoService;
+      const syncedDrafts = yield* SyncedDraftService.SyncedDraftService;
       const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
       const pullRequestSync = yield* PullRequestSyncReactor.PullRequestSyncReactor;
       const deviceService = yield* DeviceService.DeviceService;
@@ -2234,6 +2236,9 @@ export const layerWsRpc = (
         [WS_METHODS.projectTodosCreate]: (input) => projectTodos.create(input),
         [WS_METHODS.projectTodosUpdate]: (input) => projectTodos.update(input),
         [WS_METHODS.projectTodosDelete]: (input) => projectTodos.remove(input),
+        [WS_METHODS.syncedDraftsSubscribe]: () => syncedDrafts.subscribe(),
+        [WS_METHODS.syncedDraftsUpsert]: (input) => syncedDrafts.upsert(input),
+        [WS_METHODS.syncedDraftsClear]: (input) => syncedDrafts.clear(input),
         [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: (command) =>
           Effect.annotateCurrentSpan({
             "orchestration_v2.command_id": command.commandId,
@@ -2281,6 +2286,13 @@ export const layerWsRpc = (
                 .pipe(
                   Effect.tap((result) =>
                     result.replayed ? Effect.void : recordClientCommandAnalytics(command),
+                  ),
+                  Effect.tap((result) =>
+                    !result.replayed && command.type === "message.dispatch"
+                      ? syncedDrafts
+                          .clear({ threadId: command.threadId, sourceClientId: null })
+                          .pipe(Effect.ignore)
+                      : Effect.void,
                   ),
                   Effect.map((result) => ({ sequence: result.sequence })),
                   Effect.mapError((cause) => {
@@ -4061,6 +4073,7 @@ export const layer = Layer.unwrap(
     const issues = yield* IssueService.IssueService;
     const threadIssues = yield* ThreadIssueService.ThreadIssueService;
     const projectTodos = yield* ProjectTodoService.ProjectTodoService;
+    const syncedDrafts = yield* SyncedDraftService.SyncedDraftService;
     const issueTrackers = yield* IssueTrackerConnections.IssueTrackerConnections;
     const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
     const peerLinks = yield* PeerLinks.PeerLinks;
@@ -4171,6 +4184,7 @@ export const layer = Layer.unwrap(
               Layer.provide(Layer.succeed(IssueService.IssueService, issues)),
               Layer.provide(Layer.succeed(ThreadIssueService.ThreadIssueService, threadIssues)),
               Layer.provide(Layer.succeed(ProjectTodoService.ProjectTodoService, projectTodos)),
+              Layer.provide(Layer.succeed(SyncedDraftService.SyncedDraftService, syncedDrafts)),
               Layer.provide(
                 Layer.succeed(IssueTrackerConnections.IssueTrackerConnections, issueTrackers),
               ),

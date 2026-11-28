@@ -132,6 +132,7 @@ import * as PullRequestReviewGuideService from "./pullRequest/PullRequestReviewG
 import * as IssueService from "./issue/IssueService.ts";
 import * as ThreadIssueService from "./orchestration-v2/ThreadIssueService.ts";
 import * as ProjectTodoService from "./t4/todo/ProjectTodoService.ts";
+import * as SyncedDraftService from "./t4/drafts/SyncedDraftService.ts";
 import * as IssueTrackerConnections from "./issue/IssueTrackerConnections.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import * as PullRequestSyncReactor from "./orchestration-v2/PullRequestSyncReactor.ts";
@@ -988,6 +989,9 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(IssueService.IssueService)({}),
   Layer.mock(ThreadIssueService.ThreadIssueService)({}),
   Layer.mock(ProjectTodoService.ProjectTodoService)({}),
+  Layer.mock(SyncedDraftService.SyncedDraftService)({
+    clear: () => Effect.succeed({ cleared: false }),
+  }),
   Layer.mock(IssueTrackerConnections.IssueTrackerConnections)({}),
   Layer.mock(PullRequestSyncReactor.PullRequestSyncReactor)({}),
   Layer.mock(RelayClient.RelayClient)({}),

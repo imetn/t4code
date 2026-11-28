@@ -7,6 +7,10 @@
       "types": "./src/t4/projectTodos.ts",
       "default": "./src/t4/projectTodos.ts"
     },
+    "./t4/synced-drafts": {
+      "types": "./src/t4/syncedDrafts.ts",
+      "default": "./src/t4/syncedDrafts.ts"
+    },
     "./pull-request-diff-fold": {
       "types": "./src/pullRequestDiffFold.ts",
       "default": "./src/pullRequestDiffFold.ts"

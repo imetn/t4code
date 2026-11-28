@@ -285,6 +285,9 @@ const RPC_AGGREGATES = {
   [WS_METHODS.projectTodosCreate]: "projectTodos",
   [WS_METHODS.projectTodosUpdate]: "projectTodos",
   [WS_METHODS.projectTodosDelete]: "projectTodos",
+  [WS_METHODS.syncedDraftsSubscribe]: "syncedDrafts",
+  [WS_METHODS.syncedDraftsUpsert]: "syncedDrafts",
+  [WS_METHODS.syncedDraftsClear]: "syncedDrafts",
 } as const satisfies Readonly<Record<WsRpcMethod, string>>;
 
 const RPC_SPAN_PREFIX = "ws.rpc";

@@ -81,11 +81,35 @@ const migrateProjectTodos = Effect.fn("T4Sqlite.migration.001_ProjectTodos")(fun
   `;
 });
 
+const migrateSyncedComposerDrafts = Effect.fn("T4Sqlite.migration.002_SyncedComposerDrafts")(
+  function* (sql: SqlClient.SqlClient) {
+    yield* sql`
+      CREATE TABLE IF NOT EXISTS t4_synced_composer_drafts (
+        thread_id TEXT PRIMARY KEY,
+        text TEXT NOT NULL DEFAULT '',
+        attachments_json TEXT NOT NULL DEFAULT '[]',
+        revision INTEGER NOT NULL DEFAULT 1,
+        source_client_id TEXT,
+        updated_at TEXT NOT NULL
+      )
+    `;
+    yield* sql`
+      CREATE INDEX IF NOT EXISTS idx_t4_synced_drafts_updated_at
+      ON t4_synced_composer_drafts (updated_at DESC)
+    `;
+  },
+);
+
 const T4_MIGRATIONS: ReadonlyArray<T4Migration> = [
   {
     id: 1,
     name: "001_ProjectTodos",
     up: migrateProjectTodos,
+  },
+  {
+    id: 2,
+    name: "002_SyncedComposerDrafts",
+    up: migrateSyncedComposerDrafts,
   },
 ];
 

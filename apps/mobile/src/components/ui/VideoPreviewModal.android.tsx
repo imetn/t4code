@@ -5,6 +5,7 @@ import { Modal, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppActivityIndicator } from "./AppActivityIndicator";
+import { isFileBackedComposerAttachment } from "../../lib/composerImages";
 import { useLocalAttachmentPreview } from "../../lib/localAttachmentPreview";
 import { usePreviewPresentation, videoPreviewKey } from "../../lib/previewPresentation";
 import { useMediaActions } from "../../state/mediaActions";
@@ -63,7 +64,9 @@ function useLocalPlayback(source: LocalVideoPreviewSource): PlaybackState {
   const gt = useGT();
   const messages = useMessages();
   const { attachment } = source;
-  const preview = useLocalAttachmentPreview(attachment);
+  const preview = useLocalAttachmentPreview(
+    isFileBackedComposerAttachment(attachment) ? attachment : null,
+  );
   const { uri } = preview;
   const error = preview.error
     ? errorDisplayMessage(preview.error, messages) || gt("Could not load this video.")

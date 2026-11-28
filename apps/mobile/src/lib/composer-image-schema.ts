@@ -15,10 +15,11 @@ export const DraftComposerImageAttachmentSchema = Schema.Struct({
   uploadEnvironmentId: Schema.optional(EnvironmentId),
 }).check(
   Schema.makeFilter(
-    ({ fileUri, dataUrl }) =>
+    ({ fileUri, dataUrl, uploadedAttachmentId }) =>
       fileUri !== undefined ||
       dataUrl !== undefined ||
-      "Image attachment has no file or inline bytes.",
+      uploadedAttachmentId !== undefined ||
+      "Image attachment has no file, inline bytes, or uploaded reference.",
   ),
 );
 
@@ -28,11 +29,18 @@ export const DraftComposerFileAttachmentSchema = Schema.Struct({
   name: Schema.String,
   mimeType: Schema.String,
   sizeBytes: Schema.Number,
-  fileUri: Schema.String,
+  fileUri: Schema.optional(Schema.String.check(Schema.isNonEmpty())),
   source: Schema.optional(PastedTextAttachmentSource),
   uploadedAttachmentId: Schema.optional(Schema.String),
   uploadEnvironmentId: Schema.optional(EnvironmentId),
-});
+}).check(
+  Schema.makeFilter(
+    ({ fileUri, uploadedAttachmentId }) =>
+      fileUri !== undefined ||
+      uploadedAttachmentId !== undefined ||
+      "File attachment has no local file or uploaded reference.",
+  ),
+);
 
 export const DraftComposerAttachmentSchema = Schema.Union([
   DraftComposerImageAttachmentSchema,

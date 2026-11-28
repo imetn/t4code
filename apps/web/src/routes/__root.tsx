@@ -64,6 +64,7 @@ import { readProject } from "../state/entities";
 import { getDesktopSnapShotBridge } from "../lib/desktopSnapShot";
 import { isChunkLoadError } from "../lib/chunkReloadGuard";
 import { shouldResumeSnapShotSetupOnStartup } from "../lib/snapShotSetupResume";
+import { installWebSyncedDrafts } from "../state/syncedDrafts";
 
 export const Route = createRootRoute({
   beforeLoad: async ({ location }) => {
@@ -216,6 +217,7 @@ function RootRouteBranch() {
       <ConnectDeviceApprovalCoordinator />
       <AddProjectToMachineDialogHost />
       <UseInAnotherAppDialogHost />
+      <SyncedDraftsCoordinator />
       {import.meta.env.DEV && primaryEnvironmentAuthenticated ? <DevReplayHost /> : null}
     </>
   );
@@ -422,6 +424,13 @@ function EventRouter({
   useEffect(() => {
     handleWelcome(serverWelcome);
   }, [serverWelcome]);
+
+  return null;
+}
+
+function SyncedDraftsCoordinator() {
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to cross-device synced draft streams and DOM visibility flush events
+  useEffect(() => installWebSyncedDrafts(), []);
 
   return null;
 }

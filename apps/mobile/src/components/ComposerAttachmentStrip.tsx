@@ -202,13 +202,13 @@ function ComposerAttachmentContent(props: ComposerAttachmentThumbnailProps) {
         attachment={
           attachment.type === "image"
             ? attachment
-            : { ...rest, type: "image", previewUri: attachment.fileUri }
+            : { ...rest, type: "image", previewUri: attachment.fileUri ?? "" }
         }
       />
     );
   }
   const onPressVideo = props.onPressVideo;
-  if (onPressVideo && videoMimeType(attachment) !== null) {
+  if (onPressVideo && isFileBackedComposerAttachment(attachment) && videoMimeType(attachment) !== null) {
     return (
       <ComposerVideoAttachment {...props} attachment={attachment} onPressVideo={onPressVideo} />
     );
@@ -222,7 +222,8 @@ function ComposerFileAttachment(
   const gt = useGT();
   const { attachment } = props;
   const style = { width: props.size, height: props.size, borderRadius: props.borderRadius };
-  const canPreview = isPdfFile(attachment) && props.onPressPreview !== undefined;
+  const fileBacked = isFileBackedComposerAttachment(attachment);
+  const canPreview = fileBacked && isPdfFile(attachment) && props.onPressPreview !== undefined;
   const sourceIdentifier = `draft-file:${attachment.id}`;
   const onPressDocument = props.onPressDocument;
   const upload = useComposerAttachmentUploadState(props.environmentId, attachment.id);
@@ -235,7 +236,7 @@ function ComposerFileAttachment(
           accessibilityLabel={gt("Open {name}", { name: attachment.name })}
           disabled={!canPreview && onPressDocument === undefined}
           onPress={() =>
-            canPreview
+            canPreview && fileBacked
               ? props.onPressPreview?.({
                   kind: "pdf",
                   name: attachment.name,
@@ -264,7 +265,7 @@ function ComposerFileAttachment(
 }
 
 function ComposerVideoAttachment(props: {
-  readonly attachment: DraftComposerFileAttachment;
+  readonly attachment: DraftComposerFileAttachment & { readonly fileUri: string };
   readonly size: number;
   readonly borderRadius: number;
   readonly compact?: boolean;

@@ -775,6 +775,15 @@ interface ComposerDraftStoreState {
   clearComposerContent: (threadRef: ComposerThreadTarget) => void;
   /** Clears text and attachments, preserving terminal/element contexts, preview annotations, and review comments. */
   clearComposerPromptAndImages: (threadRef: ComposerThreadTarget) => void;
+  /** Replaces prompt, images, and files from a cross-device synced draft while preserving local model/context state. */
+  applySyncedDraft: (
+    threadRef: ScopedThreadRef,
+    draft: {
+      readonly prompt: string;
+      readonly images: ReadonlyArray<ComposerImageAttachment>;
+      readonly files: ReadonlyArray<ComposerFileAttachment>;
+    } | null,
+  ) => void;
   /** Moves all user content into a destination that has none; otherwise leaves both drafts alone. */
   moveComposerContent: (from: ComposerThreadTarget, to: ComposerThreadTarget) => void;
 }
@@ -4522,6 +4531,41 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               images: [],
               files: [],
               nonPersistedImageIds: [],
+              persistedAttachments: [],
+            };
+            const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
+            if (shouldRemoveDraft(nextDraft)) {
+              delete nextDraftsByThreadKey[threadKey];
+            } else {
+              nextDraftsByThreadKey[threadKey] = nextDraft;
+            }
+            return { draftsByThreadKey: nextDraftsByThreadKey };
+          });
+        },
+        applySyncedDraft: (threadRef, incoming) => {
+          const threadKey = scopedThreadKey(threadRef);
+          set((state) => {
+            const existing = state.draftsByThreadKey[threadKey];
+            if (!existing && incoming === null) {
+              return state;
+            }
+            const nextImages = incoming ? [...incoming.images] : [];
+            const nextFiles = incoming ? [...incoming.files] : [];
+            const retainedPreviewUrls = new Set(nextImages.map((image) => image.previewUrl));
+            if (existing) {
+              for (const image of existing.images) {
+                if (!retainedPreviewUrls.has(image.previewUrl)) {
+                  revokeObjectPreviewUrl(image.previewUrl);
+                }
+              }
+            }
+            const base = existing ?? createEmptyThreadDraft();
+            const nextDraft: ComposerThreadDraftState = {
+              ...base,
+              prompt: incoming?.prompt ?? "",
+              images: nextImages,
+              files: nextFiles,
+              nonPersistedImageIds: nextImages.map((image) => image.id),
               persistedAttachments: [],
             };
             const nextDraftsByThreadKey = { ...state.draftsByThreadKey };

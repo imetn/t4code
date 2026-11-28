@@ -7,6 +7,7 @@ import { msg } from "gt-react-native";
 import { useEffect, useEffectEvent, useId } from "react";
 
 import { m } from "../../i18n/messages";
+import { isFileBackedComposerAttachment } from "../../lib/composerImages";
 import { loadLocalAttachmentPreview } from "../../lib/localAttachmentPreview";
 import { usePreviewPresentation, videoPreviewKey } from "../../lib/previewPresentation";
 import { fullscreenVideoClosed, fullscreenVideoOpened } from "../../lib/videoAudioSession";
@@ -98,7 +99,7 @@ function NativeVideoPreview(props: {
     fullscreenVideoOpened();
     void (async () => {
       const file =
-        localAttachment !== null
+        localAttachment !== null && isFileBackedComposerAttachment(localAttachment)
           ? await loadLocalAttachmentPreview(localAttachment, controller.signal)
           : null;
       if (localAttachment !== null && !file) return;

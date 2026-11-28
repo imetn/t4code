@@ -53,6 +53,8 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.projectTodosCreate]: AuthOrchestrationOperateScope,
   [WS_METHODS.projectTodosUpdate]: AuthOrchestrationOperateScope,
   [WS_METHODS.projectTodosDelete]: AuthOrchestrationOperateScope,
+  [WS_METHODS.syncedDraftsUpsert]: AuthOrchestrationOperateScope,
+  [WS_METHODS.syncedDraftsClear]: AuthOrchestrationOperateScope,
   // A tracker credential and a project's binding are settings, saved under the same grant.
   [WS_METHODS.issueTrackersConnect]: AuthSettingsWriteScope,
   [WS_METHODS.issueTrackersBindProject]: AuthSettingsWriteScope,

@@ -94,6 +94,34 @@ export function readAttachmentUpload(imageId: string): AttachmentUploadState | u
   return useAttachmentUploadStore.getState().uploadsByImageId[imageId];
 }
 
+/** Marks a remote-synced attachment as already uploaded so this client reuses it without re-uploading. */
+export function seedReadyAttachmentUpload(
+  imageId: string,
+  environmentId: EnvironmentId,
+  attachmentId: string,
+): void {
+  const existing = readAttachmentUpload(imageId);
+  if (
+    existing?.status === "ready" &&
+    existing.environmentId === environmentId &&
+    existing.attachmentId === attachmentId
+  ) {
+    return;
+  }
+  cancelAttachmentUpload(imageId);
+  setUploadState(imageId, {
+    status: "ready",
+    environmentId,
+    attachmentId,
+  });
+}
+
+/** Drops local upload state without deleting the server's pending upload (used when applying remote draft changes). */
+export function forgetAttachmentUploadLocal(imageId: string): void {
+  cancelAttachmentUpload(imageId);
+  clearUploadState(imageId);
+}
+
 function resolveCurrentFileDraftTarget(job: DraftFileOwner): ComposerThreadTarget | undefined {
   if (job.draftTarget === undefined || job.image.type !== "file") {
     return undefined;

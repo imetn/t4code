@@ -46,7 +46,7 @@ export interface DraftComposerFileAttachment {
   readonly name: string;
   readonly mimeType: string;
   readonly sizeBytes: number;
-  readonly fileUri: string;
+  readonly fileUri?: string;
   readonly source?: PastedTextAttachmentSource;
   readonly uploadedAttachmentId?: string;
   readonly uploadEnvironmentId?: EnvironmentId;
@@ -56,7 +56,7 @@ export async function createPastedTextComposerAttachment(input: {
   readonly text: string;
   readonly name: string;
   readonly maxBytes: number;
-}): Promise<DraftComposerFileAttachment> {
+}): Promise<DraftComposerFileAttachment & { readonly fileUri: string }> {
   const bytes = new TextEncoder().encode(input.text).byteLength;
   if (bytes <= 0) {
     throw new Error(m(msg("Clipboard is empty.")));
@@ -96,7 +96,8 @@ export function composerStripAttachments(
     if (
       attachment.type === "image" ||
       imageMimeType(attachment) !== null ||
-      videoMimeType(attachment) !== null
+      videoMimeType(attachment) !== null ||
+      (attachment.fileUri === undefined && attachment.uploadedAttachmentId !== undefined)
     ) {
       return true;
     }
@@ -281,7 +282,7 @@ export async function createComposerFileAttachment(input: {
   readonly mimeType: string;
   readonly sizeBytes: number | null;
   readonly maxBytes: number;
-}): Promise<DraftComposerFileAttachment> {
+}): Promise<DraftComposerFileAttachment & { readonly fileUri: string }> {
   if (input.sizeBytes !== null && input.sizeBytes > input.maxBytes) {
     throw new Error(fileAttachmentTooLargeMessage(input.name, input.maxBytes, m));
   }

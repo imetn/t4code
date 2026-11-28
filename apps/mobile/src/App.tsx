@@ -1,6 +1,7 @@
 import { installPermissionUpdateNotice } from "./features/connection/permissionUpdateNotice";
 import { installTailnetDiscovery } from "./features/connection/tailnetDiscovery";
 import { installComposerAttachmentUploads } from "./state/composer-attachment-uploads";
+import { installMobileSyncedDrafts } from "./state/syncedDrafts";
 import { installThreadOutboxDelivery } from "./state/threadOutboxDelivery";
 import * as Linking from "expo-linking";
 import * as SplashScreen from "expo-splash-screen";
@@ -214,6 +215,7 @@ const appServiceDisposers = [
   installTailnetDiscovery(),
   installThreadOutboxDelivery(),
   installComposerAttachmentUploads(),
+  installMobileSyncedDrafts(),
   startIncomingShareInbox(),
   installAgentNotificationNavigation(linkToAppPath),
   installAppShortcuts(linkToAppPath),
