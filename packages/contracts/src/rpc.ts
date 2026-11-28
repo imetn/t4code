@@ -501,6 +501,21 @@ import {
 } from "./sourceControl.ts";
 import { VcsError } from "./vcs.ts";
 import { Project, ProjectMutation, ProjectMutationError } from "./project.ts";
+import {
+  ProjectTodoCreateInput,
+  ProjectTodoCreateResult,
+  ProjectTodoDailyReviewInput,
+  ProjectTodoDailyReviewResult,
+  ProjectTodoDeleteInput,
+  ProjectTodoDeleteResult,
+  ProjectTodoError,
+  ProjectTodoGetInput,
+  ProjectTodoGetResult,
+  ProjectTodoListInput,
+  ProjectTodoListResult,
+  ProjectTodoUpdateInput,
+  ProjectTodoUpdateResult,
+} from "./t4/projectTodo.ts";
 
 export const WS_METHODS = {
   projectsListEntries: "projects.listEntries",
@@ -738,6 +753,14 @@ export const WS_METHODS = {
   issueTrackersList: "issueTrackers.list",
   issueTrackersConnect: "issueTrackers.connect",
   issueTrackersBindProject: "issueTrackers.bindProject",
+
+  // T4 Code project todos & mini-memory methods
+  projectTodosList: "t4.projectTodos.list",
+  projectTodosGet: "t4.projectTodos.get",
+  projectTodosDailyReview: "t4.projectTodos.dailyReview",
+  projectTodosCreate: "t4.projectTodos.create",
+  projectTodosUpdate: "t4.projectTodos.update",
+  projectTodosDelete: "t4.projectTodos.delete",
 
   sourceControlLookupRepository: "sourceControl.lookupRepository",
   sourceControlCloneRepository: "sourceControl.cloneRepository",
@@ -1594,6 +1617,44 @@ const WsIssuesReactRpc = Rpc.make(WS_METHODS.issuesReact, {
   payload: IssueReactionInput,
   success: Schema.Void,
   error: IssueRpcError,
+});
+
+const ProjectTodoRpcError = Schema.Union([ProjectTodoError, EnvironmentAuthorizationError]);
+
+const WsProjectTodosListRpc = Rpc.make(WS_METHODS.projectTodosList, {
+  payload: ProjectTodoListInput,
+  success: ProjectTodoListResult,
+  error: ProjectTodoRpcError,
+});
+
+const WsProjectTodosGetRpc = Rpc.make(WS_METHODS.projectTodosGet, {
+  payload: ProjectTodoGetInput,
+  success: ProjectTodoGetResult,
+  error: ProjectTodoRpcError,
+});
+
+const WsProjectTodosDailyReviewRpc = Rpc.make(WS_METHODS.projectTodosDailyReview, {
+  payload: ProjectTodoDailyReviewInput,
+  success: ProjectTodoDailyReviewResult,
+  error: ProjectTodoRpcError,
+});
+
+const WsProjectTodosCreateRpc = Rpc.make(WS_METHODS.projectTodosCreate, {
+  payload: ProjectTodoCreateInput,
+  success: ProjectTodoCreateResult,
+  error: ProjectTodoRpcError,
+});
+
+const WsProjectTodosUpdateRpc = Rpc.make(WS_METHODS.projectTodosUpdate, {
+  payload: ProjectTodoUpdateInput,
+  success: ProjectTodoUpdateResult,
+  error: ProjectTodoRpcError,
+});
+
+const WsProjectTodosDeleteRpc = Rpc.make(WS_METHODS.projectTodosDelete, {
+  payload: ProjectTodoDeleteInput,
+  success: ProjectTodoDeleteResult,
+  error: ProjectTodoRpcError,
 });
 
 const IssueTrackerRpcError = Schema.Union([
@@ -2580,6 +2641,12 @@ export const WsRpcGroup = RpcGroup.make(
   WsIssueTrackersListRpc,
   WsIssueTrackersConnectRpc,
   WsIssueTrackersBindProjectRpc,
+  WsProjectTodosListRpc,
+  WsProjectTodosGetRpc,
+  WsProjectTodosDailyReviewRpc,
+  WsProjectTodosCreateRpc,
+  WsProjectTodosUpdateRpc,
+  WsProjectTodosDeleteRpc,
   WsGuestShareCreateRpc,
   WsServerProbeRpc,
   WsServerGetConfigRpc,

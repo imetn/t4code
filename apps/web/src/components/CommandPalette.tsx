@@ -55,6 +55,8 @@ import {
   type DesktopWslState,
   type EnvironmentId,
   type FilesystemBrowseResult,
+  type ProjectId,
+  type ThreadId,
   SourceControlProviderKind,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
   resolveEnvironmentMachineKind,
@@ -72,6 +74,7 @@ import {
   FolderIcon,
   FolderPlusIcon,
   KanbanIcon,
+  ListTodoIcon,
   MessageSquareDashedIcon,
   LinkIcon,
   MessageSquareIcon,
@@ -90,6 +93,7 @@ import {
 } from "lucide-react";
 import { openThreadFind } from "./chat/threadFindStore";
 import { readThreadHandoffTargets, startThreadHandoff } from "./threadHandoffMenu";
+import { QuickTodoCaptureDialog } from "./t4/todo/ProjectTodosSheet";
 import { dispatchPreviewAction } from "./preview/previewActionBus";
 import { previewBridge } from "./preview/previewBridge";
 import {
@@ -339,11 +343,29 @@ export function CommandPalette({ children }: { children: ReactNode }) {
   const setOpen = (open: boolean) => dispatchCommandPalette({ _tag: "SetOpen", open });
   const openChildSearch = (mode: "files" | "content", context: CommandPaletteReturnContext) =>
     dispatchCommandPalette({ _tag: "OpenChildSearch", mode, context });
+  const [quickTodoState, setQuickTodoState] = useState<{
+    readonly open: boolean;
+    readonly environmentId: EnvironmentId | null;
+    readonly projectId: ProjectId | null;
+    readonly sourceThreadId: ThreadId | null;
+  }>({
+    open: false,
+    environmentId: null,
+    projectId: null,
+    sourceThreadId: null,
+  });
   const composerHandleRef = useRef<ChatComposerHandle | null>(null);
 
   return (
     <ComposerHandleContext value={composerHandleRef}>
       <ThreadContextDragGhost />
+      <QuickTodoCaptureDialog
+        open={quickTodoState.open}
+        onOpenChange={(open) => setQuickTodoState((prev) => ({ ...prev, open }))}
+        defaultEnvironmentId={quickTodoState.environmentId}
+        defaultProjectId={quickTodoState.projectId}
+        sourceThreadId={quickTodoState.sourceThreadId}
+      />
       <CommandDialog
         open={state.open}
         onOpenChange={(open, eventDetails) => {
@@ -369,6 +391,15 @@ export function CommandPalette({ children }: { children: ReactNode }) {
           openIntent={state.openIntent}
           setOpen={setOpen}
           openChildSearch={openChildSearch}
+          onOpenQuickTodoCapture={(target) => {
+            setOpen(false);
+            setQuickTodoState({
+              open: true,
+              environmentId: target.environmentId,
+              projectId: target.projectId,
+              sourceThreadId: target.sourceThreadId,
+            });
+          }}
           initialContext={state.restoredSearch}
         />
       </CommandDialog>
@@ -385,6 +416,11 @@ function CommandPaletteDialog(props: {
     mode: "files" | "content",
     context: CommandPaletteReturnContext,
   ) => void;
+  readonly onOpenQuickTodoCapture: (target: {
+    readonly environmentId: EnvironmentId | null;
+    readonly projectId: ProjectId | null;
+    readonly sourceThreadId: ThreadId | null;
+  }) => void;
   readonly initialContext: CommandPaletteReturnContext | undefined;
 }) {
   const gt = useGT();
@@ -427,6 +463,7 @@ function CommandPaletteDialog(props: {
           openIntent={props.openIntent}
           setOpen={props.setOpen}
           openChildSearch={props.openChildSearch}
+          onOpenQuickTodoCapture={props.onOpenQuickTodoCapture}
           initialContext={props.initialContext}
         />
       )}
@@ -441,6 +478,11 @@ function OpenCommandPaletteDialog(props: {
     mode: "files" | "content",
     context: CommandPaletteReturnContext,
   ) => void;
+  readonly onOpenQuickTodoCapture: (target: {
+    readonly environmentId: EnvironmentId | null;
+    readonly projectId: ProjectId | null;
+    readonly sourceThreadId: ThreadId | null;
+  }) => void;
   readonly initialContext: CommandPaletteReturnContext | undefined;
 }) {
   const gt = useGT();
@@ -1834,6 +1876,57 @@ function OpenCommandPaletteDialog(props: {
       await navigate({ to: "/board" });
     },
   });
+
+  if (
+    environments.some(
+      (environment) => environment.serverConfig?.environment.capabilities.projectTodos === true,
+    )
+  ) {
+    actionItems.push({
+      kind: "action",
+      value: "action:open-project-todos",
+      searchTerms: [
+        "todo",
+        "todos",
+        "daily review",
+        "review",
+        "memory",
+        "backlog",
+        "待办",
+        "每日回顾",
+        "复盘",
+      ],
+      title: gt("Open project todos"),
+      icon: <ListTodoIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        await navigate({ to: "/todos" });
+      },
+    });
+    actionItems.push({
+      kind: "action",
+      value: "action:quick-project-todo",
+      searchTerms: [
+        "todo",
+        "todos",
+        "memory",
+        "note",
+        "idea",
+        "backlog",
+        "capture",
+        "待办",
+        "备忘",
+      ],
+      title: gt("Quick capture project todo"),
+      icon: <ListTodoIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        props.onOpenQuickTodoCapture({
+          environmentId: currentProjectEnvironmentId,
+          projectId: currentProjectId,
+          sourceThreadId: activeThread?.id ?? null,
+        });
+      },
+    });
+  }
 
   actionItems.push({
     kind: "action",

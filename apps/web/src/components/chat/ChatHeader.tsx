@@ -44,6 +44,7 @@ import { observeResize } from "~/lib/observeResize";
 import { cn } from "~/lib/utils";
 import { textDirection } from "~/textDirection";
 import { useClientSettings } from "../../hooks/useSettings";
+import { ProjectTodosHeaderTrigger } from "../t4/todo/ProjectTodosSheet";
 import { GuestShareIndicator } from "./GuestShareControls";
 
 interface ChatHeaderProps {
@@ -413,6 +414,14 @@ export const ChatHeader = memo(function ChatHeader({
           ) : null}
         </WorkspaceBreadcrumbItem>
       </WorkspaceBreadcrumb>
+      {activeProject !== null && !activeProject.isScratch ? (
+        <ProjectTodosHeaderTrigger
+          environmentId={activeThreadEnvironmentId}
+          projectId={activeProject.id}
+          projectName={activeProject.title}
+          threadId={activeThreadId}
+        />
+      ) : null}
       {isServerThread ? <GuestShareIndicator threadRef={activeThreadRef} /> : null}
     </div>
   );

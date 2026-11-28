@@ -78,4 +78,5 @@ export * from "./secretRequest.ts";
 export * from "./agentFeedback.ts";
 export * from "./secretReference.ts";
 export * from "./settingsSecretValue.ts";
+export * from "./t4/projectTodo.ts";
 export * from "./clientRpcPermissions.ts";

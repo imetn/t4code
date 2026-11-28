@@ -130,6 +130,10 @@ export function useIssuesSupported() {
   return useAtomValue(environmentSummaries.issuesSupportedAtom);
 }
 
+export function useProjectTodosSupported() {
+  return useAtomValue(environmentSummaries.projectTodosSupportedAtom);
+}
+
 export function useEnvironmentMachines() {
   return useAtomValue(environmentSummaries.machineByIdAtom);
 }

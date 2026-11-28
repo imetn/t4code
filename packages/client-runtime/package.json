@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./t4/project-todos": {
+      "types": "./src/t4/projectTodos.ts",
+      "default": "./src/t4/projectTodos.ts"
+    },
     "./pull-request-diff-fold": {
       "types": "./src/pullRequestDiffFold.ts",
       "default": "./src/pullRequestDiffFold.ts"

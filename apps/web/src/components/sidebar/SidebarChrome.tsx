@@ -3,6 +3,7 @@ import {
   ArrowRightIcon,
   ChartNoAxesColumnIcon,
   KanbanIcon,
+  ListTodoIcon,
   SettingsIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -20,7 +21,11 @@ import {
 } from "../../navigationHistory";
 import { primaryServerKeybindingsAtom } from "../../state/server";
 import { cn } from "../../lib/utils";
-import { useIssuesSupported, usePullRequestsSupported } from "../../state/environments";
+import {
+  useIssuesSupported,
+  useProjectTodosSupported,
+  usePullRequestsSupported,
+} from "../../state/environments";
 import { T3Wordmark } from "../T3Wordmark";
 import {
   resolveEnvironmentIdentificationPillLabel,
@@ -241,6 +246,7 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   });
   const pullRequestsSupported = usePullRequestsSupported();
   const issuesSupported = useIssuesSupported();
+  const projectTodosSupported = useProjectTodosSupported();
   const closeMobileSidebar = () => {
     if (isMobile) {
       setOpenMobile(false);
@@ -265,6 +271,11 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   const handleBoardClick = () => {
     closeMobileSidebar();
     void navigate({ to: "/board" });
+  };
+
+  const handleTodosClick = () => {
+    closeMobileSidebar();
+    void navigate({ to: "/todos" });
   };
 
   const handleUsageClick = () => {
@@ -302,6 +313,13 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             label={gt("Task board")}
             onClick={handleBoardClick}
           />
+          {projectTodosSupported ? (
+            <SidebarUtilityItem
+              icon={<ListTodoIcon />}
+              label={gt("Project todos")}
+              onClick={handleTodosClick}
+            />
+          ) : null}
           {pullRequestsSupported ? (
             <SidebarUtilityItem
               icon={<PullRequestGlyph.pullRequest />}
