@@ -231,10 +231,11 @@ export function ComposerControlsBar(props: {
       triggerShortcuts={
         pickerOwnsModeShortcut ? "composer.effort composer.mode" : "composer.effort"
       }
-      effortColumn={<ComposerEffortColumn traits={traitsInput} />}
+      effortColumn={<ComposerEffortColumn traits={traitsInput} includeExtraOptions={false} />}
       footer={
         <ComposerPickerFooter
           traits={traitsInput}
+          includeExtraOptions
           runtimeMode={compatibleRuntimeMode}
           runtimeModeOptions={compatibleRuntimeModeOptions}
           onRuntimeModeChange={handleRuntimeModeChange}

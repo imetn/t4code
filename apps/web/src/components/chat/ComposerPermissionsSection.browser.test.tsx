@@ -1,7 +1,15 @@
-import type { RuntimeMode } from "@t3tools/contracts";
+import {
+  ProviderDriverKind,
+  ProviderInstanceId,
+  type RuntimeMode,
+  type ServerProviderModel,
+} from "@t3tools/contracts";
+import { createModelCapabilities } from "@t3tools/shared/model";
 import { type ReactNode, useRef, useState } from "react";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
+
+import "~/index.css";
 
 import { render } from "../../../test/render";
 import { ComposerHandleContext, type ComposerHandleRef } from "../../composerHandleContext";
@@ -215,4 +223,69 @@ it("opens permissions directly from the context strip and applies a supported mo
     .toHaveAttribute("aria-checked", "true");
   await userEvent.keyboard("{Escape}");
   await expect.element(trigger).toHaveFocus();
+});
+
+it("places extra model options like Cyber Access on the same single footer row as Permissions", async () => {
+  const models: ReadonlyArray<ServerProviderModel> = [
+    {
+      slug: "gpt-6.2-astra",
+      name: "GPT-6.2-Astra",
+      isCustom: false,
+      capabilities: createModelCapabilities({
+        optionDescriptors: [
+          {
+            id: "reasoningEffort",
+            label: "Reasoning",
+            type: "select",
+            role: "reasoning",
+            currentValue: "high",
+            options: [
+              { id: "low", label: "Low" },
+              { id: "medium", label: "Medium" },
+              { id: "high", label: "High" },
+            ],
+          },
+          {
+            id: "cyberAccessProgram",
+            label: "Cyber Access",
+            type: "select",
+            currentValue: "standard",
+            options: [
+              { id: "standard", label: "Standard" },
+              { id: "trusted", label: "Trusted" },
+            ],
+          },
+        ],
+      }),
+    },
+  ];
+  await using screen = await render(
+    <div className="w-84">
+      <ComposerPickerFooter
+        traits={{
+          provider: ProviderDriverKind.make("codex"),
+          instanceId: ProviderInstanceId.make("codex"),
+          models,
+          model: "gpt-6.2-astra",
+          modelOptions: [],
+          onModelOptionsChange: () => {},
+        }}
+        includeExtraOptions
+        runtimeMode="full-access"
+        runtimeModeOptions={options}
+        onRuntimeModeChange={() => {}}
+      />
+    </div>,
+    { router: false },
+  );
+
+  const cyberTrigger = screen.getByRole("button", { name: "Cyber Access: Standard" }).element();
+  const permissionsTrigger = screen
+    .getByRole("button", { name: "Permissions: Full access" })
+    .element();
+  const cyberRect = cyberTrigger.getBoundingClientRect();
+  const permissionsRect = permissionsTrigger.getBoundingClientRect();
+  // Both triggers share one horizontal row with Cyber Access on the left and Permissions on the right.
+  expect(Math.abs(cyberRect.top - permissionsRect.top)).toBeLessThanOrEqual(2);
+  expect(cyberRect.right).toBeLessThan(permissionsRect.left);
 });

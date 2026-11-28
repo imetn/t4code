@@ -150,77 +150,23 @@ function PowerSliderStarfield(props: { density: StarfieldDensity }) {
           ) : null}
           {showHigh ? (
             <>
-              <line
-                x1="60"
-                y1="10"
-                x2="72"
-                y2="10"
-                stroke="currentColor"
-                strokeOpacity="0.34"
-                strokeWidth="1"
-                strokeLinecap="round"
-              />
-              <line
-                x1="158"
-                y1="19"
-                x2="174"
-                y2="19"
-                stroke="currentColor"
-                strokeOpacity="0.4"
-                strokeWidth="1.1"
-                strokeLinecap="round"
-              />
-              <line
-                x1="234"
-                y1="9"
-                x2="248"
-                y2="9"
-                stroke="currentColor"
-                strokeOpacity="0.38"
-                strokeWidth="1.05"
-                strokeLinecap="round"
-              />
+              <circle cx="66" cy="10" r="0.95" fill="currentColor" opacity="0.62" />
               <circle cx="94" cy="16" r="1.2" fill="currentColor" opacity="0.84" />
+              <circle cx="166" cy="19" r="1.05" fill="currentColor" opacity="0.72" />
               <circle cx="192" cy="8" r="1.25" fill="currentColor" opacity="0.86" />
+              <circle cx="240" cy="9" r="0.95" fill="currentColor" opacity="0.66" />
               <circle cx="284" cy="18" r="1.15" fill="currentColor" opacity="0.8" />
             </>
           ) : null}
           {showMax ? (
             <>
-              <line
-                x1="16"
-                y1="20"
-                x2="32"
-                y2="20"
-                stroke="currentColor"
-                strokeOpacity="0.45"
-                strokeWidth="1.15"
-                strokeLinecap="round"
-              />
-              <line
-                x1="106"
-                y1="12"
-                x2="124"
-                y2="12"
-                stroke="currentColor"
-                strokeOpacity="0.5"
-                strokeWidth="1.2"
-                strokeLinecap="round"
-              />
-              <line
-                x1="200"
-                y1="16"
-                x2="220"
-                y2="16"
-                stroke="currentColor"
-                strokeOpacity="0.54"
-                strokeWidth="1.25"
-                strokeLinecap="round"
-              />
+              <circle cx="24" cy="20" r="1.1" fill="currentColor" opacity="0.78" />
               <circle cx="34" cy="20" r="1.3" fill="currentColor" opacity="0.94" />
+              <circle cx="114" cy="12" r="1.15" fill="currentColor" opacity="0.82" />
               <circle cx="126" cy="12" r="1.4" fill="currentColor" opacity="0.96" />
-              <circle cx="222" cy="16" r="1.45" fill="currentColor" opacity="0.96" />
               <circle cx="152" cy="8" r="1.15" fill="currentColor" opacity="0.85" />
+              <circle cx="208" cy="16" r="1.2" fill="currentColor" opacity="0.86" />
+              <circle cx="222" cy="16" r="1.45" fill="currentColor" opacity="0.96" />
               <circle cx="260" cy="22" r="1.2" fill="currentColor" opacity="0.88" />
             </>
           ) : null}
@@ -524,7 +470,7 @@ function EffortSliderSection(props: {
 }
 
 const OPTION_CHIP =
-  "flex h-7 max-w-full cursor-pointer items-center gap-1.5 rounded-md px-2 text-left text-xs text-muted-foreground outline-none transition-colors hover:bg-foreground/8 hover:text-foreground focus-visible:bg-foreground/8 focus-visible:text-foreground";
+  "flex h-7 min-w-0 max-w-full cursor-pointer items-center gap-1 rounded-md px-1.5 text-left text-xs text-muted-foreground outline-none transition-colors hover:bg-foreground/8 hover:text-foreground focus-visible:bg-foreground/8 focus-visible:text-foreground";
 
 function OptionMenuRow(props: {
   descriptor: SelectDescriptor;
@@ -747,28 +693,61 @@ function SpeedControl(props: { traits: TraitsSelection }) {
   );
 }
 
-function UltracodeControl(props: { traits: TraitsSelectionInput }) {
+function FooterTraitsControls(props: {
+  traits: TraitsSelectionInput;
+  includeExtraOptions: boolean;
+}) {
   const traits = useTraitsSelection(props.traits);
   const { ultracodeToggle } = splitSpeed(traits.selectDescriptors, traits.booleanDescriptors);
-  if (traits.modelIsUnavailable || !ultracodeToggle) return null;
-  const on = ultracodeToggle.currentValue === true;
+  const { others } = columnControls(traits.selectDescriptors, traits.booleanDescriptors);
+  if (traits.modelIsUnavailable) return null;
+  const showUltracode = ultracodeToggle !== null;
+  const extraControls = props.includeExtraOptions ? others : [];
+  if (!showUltracode && extraControls.length === 0) return null;
+
   return (
-    <div className="model-picker-speed-group">
-      <button
-        type="button"
-        aria-pressed={on}
-        data-checked={on ? "true" : undefined}
-        className="model-picker-speed-option focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
-        onClick={() => traits.changeBoolean(ultracodeToggle.id, !on)}
-      >
-        <WorkflowIcon aria-hidden="true" className="size-3" />
-        {ultracodeToggle.label}
-      </button>
+    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
+      {showUltracode ? (
+        <div className="model-picker-speed-group shrink-0">
+          <button
+            type="button"
+            aria-pressed={ultracodeToggle.currentValue === true}
+            data-checked={ultracodeToggle.currentValue === true ? "true" : undefined}
+            className="model-picker-speed-option focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+            onClick={() =>
+              traits.changeBoolean(ultracodeToggle.id, ultracodeToggle.currentValue !== true)
+            }
+          >
+            <WorkflowIcon aria-hidden="true" className="size-3" />
+            {ultracodeToggle.label}
+          </button>
+        </div>
+      ) : null}
+      {extraControls.map((control) =>
+        control.kind === "boolean" ? (
+          <OptionSwitchRow
+            key={control.descriptor.id}
+            descriptor={control.descriptor}
+            traits={traits}
+            tabStop
+          />
+        ) : (
+          <OptionMenuRow
+            key={control.descriptor.id}
+            descriptor={control.descriptor}
+            traits={traits}
+            tabStop
+          />
+        ),
+      )}
     </div>
   );
 }
 
-function EffortSectionContent(props: { traits: TraitsSelectionInput }) {
+function EffortSectionContent(props: {
+  traits: TraitsSelectionInput;
+  includeExtraOptions: boolean;
+}) {
   const gt = useGT();
   const traits = useTraitsSelection(props.traits);
   const { effort, others } = columnControls(traits.selectDescriptors, traits.booleanDescriptors);
@@ -777,6 +756,7 @@ function EffortSectionContent(props: { traits: TraitsSelectionInput }) {
     traits.booleanDescriptors,
   );
   const hasSpeed = !traits.modelIsUnavailable && (speedSelect !== null || fastToggle !== null);
+  const visibleOthers = props.includeExtraOptions ? others : [];
 
   if (traits.modelIsUnavailable) {
     if (traits.descriptors.length === 0) return null;
@@ -795,7 +775,10 @@ function EffortSectionContent(props: { traits: TraitsSelectionInput }) {
     );
   }
 
-  if (!effort && !hasSpeed && others.length === 0) {
+  if (!effort && !hasSpeed && visibleOthers.length === 0) {
+    if (!props.includeExtraOptions && others.length > 0) {
+      return null;
+    }
     return (
       <div className="flex h-8 items-center px-3.5 text-xs text-muted-foreground">
         <T>No effort levels</T>
@@ -825,9 +808,9 @@ function EffortSectionContent(props: { traits: TraitsSelectionInput }) {
 
       {effort ? <EffortSliderSection control={effort} traits={traits} locked={locked} /> : null}
 
-      {others.length > 0 ? (
+      {visibleOthers.length > 0 ? (
         <div className="flex flex-wrap items-center gap-1 pt-0.5">
-          {others.map((control, index) =>
+          {visibleOthers.map((control, index) =>
             control.kind === "boolean" ? (
               <OptionSwitchRow
                 key={control.descriptor.id}
@@ -850,8 +833,11 @@ function EffortSectionContent(props: { traits: TraitsSelectionInput }) {
   );
 }
 
-/** The model picker's power zone: full-capsule reasoning slider, inline speed toggle, and extra options. */
-export function ComposerEffortColumn(props: { traits: TraitsSelectionInput | null }) {
+/** The model picker's power zone: full-capsule reasoning slider, inline speed toggle, and optional extra controls. */
+export function ComposerEffortColumn(props: {
+  traits: TraitsSelectionInput | null;
+  includeExtraOptions?: boolean;
+}) {
   if (!props.traits) {
     return (
       <div className="flex h-8 items-center border-t border-border/60 bg-muted/20 px-3.5 text-xs text-muted-foreground">
@@ -859,7 +845,12 @@ export function ComposerEffortColumn(props: { traits: TraitsSelectionInput | nul
       </div>
     );
   }
-  return <EffortSectionContent traits={props.traits} />;
+  return (
+    <EffortSectionContent
+      traits={props.traits}
+      includeExtraOptions={props.includeExtraOptions ?? true}
+    />
+  );
 }
 
 /** Permissions change rarely, so the footer names the mode and nests the choice in a menu. */
@@ -886,13 +877,13 @@ function PermissionsMenu(props: {
             type="button"
             data-composer-permissions-trigger
             aria-label={gt("Permissions: {mode}", { mode: current.label })}
-            className="ms-auto flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground outline-none transition-colors hover:bg-foreground/8 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset data-popup-open:bg-foreground/8 data-popup-open:text-foreground"
+            className="ms-auto flex h-7 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md px-2 text-xs text-muted-foreground outline-none transition-colors hover:bg-foreground/8 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset data-popup-open:bg-foreground/8 data-popup-open:text-foreground"
           />
         }
       >
-        <CurrentIcon aria-hidden="true" className="size-3.5" />
+        <CurrentIcon aria-hidden="true" className="size-3.5 shrink-0" />
         <span className="font-medium text-foreground/85">{current.label}</span>
-        <ChevronUpIcon aria-hidden="true" className="size-3" />
+        <ChevronUpIcon aria-hidden="true" className="size-3 shrink-0" />
       </MenuTrigger>
       <MenuPopup side="top" align="end" {...composerFloatingLayerProps}>
         <ComposerPermissionsSection
@@ -905,16 +896,25 @@ function PermissionsMenu(props: {
   );
 }
 
-/** The model picker's quiet bottom strip: Ultracode (when present) and permissions menu. */
+/** The model picker's quiet bottom strip: extra model options (e.g. Cyber Access), Ultracode, and permissions menu on one row. */
 export function ComposerPickerFooter(props: {
   traits: TraitsSelectionInput | null;
+  includeExtraOptions?: boolean;
   runtimeMode: RuntimeMode;
   runtimeModeOptions: ReadonlyArray<RuntimeModeOption>;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
 }) {
   return (
-    <div className="flex min-h-8.5 flex-wrap items-center gap-2 border-t border-border/60 bg-muted/20 px-2.5 py-1">
-      {props.traits ? <UltracodeControl traits={props.traits} /> : null}
+    <div
+      data-model-picker-footer="true"
+      className="flex min-h-9 items-center justify-between gap-1.5 border-t border-border/60 bg-muted/20 px-2.5 py-1"
+    >
+      {props.traits ? (
+        <FooterTraitsControls
+          traits={props.traits}
+          includeExtraOptions={props.includeExtraOptions ?? false}
+        />
+      ) : null}
       <PermissionsMenu
         runtimeMode={props.runtimeMode}
         options={props.runtimeModeOptions}
