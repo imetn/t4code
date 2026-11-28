@@ -122,7 +122,7 @@ export function useMediaActions(
     if (!("environmentId" in source && "resource" in source)) return null;
     try {
       if (!assetEnvironment?.createUrl || !environmentSession?.preparedConnectionValueAtom) {
-        return null;
+        return source.resolvedUri ?? null;
       }
       const queryResult = appAtomRegistry.get(
         assetEnvironment.createUrl({
@@ -130,16 +130,16 @@ export function useMediaActions(
           input: { resource: source.resource },
         }),
       );
-      if (!AsyncResult.isSuccess(queryResult)) return null;
-      if (queryResult.value.expiresAt <= Date.now() + 30_000) return null;
+      if (!AsyncResult.isSuccess(queryResult)) return source.resolvedUri ?? null;
+      if (queryResult.value.expiresAt <= Date.now() + 30_000) return source.resolvedUri ?? null;
       const connection = appAtomRegistry.get(
         environmentSession.preparedConnectionValueAtom(source.environmentId),
       );
-      if (connection._tag !== "Some") return null;
+      if (connection._tag !== "Some") return source.resolvedUri ?? null;
       const state = assetUrlStateFromResult(queryResult, connection.value.httpBaseUrl);
-      return state._tag === "Success" ? state.url : null;
+      return state._tag === "Success" ? state.url : (source.resolvedUri ?? null);
     } catch {
-      return null;
+      return source.resolvedUri ?? null;
     }
   };
 
@@ -150,12 +150,15 @@ export function useMediaActions(
         import("expo-file-system"),
       ]);
       const candidates: string[] = [];
+      const addCandidate = (value: string | undefined) => {
+        if (value && !candidates.includes(value)) candidates.push(value);
+      };
+      addCandidate(source.cacheKey);
+      addCandidate(source.resolvedUri);
       if ("uri" in source) {
-        const normalized = normalizeNativeMarkdownUrl(source.uri);
-        if (normalized) candidates.push(normalized);
+        addCandidate(normalizeNativeMarkdownUrl(source.uri) ?? undefined);
       } else if ("environmentId" in source && "resource" in source) {
-        const staticKey = assetImageCacheKey(source.environmentId, source.resource);
-        if (staticKey) candidates.push(staticKey);
+        addCandidate(assetImageCacheKey(source.environmentId, source.resource));
         const queryResult = appAtomRegistry.get(
           assetEnvironment.createUrl({
             environmentId: source.environmentId,
@@ -163,18 +166,19 @@ export function useMediaActions(
           }),
         );
         if (AsyncResult.isSuccess(queryResult)) {
-          const revKey = assetImageCacheKey(
-            source.environmentId,
-            source.resource,
-            queryResult.value.fileRevision,
+          addCandidate(
+            assetImageCacheKey(
+              source.environmentId,
+              source.resource,
+              queryResult.value.fileRevision,
+            ),
           );
-          if (revKey && revKey !== staticKey) candidates.push(revKey);
           const connection = appAtomRegistry.get(
             environmentSession.preparedConnectionValueAtom(source.environmentId),
           );
           if (connection._tag === "Some") {
             const state = assetUrlStateFromResult(queryResult, connection.value.httpBaseUrl);
-            if (state._tag === "Success") candidates.push(state.url);
+            if (state._tag === "Success") addCandidate(state.url);
           }
         }
       }

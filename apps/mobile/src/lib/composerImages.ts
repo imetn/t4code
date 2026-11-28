@@ -24,7 +24,16 @@ import {
 } from "./composerAttachmentFiles";
 import { imageMimeType } from "@t3tools/shared/image";
 import { videoMimeType } from "@t3tools/shared/video";
-import { fitComposerImage, renderPhoto } from "./composerImageFit";
+import {
+  downscalableImageMimeType,
+  fitImageAttachmentSize,
+} from "@t3tools/client-runtime/image-attachment-size";
+import {
+  fitComposerImage,
+  readImageFileDimensions,
+  renderPhoto,
+  renderPhotoToFile,
+} from "./composerImageFit";
 import { beginForegroundHandoff } from "./foreground-handoff";
 import { uuidv4 } from "./uuid";
 import { writeFileAtomically } from "./atomic-file";
@@ -747,4 +756,94 @@ export async function convertPastedImagesToAttachments(input: {
   }
 
   return { attachments, error };
+}
+
+/**
+ * Fast file-only path for quoting an already-cached local image into the composer:
+ * checks file size and leading header dimensions directly without reading multi-MB
+ * base64 strings or running SHA-256 over the JS bridge.
+ */
+export async function quoteLocalImageToAttachment(input: {
+  readonly uri: string;
+  readonly name?: string;
+}): Promise<{
+  readonly attachments: ReadonlyArray<DraftComposerImageAttachment>;
+  readonly error: string | null;
+}> {
+  const { File } = await import("expo-file-system");
+  const temporaryUris: string[] = [];
+  try {
+    const file = new File(input.uri);
+    const preferredName = input.name?.trim();
+    const reportedMimeType = file.type;
+    const sourceMimeType = reportedMimeType?.startsWith("image/")
+      ? reportedMimeType
+      : mimeTypeFromUri(
+          /\.[a-z0-9]{1,8}$/i.test(input.uri) ? input.uri : (preferredName ?? input.uri),
+        );
+    let mimeType = isProviderSendTurnSupportedImageMimeType(sourceMimeType)
+      ? sourceMimeType
+      : "image/jpeg";
+    let sourceUri = input.uri;
+    let sizeBytes = file.size;
+
+    const needsFormatConversion = mimeType !== sourceMimeType;
+    const downscalable = downscalableImageMimeType(mimeType);
+    const dimensions =
+      !needsFormatConversion && downscalable !== null
+        ? await readImageFileDimensions(input.uri)
+        : null;
+    const needsResize = dimensions !== null && fitImageAttachmentSize(dimensions) !== null;
+    const exceedsByteLimit = sizeBytes !== null && sizeBytes > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES;
+
+    if (needsFormatConversion || needsResize || exceedsByteLimit) {
+      const targetFormat =
+        needsFormatConversion || exceedsByteLimit
+          ? "jpeg"
+          : downscalable === "image/png"
+            ? "png"
+            : "jpeg";
+      const rendered = await renderPhotoToFile(input.uri, targetFormat);
+      temporaryUris.push(rendered.uri);
+      sourceUri = rendered.uri;
+      sizeBytes = rendered.sizeBytes;
+      if (targetFormat === "jpeg") mimeType = "image/jpeg";
+    }
+
+    if (sizeBytes === null || sizeBytes <= 0 || sizeBytes > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
+      return {
+        attachments: [],
+        error:
+          sizeBytes !== null && sizeBytes > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES
+            ? m(msg("A pasted image exceeds the 10 MB attachment limit."))
+            : m(msg("Could not read a pasted image.")),
+      };
+    }
+
+    const extension = mimeType.split("/")[1] ?? "png";
+    const name = preferredName
+      ? /\.[a-z0-9]{1,8}$/i.test(preferredName)
+        ? preferredName.replace(/\.[a-z0-9]{1,8}$/i, `.${extension}`)
+        : `${preferredName}.${extension}`
+      : `pasted-image.${extension}`;
+    const fileUri = await persistComposerAttachmentFile(
+      sourceUri,
+      name,
+      PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
+    );
+    const attachment = await ownedComposerImageAttachment({ fileUri, name, mimeType });
+    return { attachments: [attachment], error: null };
+  } catch (cause) {
+    console.warn("Failed to quote local image", input.uri, cause);
+    return { attachments: [], error: m(msg("Could not read a pasted image.")) };
+  } finally {
+    for (const temporaryUri of temporaryUris) {
+      try {
+        const tempFile = new File(temporaryUri);
+        if (tempFile.exists) tempFile.delete();
+      } catch (cleanupError) {
+        console.warn("Failed to remove temporary quoted image", temporaryUri, cleanupError);
+      }
+    }
+  }
 }

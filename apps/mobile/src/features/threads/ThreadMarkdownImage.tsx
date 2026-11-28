@@ -106,7 +106,15 @@ export function ThreadMarkdownImageView(props: {
   const withGallery = useFilePreviewGallery();
   const localSourceIdentifier = useId();
   const sourceIdentifier = props.sourceIdentifier ?? localSourceIdentifier;
-  const mediaActions = useMediaActions(props.actionsSource);
+  const mediaActions = useMediaActions(
+    props.actionsSource
+      ? {
+          ...props.actionsSource,
+          ...(props.cacheKey ? { cacheKey: props.cacheKey } : {}),
+          ...(props.uri ? { resolvedUri: props.uri } : {}),
+        }
+      : undefined,
+  );
   const contextWidth = useContext(MarkdownImageAvailableWidthContext);
   const [measuredWidth, setMeasuredWidth] = useState(0);
   const availableWidth =

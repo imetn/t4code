@@ -12,6 +12,7 @@ import {
   createPastedTextComposerAttachment,
   pickComposerFiles,
   pickComposerMedia,
+  quoteLocalImageToAttachment,
   removePersistedComposerAttachmentFile,
   type DraftComposerAttachment,
 } from "../lib/composerImages";
@@ -167,9 +168,9 @@ export function useComposerAttachmentActions(props: {
     const insertion = captureComposerDraftInsertion(key);
     return withDraftOperation(key, async (signal) => {
       try {
-        const result = await convertPastedImagesToAttachments({
-          uris: [input.uri],
-          names: [input.name],
+        const result = await quoteLocalImageToAttachment({
+          uri: input.uri,
+          name: input.name,
         });
         const rejected = await append(key, signal, result.attachments, insertion);
         report(m(msg("Could not quote image")), result.error, rejected);

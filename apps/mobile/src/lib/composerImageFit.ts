@@ -67,6 +67,65 @@ export async function renderPhoto(
   }
 }
 
+/** Render to disk without serializing multi-MB base64 strings across the bridge. */
+export async function renderPhotoToFile(
+  uri: string,
+  format: "jpeg" | "png" = "jpeg",
+): Promise<{ uri: string; sizeBytes: number }> {
+  const [{ ImageManipulator, SaveFormat }, { File }] = await Promise.all([
+    import("expo-image-manipulator"),
+    import("expo-file-system"),
+  ]);
+  let image = await ImageManipulator.manipulate(uri).renderAsync();
+  try {
+    let size = fitImageAttachmentSize(image);
+    for (let shrinks = 0; ; shrinks += 1) {
+      if (size !== null) {
+        const resized = await ImageManipulator.manipulate(image).resize(size).renderAsync();
+        image.release();
+        image = resized;
+      }
+      const saved = await image.saveAsync({
+        format: format === "png" ? SaveFormat.PNG : SaveFormat.JPEG,
+        compress: PHOTO_JPEG_QUALITY,
+        base64: false,
+      });
+      const sizeBytes = new File(saved.uri).size ?? 0;
+      if (sizeBytes <= 0) {
+        throw new Error("The rendered photo has no bytes.");
+      }
+      size = shrinks < MAX_BYTE_LIMIT_SHRINKS ? shrinkToByteLimit(image, sizeBytes) : null;
+      if (size === null) return { uri: saved.uri, sizeBytes };
+      try {
+        const discarded = new File(saved.uri);
+        if (discarded.exists) discarded.delete();
+      } catch (error) {
+        console.warn("[composer-images] could not remove discarded render", error);
+      }
+    }
+  } finally {
+    image.release();
+  }
+}
+
+/** Reads only the leading header bytes so large local images avoid full base64 reads. */
+export async function readImageFileDimensions(
+  uri: string,
+): Promise<{ readonly width: number; readonly height: number } | null> {
+  try {
+    const { File, FileMode } = await import("expo-file-system");
+    const reader = new File(uri).open(FileMode.ReadOnly);
+    try {
+      const header = await reader.readBytes(IMAGE_DIMENSIONS_HEADER_BYTES);
+      return readImageDimensions(header);
+    } finally {
+      reader.close();
+    }
+  } catch {
+    return null;
+  }
+}
+
 /** Returns null to keep original bytes if they fit, use another format, or native rendering fails. */
 export async function fitComposerImage(image: {
   readonly uri: string;

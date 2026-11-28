@@ -230,6 +230,7 @@ vi.mock("../lib/composerImages", () => ({
   isFileBackedComposerAttachment: (attachment: { readonly fileUri?: string }) =>
     attachment.fileUri !== undefined,
   convertPastedImagesToAttachments: vi.fn(),
+  quoteLocalImageToAttachment: vi.fn(),
   pickComposerFiles: vi.fn(),
   pickComposerMedia: vi.fn(),
 }));

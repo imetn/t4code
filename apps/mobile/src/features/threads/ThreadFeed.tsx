@@ -548,8 +548,12 @@ function MessageAttachmentImage(props: {
   const previewSource = remoteAttachmentImageSource(props.environmentId, props.attachmentId, props);
   const { resource } = previewSource;
   const sourceIdentifier = filePreviewSourceIdentifier(previewSource);
-  const mediaActions = useMediaActions({ ...previewSource.actionsSource, sourceIdentifier });
   const uri = useAssetUrl(props.environmentId, resource);
+  const mediaActions = useMediaActions({
+    ...previewSource.actionsSource,
+    sourceIdentifier,
+    ...(uri ? { resolvedUri: uri } : {}),
+  });
   const refreshAssetUrl = useRefreshAssetUrl(props.environmentId, resource);
   const retriedImage = useRef(false);
   const { handoff } = props;
