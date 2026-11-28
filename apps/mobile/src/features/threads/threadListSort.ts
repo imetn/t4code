@@ -114,7 +114,7 @@ export const THREAD_LIST_SECTION_PRESETS: ReadonlyArray<{
 }> = [
   {
     id: "completed-working-idle",
-    label: msg("Completed, then In progress", { $context: "chat list group order preset" }),
+    label: msg("Completed first", { $context: "chat list group order preset" }),
     order: ["completed", "working", "idle"],
   },
   {

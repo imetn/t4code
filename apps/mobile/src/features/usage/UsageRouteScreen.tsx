@@ -1,3 +1,5 @@
+import { useAtomValue } from "@effect/atom-react";
+import { AsyncResult } from "effect/reactivity";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { EnvironmentId, USAGE_CONTRACT_VERSION, type UsageProviderKind } from "@t3tools/contracts";
@@ -40,13 +42,15 @@ import { cn } from "../../lib/cn";
 import type { MessageResolver } from "../../i18n/messages";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { NativeWorkspaceTabActivityContext } from "../../native/v5-workspace-context";
+import { mobilePreferencesAtom, saveMobilePreferences } from "../../state/preferences";
+import { useAtomCommand } from "../../state/use-atom-command";
 import { useUsage, type EnvironmentUsageStatus } from "../../state/usage";
 import { SettingsSection } from "../settings/components/SettingsSection";
 import { usageAxisDayLabel, usageAxisHourLabel } from "./usageAxisLabels";
 import { UsageDailyChart } from "./UsageDailyChart";
 import { toggleUsageEnvironment } from "./usageEnvironmentSelection";
 import { useRefreshLimits } from "./UsageLimitsSection";
-import { UsageLimitsSection } from "./UsageLimitsPooled";
+import { UsageLimitsSection, type UsageLimitsViewMode } from "./UsageLimitsPooled";
 import type { UsageChartMetric } from "./usageChartData";
 import { PROVIDER_LABEL, useProviderColors, useUsageMixColors } from "./usageProviders";
 
@@ -62,6 +66,11 @@ const VIEW_OPTIONS = [
   { value: "tokens", label: msg("Tokens", { $context: "usage view tab" }) },
   { value: "limits", label: msg("Limits", { $context: "usage view tab, subscription limits" }) },
 ] as const satisfies readonly { value: UsageView; label: string }[];
+
+const LIMITS_VIEW_MODE_OPTIONS = [
+  { value: "compact", label: msg("Compact", { $context: "compact limits grid view" }) },
+  { value: "standard", label: msg("Standard", { $context: "standard detailed limits view" }) },
+] as const satisfies readonly { value: UsageLimitsViewMode; label: string }[];
 
 const WINDOW_OPTIONS = [
   {
@@ -138,6 +147,20 @@ function UsageScreen(props: {
   const gt = useGT();
   const m = useMessages();
   const viewOptions = VIEW_OPTIONS.map((option) => ({ ...option, label: m(option.label) }));
+  const limitsViewModeOptions = LIMITS_VIEW_MODE_OPTIONS.map((option) => ({
+    ...option,
+    label: m(option.label),
+  }));
+  const preferencesResult = useAtomValue(mobilePreferencesAtom);
+  const savePreferences = useAtomCommand(saveMobilePreferences, "usage limits view mode");
+  const limitsViewMode: UsageLimitsViewMode =
+    AsyncResult.isSuccess(preferencesResult) &&
+    preferencesResult.value.usageLimitsViewMode === "standard"
+      ? "standard"
+      : "compact";
+  const setLimitsViewMode = (next: UsageLimitsViewMode) => {
+    void savePreferences({ usageLimitsViewMode: next });
+  };
   const windowOptions = WINDOW_OPTIONS.map((option) => ({
     ...option,
     label: m(option.label),
@@ -315,9 +338,15 @@ function UsageScreen(props: {
             style={{ maxWidth: MAX_CONTENT_WIDTH }}
           >
             {wide ? (
-              <View className="flex-row items-center gap-3">
+              <View className="flex-row items-center justify-between gap-3">
                 {showingLimits ? (
-                  <View className="flex-1" />
+                  <SegmentedControl
+                    options={limitsViewModeOptions}
+                    selected={limitsViewMode}
+                    onSelect={setLimitsViewMode}
+                    size="compact"
+                    className="w-48"
+                  />
                 ) : (
                   <SegmentedControl
                     options={windowOptions}
@@ -333,7 +362,7 @@ function UsageScreen(props: {
                   onSelect={setView}
                   size="compact"
                   role="tab"
-                  className="flex-1"
+                  className={showingLimits ? "w-80" : "flex-1"}
                 />
               </View>
             ) : (
@@ -346,7 +375,7 @@ function UsageScreen(props: {
               />
             )}
             <Animated.View
-              key={showingLimits ? "limits" : "usage"}
+              key={showingLimits ? `limits:${limitsViewMode}` : "usage"}
               entering={FadeIn.duration(160).reduceMotion(ReduceMotion.System)}
               className={wide ? "gap-6" : "gap-3.5"}
             >
@@ -356,6 +385,7 @@ function UsageScreen(props: {
                   failedLabels={limits.failedLabels}
                   selectedEnvironmentIds={selectedEnvironmentIds}
                   wide={wide}
+                  viewMode={limitsViewMode}
                 />
               ) : (
                 <>

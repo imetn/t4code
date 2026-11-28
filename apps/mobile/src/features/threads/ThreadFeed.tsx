@@ -3723,16 +3723,51 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     // user leaving the end; only a scroll away stops end following.
     onIsAtEndChange?.(settling || state.isAtEnd || state.isFollowingEnd);
   };
+  const userScrolledUpForHistoryRef = useRef(false);
+  const lastAutoLoadHistoryKeyRef = useRef<string | null>(null);
+  const prevScrollOffsetYRef = useRef<number | null>(null);
+  const lastAutoLoadThreadKeyRef = useRef(feedThreadKey);
+  const firstFeedEntryId = props.feed[0]?.id ?? "";
+
   const handleMetricsChange = () => reportMetrics(loadedListKey === feedThreadKey);
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (lastAutoLoadThreadKeyRef.current !== feedThreadKey) {
+      lastAutoLoadThreadKeyRef.current = feedThreadKey;
+      userScrolledUpForHistoryRef.current = false;
+      lastAutoLoadHistoryKeyRef.current = null;
+      prevScrollOffsetYRef.current = null;
+    }
     if (usesNativeAutomaticInsets) {
       const pastEnd = overscrollPastEnd(event.nativeEvent) > 0;
       if (pastEnd !== (heldTopInset !== null)) setHeldTopInset(pastEnd ? anchorTopInset : null);
     }
-    reportHeaderMaterialVisibility(
-      event.nativeEvent.contentOffset.y + (usesNativeAutomaticInsets ? barInset : 0) > 6,
-    );
+    const contentOffsetY = event.nativeEvent.contentOffset.y;
+    const topOffset = contentOffsetY + (usesNativeAutomaticInsets ? barInset : 0);
+    const prevY = prevScrollOffsetYRef.current;
+    prevScrollOffsetYRef.current = contentOffsetY;
+    if (prevY !== null && contentOffsetY < prevY - 2) {
+      userScrolledUpForHistoryRef.current = true;
+    }
+    reportHeaderMaterialVisibility(topOffset > 6);
     handleMetricsChange();
+
+    // Auto-load earlier activity seamlessly when the user scrolls near the top.
+    const historyControls = props.historyControls;
+    if (
+      loadedListKey === feedThreadKey &&
+      userScrolledUpForHistoryRef.current &&
+      historyControls &&
+      historyControls.hasMoreHistory &&
+      !historyControls.loading &&
+      historyControls.error === null &&
+      topOffset <= 420
+    ) {
+      const loadKey = `${feedThreadKey}:${firstFeedEntryId}`;
+      if (lastAutoLoadHistoryKeyRef.current !== loadKey) {
+        lastAutoLoadHistoryKeyRef.current = loadKey;
+        historyControls.onLoadEarlier();
+      }
+    }
   };
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to the list's end state to report it to the parent
   useLayoutEffect(() => {
@@ -4317,6 +4352,9 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             }}
             onLayout={handleMetricsChange}
             onItemSizeChanged={handleItemSizeChanged}
+            onScrollBeginDrag={() => {
+              userScrolledUpForHistoryRef.current = true;
+            }}
             onScroll={handleScroll}
             scrollEventThrottle={16}
             ListHeaderComponent={
@@ -4412,25 +4450,34 @@ function ThreadFeedLoadEarlierControl(props: ThreadFeedHistoryControls) {
   if (!props.hasMoreHistory && props.error === null) {
     return null;
   }
+  if (props.error === null && !props.loading) {
+    return <View className="h-4" />;
+  }
   return (
-    <View className="mb-3 items-center gap-1.5 px-2">
-      {props.hasMoreHistory ? (
-        <View className="self-center">
-          <Button
-            label={props.loading ? gt("Loading earlier activity…") : gt("Load earlier activity")}
-            tone="secondary"
-            accessibilityLabel={gt("Load earlier activity")}
-            disabled={props.loading}
-            onPress={props.onLoadEarlier}
-            icon="chevron.up"
-            loading={props.loading}
-          />
+    <View className="mb-3 items-center gap-1.5 px-2 py-1">
+      {props.loading ? (
+        <View className="flex-row items-center gap-2">
+          <AppActivityIndicator size="small" />
+          <Text className="text-xs" style={{ color: mutedColor }}>
+            {gt("Loading earlier activity…")}
+          </Text>
         </View>
       ) : null}
       {props.error !== null ? (
-        <Text className="text-center text-xs" style={{ color: mutedColor }}>
-          {props.error}
-        </Text>
+        <>
+          <Text className="text-center text-xs" style={{ color: mutedColor }}>
+            {props.error}
+          </Text>
+          {props.hasMoreHistory ? (
+            <Button
+              label={gt("Load earlier activity")}
+              tone="secondary"
+              accessibilityLabel={gt("Load earlier activity")}
+              onPress={props.onLoadEarlier}
+              icon="chevron.up"
+            />
+          ) : null}
+        </>
       ) : null}
     </View>
   );

@@ -583,7 +583,10 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
         customized: options.selectedEnvironmentId !== null || selectedProjectKey !== null,
         items: buildHomeListFilterMenuItems(
           {
-            environments,
+            environments: environments.map((environment) => ({
+              ...environment,
+              machineKind: machineByEnvironmentId.get(environment.environmentId) ?? null,
+            })),
             projects: projectFilterOptions,
             selectedEnvironmentId: options.selectedEnvironmentId,
             selectedProjectKey,

@@ -24,7 +24,9 @@
 Each entry uses `<!-- t4-lock: <id> -->` and explicit path prefixes/files so `scripts/check-t4-locks.ts` can detect touches automatically without duplicating lists.
 
 ### 1. Model Selector Redesign (Web / Desktop & Mobile)
+
 <!-- t4-lock: model-selector -->
+
 - **Status**: `Locked` (finalized in `4ee8ae85e6`, toolbar refinement in `521aa66f91`)
 - **Surfaces**: Web, Desktop, Mobile (iOS & Android)
 - **Protected Paths**:
@@ -52,7 +54,9 @@ Each entry uses `<!-- t4-lock: <id> -->` and explicit path prefixes/files so `sc
     - Simplified mobile composer toolbar (`521aa66f91`): do not re-bloat `ComposerToolbar` / `ThreadComposer` / `IssueCommentComposer`.
 
 ### 2. Project Todos Center (`/todos`), MCP Tools & Full-Screen Calendar / Timeline
+
 <!-- t4-lock: project-todos -->
+
 - **Status**: `Locked` (`adbde2be0d`, `1b2de0c332`)
 - **Surfaces**: Server, Contracts, Client Runtime, Web, Desktop
 - **Protected Paths**:
@@ -68,7 +72,9 @@ Each entry uses `<!-- t4-lock: <id> -->` and explicit path prefixes/files so `sc
   - Isolated per-project todos & pinned notes with dedicated MCP tools (`project_todo_list`, `project_todo_read`, `project_todo_add`, `project_todo_update`), full-screen month calendar view, timeline view, and native header integration.
 
 ### 3. Task Board (`/board`) Split-Pane Chat, Utility Shortcuts & Citation Badges
+
 <!-- t4-lock: task-board -->
+
 - **Status**: `Locked` (`52017e3524`, `55f2e2fc28`, `1b2de0c332`)
 - **Surfaces**: Web, Desktop, Contracts, Shared
 - **Protected Paths**:
@@ -82,7 +88,9 @@ Each entry uses `<!-- t4-lock: <id> -->` and explicit path prefixes/files so `sc
   - Bottom sidebar utility icons expose customizable toggle shortcuts (`settings.open` `⌘,`, `board.open` `⌘⌥K`, `todos.open` `⌘⌥T`, `pullRequests.open` `⌘⌥P`, `issues.open` `⌘⇧I` / `Ctrl+Alt+I`, `usage.open` `⌘U`) in tooltips and Command Palette, and pressing `Esc` from any utility/modal mode (`/board`, `/todos`, `/pull-requests`, `/issues`, `/workflows`, `/settings`, `/usage`) returns cleanly to the normal chat view.
 
 ### 4. Telegram-Style Cross-Device Composer Draft Sync
+
 <!-- t4-lock: synced-drafts -->
+
 - **Status**: `Locked` (`7cebf14129`, `d8568a32d7`)
 - **Surfaces**: Server, Contracts, Client Runtime, Web, Mobile
 - **Protected Paths**:
@@ -93,7 +101,9 @@ Each entry uses `<!-- t4-lock: <id> -->` and explicit path prefixes/files so `sc
   - Cross-device draft sync across Web/Desktop/Mobile and local draft highlight badges in the mobile thread list.
 
 ### 5. Mobile Chat List Sort/Grouping, PR Tab Toggle, Centered Tab Dock & Nowdex iOS Widgets
+
 <!-- t4-lock: mobile-navigation-widgets -->
+
 - **Status**: `Locked` (`25fc8b6449`, `d8568a32d7`, `521aa66f91`, `d4684baffd`, `e66c166e8f`)
 - **Surfaces**: Mobile (iOS & Android), Native Swift Widgets
 - **Protected Paths**:
@@ -115,7 +125,9 @@ Each entry uses `<!-- t4-lock: <id> -->` and explicit path prefixes/files so `sc
   - Nowdex-style multi-provider pace-aware iOS widgets with Claude reset countdown, Antigravity own Gemini weekly quota lock, `100%` non-truncation layout (`521aa66f91`), and inline-slot uniform `2pt` same-color vertical pace marker with soft translucent same-color deficit segments when burning ahead of pace.
 
 ### 6. Compact 2-Column Usage Limits, Pace Curve, Provider Order & Apple HIG T4 Tray
+
 <!-- t4-lock: usage-and-tray -->
+
 - **Status**: `Locked` (`356d25280e`, `e66c166e8f`, `bcb0a0ea21`, `dd28dfa4c7`, `6e52b043cb`)
 - **Surfaces**: Web, Desktop, Mobile
 - **Protected Paths**:
@@ -127,10 +139,12 @@ Each entry uses `<!-- t4-lock: <id> -->` and explicit path prefixes/files so `sc
   - `apps/mobile/src/features/usage/UsageLimitsPooled.tsx`
   - `apps/desktop/src/window/DesktopTray.ts`
 - **Non-Negotiable Invariants**:
-  - Compact 2-column Usage Limits grid with pace curve, per-provider window visibility menu, provider drag-reordering in Settings & Usage Limits, close-to-tray background agent continuity, and Apple HIG T4 monochrome tray icon.
+  - Compact 2-column Usage Limits grid with pace curve on Web/Desktop, iPadOS 2-column Compact / Standard view switcher (`usageLimitsViewMode`, defaulting to Compact in both portrait & landscape, intentionally omitting the pace curve on iOS), per-provider window visibility menu, provider drag-reordering in Settings & Usage Limits, close-to-tray background agent continuity, and Apple HIG T4 monochrome tray icon.
 
 ### 7. Configurable Agent Message Sender Note (`agentMessageSenderNote`)
+
 <!-- t4-lock: agent-sender-note -->
+
 - **Status**: `Locked` (`eb5c4b60e0`)
 - **Surfaces**: Contracts, Server, Web, Mobile
 - **Protected Paths**:
@@ -140,7 +154,9 @@ Each entry uses `<!-- t4-lock: <id> -->` and explicit path prefixes/files so `sc
   - `agentMessageSenderNote` defaults to `{ mode: "off" }` so cross-thread / MCP / scheduled-task agent messages do not inject `[T3 Code: ...]` unless explicitly set to `default` or `custom`; user remote-device `sentFrom` notices remain intact.
 
 ### 8. Sidebar Environment Filter Chips, Top Working Shelf & Custom Environment Label
+
 <!-- t4-lock: sidebar-and-env-label -->
+
 - **Status**: `Locked` (`9d5c798776`, `52017e3524`, `b8bf51abbc`, `fa9b4b08e9`, `cab4e6760d`)
 - **Surfaces**: Web, Server
 - **Protected Paths**:
@@ -151,7 +167,9 @@ Each entry uses `<!-- t4-lock: <id> -->` and explicit path prefixes/files so `sc
   - Pinned `All` tab, icon-labeled drag-to-reorder environment filter chips with horizontal scroll fade, and top `Working` sidebar shelf.
 
 ### 9. Quote Images from Chat Context Menu & Dashboard Project Icons
+
 <!-- t4-lock: media-quote-and-dashboard-icons -->
+
 - **Status**: `Locked` (`a6f0c3f3af`, `d9d16589aa`)
 - **Surfaces**: Web, Mobile, Shared
 - **Protected Paths**:
@@ -164,7 +182,9 @@ Each entry uses `<!-- t4-lock: <id> -->` and explicit path prefixes/files so `sc
   - `dashboard-icon` project icon rendering (`DashboardProjectFavicon`) preserved alongside upstream nested-project icon fallbacks.
 
 ### 10. T4 Code Branding, Zero Telemetry, Self-Hosted Relay, Tailscale & Release Pipeline
+
 <!-- t4-lock: branding-relay-release -->
+
 - **Status**: `Locked` (`6ffb6bf2bb`, `423d89db8d`, `45e2f0c3e3`, `636f49cf17`, `cab4e6760d`, `e494bd6756`, `a6f0c3f3af`, `81bc87bef3`, `f204780d7b`, `adffeac32f`)
 - **Surfaces**: All surfaces, Server, Desktop, Mobile, Release Scripts
 - **Protected Paths**:
@@ -184,7 +204,9 @@ Each entry uses `<!-- t4-lock: <id> -->` and explicit path prefixes/files so `sc
   - **Signed & notarized macOS releases** via `scripts/release-t4.ts` (`Developer ID Application` + `xcrun stapler validate` + `spctl`).
 
 ### 11. Antigravity & ACP Stability Guards
+
 <!-- t4-lock: antigravity-acp -->
+
 - **Status**: `Locked` (`7bc53945ab`, `0ced2f8be8`, `8b77e00612`, `6cb37b532b`, `2a9e74993e`, `1925582ea7`)
 - **Surfaces**: Server, `packages/provider-acp`
 - **Protected Paths**:

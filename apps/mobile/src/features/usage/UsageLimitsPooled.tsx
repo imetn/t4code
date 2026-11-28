@@ -576,17 +576,33 @@ function PoolWindowCard({
   );
 }
 
+export type UsageLimitsViewMode = "compact" | "standard";
+
+function chunkPairs<T>(items: readonly T[]): Array<readonly [T] | readonly [T, T]> {
+  const rows: Array<readonly [T] | readonly [T, T]> = [];
+  for (let index = 0; index < items.length; index += 2) {
+    const first = items[index]!;
+    const second = items[index + 1];
+    rows.push(second === undefined ? [first] : [first, second]);
+  }
+  return rows;
+}
+
 export function UsageLimitsSection({
   now,
   failedLabels,
   selectedEnvironmentIds,
   wide = false,
+  viewMode = "compact",
 }: {
   readonly now: number;
   readonly failedLabels: readonly string[];
   readonly selectedEnvironmentIds: ReadonlySet<EnvironmentId> | null;
   readonly wide?: boolean;
+  readonly viewMode?: UsageLimitsViewMode;
 }) {
+  const compactGrid = wide && viewMode === "compact";
+  const detailedWide = wide && viewMode === "standard";
   const presentations = useAtomValue(environmentPresentations.presentationsWithProvidersAtom);
   const preferencesResult = useAtomValue(mobilePreferencesAtom);
   const savePreferences = useAtomCommand(saveMobilePreferences, "usage limits provider order");
@@ -635,8 +651,230 @@ export function UsageLimitsSection({
   const notices = collectLimitNotices(selected, m);
   const colors = useProviderColors();
   const gt = useGT();
+  const renderPoolCard = (pool: (typeof pools)[number], index: number) => {
+    const hasAntigravityThirdParty =
+      pool.driver === "antigravity" &&
+      pool.windows.some(isAntigravityThirdPartyWindow) &&
+      pool.windows.some((window) => !isAntigravityThirdPartyWindow(window));
+    const allWindows = displayLimitWindows(pool, {
+      antigravityOwnModelsOnly: !includeAntigravityThirdParty,
+    });
+    const windows = allWindows.filter(
+      (window) => !hiddenWindowSet.has(`${pool.driver}:${window.id}`),
+    );
+    const hiddenCount = allWindows.length - windows.length;
+    const label = providerClients.get(pool.driver)?.label ?? String(pool.driver);
+    const visibilityActions = [
+      ...allWindows.map((window) => {
+        const key = `${pool.driver}:${window.id}`;
+        const details =
+          pool.driver === "cursor" ? cursorUsageWindowDetails(window.id, pool, m) : undefined;
+        return {
+          id: `toggle:${window.id}`,
+          title: details?.label ?? window.label,
+          state: hiddenWindowSet.has(key) ? ("off" as const) : ("on" as const),
+        };
+      }),
+      ...(hiddenCount > 0
+        ? [
+            {
+              id: "show-all",
+              title: gt("Show all", { $context: "restore hidden quota windows" }),
+            },
+          ]
+        : []),
+    ];
+    const header = (
+      <View
+        className={
+          detailedWide
+            ? "flex-row items-center justify-between gap-2 px-1"
+            : "flex-row items-center justify-between gap-2"
+        }
+      >
+        <View className="min-w-0 flex-1 flex-row items-center gap-2">
+          <ProviderIcon provider={pool.driver} size={detailedWide ? 18 : 16} />
+          <Text
+            className={
+              detailedWide
+                ? "shrink text-base font-t3-medium text-foreground"
+                : "shrink text-sm font-t3-semibold text-foreground"
+            }
+            numberOfLines={1}
+          >
+            {label}
+          </Text>
+        </View>
+        <View className="flex-row items-center gap-1.5">
+          {hasAntigravityThirdParty ? (
+            <Pressable
+              accessibilityRole="switch"
+              accessibilityState={{ checked: includeAntigravityThirdParty }}
+              accessibilityLabel={gt("Show Claude and GPT limits in Antigravity")}
+              hitSlop={4}
+              onPress={toggleAntigravityThirdParty}
+              className={`${
+                detailedWide ? "h-8 px-2.5" : "h-6 px-2"
+              } flex-row items-center rounded-full active:opacity-60 ${
+                includeAntigravityThirdParty
+                  ? "bg-subtle-strong"
+                  : detailedWide
+                    ? "bg-grouped-card"
+                    : "bg-subtle"
+              }`}
+            >
+              <Text
+                numberOfLines={1}
+                className={`${detailedWide ? "text-xs" : "text-[11px]"} font-t3-medium ${
+                  includeAntigravityThirdParty ? "text-foreground" : "text-foreground-muted"
+                }`}
+              >
+                {includeAntigravityThirdParty ? gt("All models") : gt("Gemini only")}
+              </Text>
+            </Pressable>
+          ) : null}
+          {pools.length > 1 ? (
+            <View className="flex-row items-center gap-1">
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={gt("Move {label} up", { label })}
+                accessibilityState={{ disabled: index === 0 }}
+                disabled={index === 0}
+                hitSlop={6}
+                onPress={() => movePool(index, -1)}
+                className={`${
+                  detailedWide ? "size-8 bg-grouped-card" : "size-6 bg-subtle"
+                } items-center justify-center rounded-full active:opacity-60 disabled:opacity-35`}
+              >
+                <SymbolView
+                  name="arrow.up"
+                  size={detailedWide ? 13 : 11}
+                  tintColorClassName="accent-foreground-muted"
+                  type="monochrome"
+                  weight="semibold"
+                />
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={gt("Move {label} down", { label })}
+                accessibilityState={{ disabled: index === pools.length - 1 }}
+                disabled={index === pools.length - 1}
+                hitSlop={6}
+                onPress={() => movePool(index, 1)}
+                className={`${
+                  detailedWide ? "size-8 bg-grouped-card" : "size-6 bg-subtle"
+                } items-center justify-center rounded-full active:opacity-60 disabled:opacity-35`}
+              >
+                <SymbolView
+                  name="arrow.down"
+                  size={detailedWide ? 13 : 11}
+                  tintColorClassName="accent-foreground-muted"
+                  type="monochrome"
+                  weight="semibold"
+                />
+              </Pressable>
+            </View>
+          ) : null}
+          {visibilityActions.length > 0 ? (
+            <Menu
+              title={gt("Shown windows")}
+              actions={visibilityActions}
+              onPressAction={({ nativeEvent }) => {
+                const eventId = nativeEvent.event;
+                if (eventId === "show-all") {
+                  showAllWindowsForDriver(String(pool.driver));
+                } else if (eventId.startsWith("toggle:")) {
+                  toggleWindowVisibility(String(pool.driver), eventId.slice("toggle:".length));
+                }
+              }}
+            >
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={gt("More options for {label}", { label })}
+                hitSlop={6}
+                className={`${
+                  detailedWide ? "size-8 bg-grouped-card" : "size-6 bg-subtle"
+                } relative items-center justify-center rounded-full active:opacity-60`}
+              >
+                <SymbolView
+                  name="ellipsis"
+                  size={detailedWide ? 13 : 11}
+                  tintColorClassName="accent-foreground-muted"
+                  type="monochrome"
+                  weight="semibold"
+                />
+              </Pressable>
+            </Menu>
+          ) : null}
+        </View>
+      </View>
+    );
+    const windowCards =
+      windows.length === 0 ? (
+        <View className="flex-row items-center justify-between gap-2 py-1">
+          <Text className="text-xs text-foreground-muted">
+            <T>All quota windows hidden.</T>
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            hitSlop={6}
+            onPress={() => showAllWindowsForDriver(String(pool.driver))}
+            className="active:opacity-60"
+          >
+            <Text className="text-xs font-t3-medium text-primary">
+              <T>Show all</T>
+            </Text>
+          </Pressable>
+        </View>
+      ) : (
+        windows.map((window, windowIndex) => {
+          const details =
+            pool.driver === "cursor" ? cursorUsageWindowDetails(window.id, pool, m) : undefined;
+          return (
+            <Fragment key={`${window.kind}:${window.id}`}>
+              {!detailedWide && windowIndex > 0 ? (
+                <View className="my-0.5 h-px bg-border-subtle/50" />
+              ) : null}
+              <PoolWindowCard
+                pool={window}
+                color={colors[usageProviderKind(pool.driver) ?? "codex"]}
+                now={now}
+                environmentIds={
+                  selectedEnvironmentIds === null ? null : [...selectedEnvironmentIds]
+                }
+                label={details?.label}
+                description={details?.description}
+                wide={detailedWide}
+              />
+            </Fragment>
+          );
+        })
+      );
+    if (detailedWide) {
+      return (
+        <View key={pool.driver} className="gap-3">
+          {header}
+          {windowCards}
+        </View>
+      );
+    }
+    return (
+      <View
+        key={pool.driver}
+        className={
+          compactGrid
+            ? "min-w-0 flex-1 gap-2.5 rounded-[20px] border-continuous bg-grouped-card px-4 py-3.5"
+            : "gap-2 rounded-2xl border-continuous bg-grouped-card px-3.5 py-3"
+        }
+      >
+        {header}
+        <View className={compactGrid ? "gap-2" : "gap-1.5"}>{windowCards}</View>
+      </View>
+    );
+  };
+
   return (
-    <View className={wide ? "gap-6" : "gap-3"}>
+    <View className={detailedWide ? "gap-6" : compactGrid ? "gap-3.5" : "gap-3"}>
       {pools.length === 0 &&
       notices.length === 0 &&
       failedLabels.length === 0 &&
@@ -647,258 +885,89 @@ export function UsageLimitsSection({
             : gt("No provider on the selected environments reports subscription limits.")}
         </Text>
       ) : null}
-      {quotaSources.map((source) => (
-        <View
-          key={source.key}
-          className={
-            wide
-              ? "gap-3 rounded-[24px] bg-grouped-card p-4"
-              : "gap-2 rounded-2xl border-continuous bg-grouped-card px-3.5 py-2.5"
-          }
-        >
-          <Text
-            className={
-              wide
-                ? "text-base font-t3-medium text-foreground"
-                : "text-sm font-t3-semibold text-foreground"
-            }
-          >
-            {source.label}
-          </Text>
-          {source.quotaAccounts?.map((account) => (
-            <View key={account.id} className="gap-1">
-              <Text className="text-xs font-t3-medium text-foreground">{account.label}</Text>
-              {account.windows.map((window) => {
-                const reset = resetLabels(window, now, m);
-                return (
-                  <View key={window.id} className="flex-row justify-between gap-3">
-                    <Text className="shrink text-xs text-foreground-muted">{window.label}</Text>
-                    <Text className="text-xs tabular-nums text-foreground-muted">
-                      {gt("{remaining}% left", { remaining: remainingPercent(window) })}
-                      {reset ? ` · ${reset.compact}` : ""}
-                    </Text>
-                  </View>
-                );
-              })}
+      {compactGrid
+        ? chunkPairs(quotaSources).map((pair) => (
+            <View key={pair.map((entry) => entry.key).join("|")} className="flex-row gap-3.5">
+              {pair.map((source) => (
+                <View
+                  key={source.key}
+                  className="min-w-0 flex-1 gap-2 rounded-[20px] border-continuous bg-grouped-card px-4 py-3.5"
+                >
+                  <Text className="text-sm font-t3-semibold text-foreground">{source.label}</Text>
+                  {source.quotaAccounts?.map((account) => (
+                    <View key={account.id} className="gap-1">
+                      <Text className="text-xs font-t3-medium text-foreground">
+                        {account.label}
+                      </Text>
+                      {account.windows.map((window) => {
+                        const reset = resetLabels(window, now, m);
+                        return (
+                          <View key={window.id} className="flex-row justify-between gap-3">
+                            <Text className="shrink text-xs text-foreground-muted">
+                              {window.label}
+                            </Text>
+                            <Text className="text-xs tabular-nums text-foreground-muted">
+                              {gt("{remaining}% left", { remaining: remainingPercent(window) })}
+                              {reset ? ` · ${reset.compact}` : ""}
+                            </Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  ))}
+                </View>
+              ))}
+              {pair.length === 1 ? <View className="flex-1" /> : null}
             </View>
-          ))}
-        </View>
-      ))}
-      {pools.map((pool, index) => {
-        const hasAntigravityThirdParty =
-          pool.driver === "antigravity" &&
-          pool.windows.some(isAntigravityThirdPartyWindow) &&
-          pool.windows.some((window) => !isAntigravityThirdPartyWindow(window));
-        const allWindows = displayLimitWindows(pool, {
-          antigravityOwnModelsOnly: !includeAntigravityThirdParty,
-        });
-        const windows = allWindows.filter(
-          (window) => !hiddenWindowSet.has(`${pool.driver}:${window.id}`),
-        );
-        const hiddenCount = allWindows.length - windows.length;
-        const label = providerClients.get(pool.driver)?.label ?? String(pool.driver);
-        const visibilityActions = [
-          ...allWindows.map((window) => {
-            const key = `${pool.driver}:${window.id}`;
-            const details =
-              pool.driver === "cursor" ? cursorUsageWindowDetails(window.id, pool, m) : undefined;
-            return {
-              id: `toggle:${window.id}`,
-              title: details?.label ?? window.label,
-              state: hiddenWindowSet.has(key) ? ("off" as const) : ("on" as const),
-            };
-          }),
-          ...(hiddenCount > 0
-            ? [
-                {
-                  id: "show-all",
-                  title: gt("Show all", { $context: "restore hidden quota windows" }),
-                },
-              ]
-            : []),
-        ];
-        const header = (
-          <View
-            className={
-              wide
-                ? "flex-row items-center justify-between gap-2 px-1"
-                : "flex-row items-center justify-between gap-2"
-            }
-          >
-            <View className="min-w-0 flex-1 flex-row items-center gap-2">
-              <ProviderIcon provider={pool.driver} size={wide ? 18 : 16} />
+          ))
+        : quotaSources.map((source) => (
+            <View
+              key={source.key}
+              className={
+                detailedWide
+                  ? "gap-3 rounded-[24px] bg-grouped-card p-4"
+                  : "gap-2 rounded-2xl border-continuous bg-grouped-card px-3.5 py-2.5"
+              }
+            >
               <Text
                 className={
-                  wide
-                    ? "shrink text-base font-t3-medium text-foreground"
-                    : "shrink text-sm font-t3-semibold text-foreground"
+                  detailedWide
+                    ? "text-base font-t3-medium text-foreground"
+                    : "text-sm font-t3-semibold text-foreground"
                 }
-                numberOfLines={1}
               >
-                {label}
+                {source.label}
               </Text>
-            </View>
-            <View className="flex-row items-center gap-1.5">
-              {hasAntigravityThirdParty ? (
-                <Pressable
-                  accessibilityRole="switch"
-                  accessibilityState={{ checked: includeAntigravityThirdParty }}
-                  accessibilityLabel={gt("Show Claude and GPT limits in Antigravity")}
-                  hitSlop={4}
-                  onPress={toggleAntigravityThirdParty}
-                  className={`${
-                    wide ? "h-8 px-2.5" : "h-6 px-2"
-                  } flex-row items-center rounded-full active:opacity-60 ${
-                    includeAntigravityThirdParty
-                      ? "bg-subtle-strong"
-                      : wide
-                        ? "bg-grouped-card"
-                        : "bg-subtle"
-                  }`}
-                >
-                  <Text
-                    numberOfLines={1}
-                    className={`${wide ? "text-xs" : "text-[11px]"} font-t3-medium ${
-                      includeAntigravityThirdParty ? "text-foreground" : "text-foreground-muted"
-                    }`}
-                  >
-                    {includeAntigravityThirdParty ? gt("All models") : gt("Gemini only")}
-                  </Text>
-                </Pressable>
-              ) : null}
-              {pools.length > 1 ? (
-                <View className="flex-row items-center gap-1">
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={gt("Move {label} up", { label })}
-                    accessibilityState={{ disabled: index === 0 }}
-                    disabled={index === 0}
-                    hitSlop={6}
-                    onPress={() => movePool(index, -1)}
-                    className={`${
-                      wide ? "size-8 bg-grouped-card" : "size-6 bg-subtle"
-                    } items-center justify-center rounded-full active:opacity-60 disabled:opacity-35`}
-                  >
-                    <SymbolView
-                      name="arrow.up"
-                      size={wide ? 13 : 11}
-                      tintColorClassName="accent-foreground-muted"
-                      type="monochrome"
-                      weight="semibold"
-                    />
-                  </Pressable>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={gt("Move {label} down", { label })}
-                    accessibilityState={{ disabled: index === pools.length - 1 }}
-                    disabled={index === pools.length - 1}
-                    hitSlop={6}
-                    onPress={() => movePool(index, 1)}
-                    className={`${
-                      wide ? "size-8 bg-grouped-card" : "size-6 bg-subtle"
-                    } items-center justify-center rounded-full active:opacity-60 disabled:opacity-35`}
-                  >
-                    <SymbolView
-                      name="arrow.down"
-                      size={wide ? 13 : 11}
-                      tintColorClassName="accent-foreground-muted"
-                      type="monochrome"
-                      weight="semibold"
-                    />
-                  </Pressable>
+              {source.quotaAccounts?.map((account) => (
+                <View key={account.id} className="gap-1">
+                  <Text className="text-xs font-t3-medium text-foreground">{account.label}</Text>
+                  {account.windows.map((window) => {
+                    const reset = resetLabels(window, now, m);
+                    return (
+                      <View key={window.id} className="flex-row justify-between gap-3">
+                        <Text className="shrink text-xs text-foreground-muted">{window.label}</Text>
+                        <Text className="text-xs tabular-nums text-foreground-muted">
+                          {gt("{remaining}% left", { remaining: remainingPercent(window) })}
+                          {reset ? ` · ${reset.compact}` : ""}
+                        </Text>
+                      </View>
+                    );
+                  })}
                 </View>
-              ) : null}
-              {visibilityActions.length > 0 ? (
-                <Menu
-                  title={gt("Shown windows")}
-                  actions={visibilityActions}
-                  onPressAction={({ nativeEvent }) => {
-                    const eventId = nativeEvent.event;
-                    if (eventId === "show-all") {
-                      showAllWindowsForDriver(String(pool.driver));
-                    } else if (eventId.startsWith("toggle:")) {
-                      toggleWindowVisibility(String(pool.driver), eventId.slice("toggle:".length));
-                    }
-                  }}
-                >
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={gt("More options for {label}", { label })}
-                    hitSlop={6}
-                    className={`${
-                      wide ? "size-8 bg-grouped-card" : "size-6 bg-subtle"
-                    } relative items-center justify-center rounded-full active:opacity-60`}
-                  >
-                    <SymbolView
-                      name="ellipsis"
-                      size={wide ? 13 : 11}
-                      tintColorClassName="accent-foreground-muted"
-                      type="monochrome"
-                      weight="semibold"
-                    />
-                  </Pressable>
-                </Menu>
-              ) : null}
+              ))}
             </View>
-          </View>
-        );
-        const windowCards =
-          windows.length === 0 ? (
-            <View className="flex-row items-center justify-between gap-2 py-1">
-              <Text className="text-xs text-foreground-muted">
-                <T>All quota windows hidden.</T>
-              </Text>
-              <Pressable
-                accessibilityRole="button"
-                hitSlop={6}
-                onPress={() => showAllWindowsForDriver(String(pool.driver))}
-                className="active:opacity-60"
-              >
-                <Text className="text-xs font-t3-medium text-primary">
-                  <T>Show all</T>
-                </Text>
-              </Pressable>
+          ))}
+      {compactGrid
+        ? chunkPairs(pools.map((pool, index) => ({ pool, index }))).map((pair) => (
+            <View
+              key={pair.map((entry) => entry.pool.driver).join("|")}
+              className="flex-row items-stretch gap-3.5"
+            >
+              {pair.map(({ pool, index }) => renderPoolCard(pool, index))}
+              {pair.length === 1 ? <View className="flex-1" /> : null}
             </View>
-          ) : (
-            windows.map((window, windowIndex) => {
-              const details =
-                pool.driver === "cursor" ? cursorUsageWindowDetails(window.id, pool, m) : undefined;
-              return (
-                <Fragment key={`${window.kind}:${window.id}`}>
-                  {!wide && windowIndex > 0 ? (
-                    <View className="my-0.5 h-px bg-border-subtle/50" />
-                  ) : null}
-                  <PoolWindowCard
-                    pool={window}
-                    color={colors[usageProviderKind(pool.driver) ?? "codex"]}
-                    now={now}
-                    environmentIds={
-                      selectedEnvironmentIds === null ? null : [...selectedEnvironmentIds]
-                    }
-                    label={details?.label}
-                    description={details?.description}
-                    wide={wide}
-                  />
-                </Fragment>
-              );
-            })
-          );
-        return (
-          <Fragment key={pool.driver}>
-            {wide ? (
-              <View className="gap-3">
-                {header}
-                {windowCards}
-              </View>
-            ) : (
-              <View className="gap-2 rounded-2xl border-continuous bg-grouped-card px-3.5 py-3">
-                {header}
-                <View className="gap-1.5">{windowCards}</View>
-              </View>
-            )}
-          </Fragment>
-        );
-      })}
+          ))
+        : pools.map((pool, index) => renderPoolCard(pool, index))}
       {notices.length > 0 || failedLabels.length > 0 ? (
         <View
           accessible

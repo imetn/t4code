@@ -1,5 +1,14 @@
 import type { MenuAction } from "@react-native-menu/menu";
 
+function isCustomImageUri(image: string): boolean {
+  return (
+    image.startsWith("data:") ||
+    image.startsWith("file:") ||
+    image.startsWith("http://") ||
+    image.startsWith("https://")
+  );
+}
+
 // MenuView's iOS bridge treats an omitted imageColor as transparent.
 export function withMenuActionIconColors(
   actions: readonly MenuAction[],
@@ -10,7 +19,7 @@ export function withMenuActionIconColors(
 ): MenuAction[] {
   return actions.map((action) => ({
     ...action,
-    ...(action.image
+    ...(action.image && !isCustomImageUri(action.image)
       ? {
           imageColor:
             action.imageColor ??

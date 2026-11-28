@@ -104,6 +104,7 @@ import { useFabScroll } from "./FabScrollContext";
 import { holdLaunchSplashForHomeRows, settleLaunchSplashHomeRows } from "./home-launch-splash";
 import { useWorkspaceTabs } from "../layout/workspace/WorkspaceTabsContext";
 import { ThreadListFilters } from "./ThreadListFilters";
+import { projectFilterMenuIconsAtom } from "./project-menu-icons";
 import { deriveHomeEmptyState } from "./home-empty-state";
 
 interface HomeScreenProps {
@@ -351,6 +352,17 @@ export function HomeScreen(props: HomeScreenProps) {
   const v2ScopedProjectGroup = findHomeProjectScope(
     pickableProjectGroups(projectScopes),
     v2ProjectScopeKey,
+  );
+  const pickableProjects = pickableProjectGroups(
+    sortHomeProjectScopes({
+      scopes: projectScopes,
+      threads: props.threads,
+      pendingTasks: [],
+      projectSortOrder: "updated_at",
+    }),
+  );
+  const projectMenuIcons = useAtomValue(
+    projectFilterMenuIconsAtom(Platform.OS === "ios" && workspace ? pickableProjects : []),
   );
   const threadSearch = useThreadSearch(
     searchEnvironmentIds,
@@ -724,17 +736,15 @@ export function HomeScreen(props: HomeScreenProps) {
       {Platform.OS === "ios" && workspace ? (
         <ThreadListFilters
           gutter={sidebarSurface ? 8 : 0}
-          environments={props.environments}
-          projects={pickableProjectGroups(
-            sortHomeProjectScopes({
-              scopes: projectScopes,
-              threads: props.threads,
-              pendingTasks: [],
-              projectSortOrder: "updated_at",
-            }),
-          ).map((scope) => ({
+          environments={props.environments.map((environment) => ({
+            ...environment,
+            machineKind:
+              environment.machineKind ?? machineByEnvironmentId.get(environment.environmentId),
+          }))}
+          projects={pickableProjects.map((scope) => ({
             key: scope.key,
             label: scope.title,
+            icon: projectMenuIcons.get(scope.key) ?? null,
           }))}
           selectedEnvironmentId={props.selectedEnvironmentId}
           selectedProjectKey={props.selectedProjectKey}

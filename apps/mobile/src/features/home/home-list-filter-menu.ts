@@ -1,4 +1,4 @@
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId, EnvironmentMachineKind } from "@t3tools/contracts";
 import * as Arr from "effect/Array";
 import * as Order from "effect/Order";
 
@@ -15,9 +15,21 @@ import {
   type ThreadListSortOrder,
 } from "../threads/threadListSort";
 
+// Kept pure (no react-native imports) so filter menu tests run in Node.
+const MACHINE_KIND_MENU_ICON: Record<EnvironmentMachineKind, string> = {
+  server: "server.rack",
+  cloud: "cloud",
+  linux: "terminal",
+  desktop: "desktopcomputer",
+  laptop: "laptopcomputer",
+  "mac-mini": "macmini",
+  "mac-studio": "macstudio",
+};
+
 export interface HomeListFilterMenuEnvironment {
   readonly environmentId: EnvironmentId;
   readonly label: string;
+  readonly machineKind?: EnvironmentMachineKind | null;
 }
 
 export function homeListFilterEnvironments(environments: ReadonlyArray<WorkspaceEnvironment>) {
@@ -36,6 +48,7 @@ export function homeListFilterEnvironments(environments: ReadonlyArray<Workspace
 export interface HomeListFilterMenuProject {
   readonly key: string;
   readonly label: string;
+  readonly icon?: string | null;
 }
 
 export interface HomeListFilterMenuSort {
@@ -74,6 +87,9 @@ export function buildHomeListFilterMenuItems(
         ...props.environments.map((environment) => ({
           id: `environment:${environment.environmentId}`,
           title: environment.label,
+          icon: environment.machineKind
+            ? MACHINE_KIND_MENU_ICON[environment.machineKind]
+            : "desktopcomputer",
           selected: props.selectedEnvironmentId === environment.environmentId,
           onPress: () => props.onEnvironmentChange(environment.environmentId),
         })),

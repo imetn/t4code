@@ -10,7 +10,9 @@ import { useGT, useMessages } from "gt-react-native";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { pickableProjectGroups } from "@t3tools/client-runtime/state/project-grouping";
 
+import { useAtomValue } from "@effect/atom-react";
 import { useProjects } from "../../state/entities";
+import { threadListEnvironmentsAtom } from "../../state/presentation";
 import { steadyNavigationThreadShellsAtom } from "../../state/threads";
 import { useLaunchingThreads, usePendingNewTasks } from "../../state/use-pending-new-tasks";
 import { useWorkspaceState } from "../../state/workspace";
@@ -111,7 +113,11 @@ export function HomeRouteScreen() {
   const pendingTasks = usePendingNewTasks();
   const { openPendingTask, confirmDeletePendingTask } =
     usePendingTaskListActions(selectThreadRoute);
-  const environments = homeListFilterEnvironments(workspaceEnvironments);
+  const { machineByEnvironmentId } = useAtomValue(threadListEnvironmentsAtom);
+  const environments = homeListFilterEnvironments(workspaceEnvironments).map((environment) => ({
+    ...environment,
+    machineKind: machineByEnvironmentId.get(environment.environmentId) ?? null,
+  }));
   const availableEnvironmentIds = useMemo(
     () => new Set(environments.map((environment) => environment.environmentId)),
     [environments],

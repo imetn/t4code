@@ -2,6 +2,7 @@ import { useGT, useMessages } from "gt-react-native";
 import { Pressable, ScrollView } from "react-native";
 import type { MenuAction } from "@react-native-menu/menu";
 import { SymbolView } from "../../components/ui/AppSymbol";
+import { ENVIRONMENT_MACHINE_SYMBOLS } from "../../components/EnvironmentMachineSymbol";
 import { ListFilterMenu } from "../layout/workspace/ListFilterMenu";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
@@ -122,11 +123,15 @@ export function ThreadListFilters(props: {
           {
             id: "all",
             title: gt("All environments"),
+            image: "square.stack",
             state: props.selectedEnvironmentId === null ? "on" : "off",
           },
           ...props.environments.map((environment) => ({
             id: JSON.stringify(environment.environmentId),
             title: environment.label,
+            image: environment.machineKind
+              ? ENVIRONMENT_MACHINE_SYMBOLS[environment.machineKind]
+              : "desktopcomputer",
             state:
               environment.environmentId === props.selectedEnvironmentId
                 ? ("on" as const)
@@ -151,11 +156,13 @@ export function ThreadListFilters(props: {
           {
             id: "all",
             title: gt("All projects"),
+            image: "folder",
             state: props.selectedProjectKey === null ? "on" : "off",
           },
           ...props.projects.map((project) => ({
             id: JSON.stringify(project.key),
             title: project.label,
+            image: project.icon ?? "folder",
             state: project.key === props.selectedProjectKey ? ("on" as const) : ("off" as const),
           })),
         ]}
