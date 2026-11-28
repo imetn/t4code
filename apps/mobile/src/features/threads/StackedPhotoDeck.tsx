@@ -6,6 +6,7 @@ import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   Easing,
   Extrapolation,
+  cancelAnimation,
   interpolate,
   runOnJS,
   useAnimatedStyle,
@@ -33,12 +34,11 @@ const DeckGlassPill = withUniwind(GlassView, {
 });
 
 const CARD_RADIUS = 20;
-const SWIPE_DISTANCE_THRESHOLD = 38;
-const SWIPE_VELOCITY_THRESHOLD = 320;
-const TUCK_SPRING = {
-  damping: 23,
-  stiffness: 310,
-  mass: 0.8,
+const SWIPE_DISTANCE_THRESHOLD = 36;
+const SWIPE_VELOCITY_THRESHOLD = 300;
+const TUCK_TIMING = {
+  duration: 210,
+  easing: Easing.bezier(0.22, 1, 0.36, 1),
 } as const;
 const CANCEL_SPRING = {
   damping: 22,
@@ -256,6 +256,7 @@ export function StackedPhotoDeck(props: {
   const shuffleDir = useSharedValue<-1 | 0 | 1>(0);
   const isCompleting = useSharedValue(false);
   const gestureHandled = useSharedValue(false);
+  const animationGen = useSharedValue(0);
 
   const lastMessageIdRef = useRef(props.messageId);
 
@@ -265,6 +266,8 @@ export function StackedPhotoDeck(props: {
     pullDistanceSV.value = pullDistance;
     if (lastMessageIdRef.current !== props.messageId) {
       lastMessageIdRef.current = props.messageId;
+      animationGen.value += 1;
+      cancelAnimation(shuffleProgress);
       activeIndexSV.value = 0;
       shuffleProgress.value = 0;
       shuffleDir.value = 0;
@@ -273,6 +276,7 @@ export function StackedPhotoDeck(props: {
     }
   }, [
     activeIndexSV,
+    animationGen,
     countSV,
     gestureHandled,
     isCompleting,
@@ -297,19 +301,48 @@ export function StackedPhotoDeck(props: {
   });
 
   const [panGesture] = useState(() => {
-    const completeTuck = (dir: -1 | 1) => {
+    const commitInFlight = (dir: -1 | 1) => {
       "worklet";
-      shuffleProgress.value = withSpring(1, TUCK_SPRING, (finished) => {
-        if (finished) {
-          const total = countSV.value;
-          const delta = dir === -1 ? 1 : -1;
-          const nextIndex = total <= 1 ? 0 : (activeIndexSV.value + delta + total) % total;
-          // Update activeIndexSV and reset shuffle state atomically on the UI thread for zero flicker.
-          activeIndexSV.value = nextIndex;
+      const total = countSV.value;
+      const delta = dir === -1 ? 1 : -1;
+      const nextIndex = total <= 1 ? 0 : (activeIndexSV.value + delta + total) % total;
+      // Update activeIndexSV and reset shuffle state atomically on the UI thread for zero flicker.
+      activeIndexSV.value = nextIndex;
+      shuffleProgress.value = 0;
+      shuffleDir.value = 0;
+      isCompleting.value = false;
+      runOnJS(syncReactActiveIndex)(nextIndex);
+    };
+
+    const interruptActiveAnimation = () => {
+      "worklet";
+      if (isCompleting.value) {
+        const pendingDir = shuffleDir.value;
+        animationGen.value += 1;
+        cancelAnimation(shuffleProgress);
+        if (pendingDir === -1 || pendingDir === 1) {
+          commitInFlight(pendingDir);
+        } else {
           shuffleProgress.value = 0;
           shuffleDir.value = 0;
           isCompleting.value = false;
-          runOnJS(syncReactActiveIndex)(nextIndex);
+        }
+        return;
+      }
+      if (shuffleProgress.value > 0) {
+        animationGen.value += 1;
+        cancelAnimation(shuffleProgress);
+        shuffleProgress.value = 0;
+        shuffleDir.value = 0;
+      }
+    };
+
+    const completeTuck = (dir: -1 | 1, gen: number) => {
+      "worklet";
+      shuffleProgress.value = withTiming(1, TUCK_TIMING, (finished) => {
+        if (animationGen.value !== gen) return;
+        if (finished) {
+          commitInFlight(dir);
         } else {
           shuffleProgress.value = 0;
           shuffleDir.value = 0;
@@ -319,13 +352,21 @@ export function StackedPhotoDeck(props: {
     };
 
     return Gesture.Pan()
-      .activeOffsetX([-12, 12])
+      .activeOffsetX([-8, 8])
       .failOffsetY([-12, 12])
       .onBegin(() => {
         gestureHandled.value = false;
       })
+      .onStart(() => {
+        if (countSV.value <= 1) return;
+        // Interrupt any in-flight tuck or cancel animation immediately so rapid swipes never stall.
+        interruptActiveAnimation();
+      })
       .onUpdate((event) => {
-        if (isCompleting.value || gestureHandled.value || countSV.value <= 1) return;
+        if (gestureHandled.value || countSV.value <= 1) return;
+        if (isCompleting.value) {
+          interruptActiveAnimation();
+        }
         const dx = event.translationX;
         const clearDist = Math.max(72, pullDistanceSV.value);
         if (Math.abs(dx) < 2) {
@@ -339,9 +380,11 @@ export function StackedPhotoDeck(props: {
           // As the finger keeps sliding past the clear edge, automatically flip behind and tuck into the back.
           gestureHandled.value = true;
           isCompleting.value = true;
+          const gen = animationGen.value + 1;
+          animationGen.value = gen;
           shuffleProgress.value = 0.501;
           runOnJS(triggerSwapHaptic)();
-          completeTuck(dir);
+          completeTuck(dir, gen);
           return;
         }
         shuffleProgress.value = (absDx / clearDist) * 0.5;
@@ -363,12 +406,15 @@ export function StackedPhotoDeck(props: {
                 ? -1
                 : 1;
           shuffleDir.value = dir;
+          const gen = animationGen.value + 1;
+          animationGen.value = gen;
           const remainingPull = Math.max(0, 0.5 - shuffleProgress.value);
-          const pullDuration = Math.max(45, Math.round(remainingPull * 210));
+          const pullDuration = Math.max(40, Math.round(remainingPull * 190));
           shuffleProgress.value = withTiming(
             0.501,
             { duration: pullDuration, easing: Easing.out(Easing.cubic) },
             (pulled) => {
+              if (animationGen.value !== gen) return;
               if (!pulled) {
                 shuffleProgress.value = 0;
                 shuffleDir.value = 0;
@@ -376,11 +422,14 @@ export function StackedPhotoDeck(props: {
                 return;
               }
               runOnJS(triggerSwapHaptic)();
-              completeTuck(dir);
+              completeTuck(dir, gen);
             },
           );
         } else {
+          const gen = animationGen.value + 1;
+          animationGen.value = gen;
           shuffleProgress.value = withSpring(0, CANCEL_SPRING, (finished) => {
+            if (animationGen.value !== gen) return;
             if (finished) {
               shuffleDir.value = 0;
             }
@@ -388,8 +437,11 @@ export function StackedPhotoDeck(props: {
         }
       })
       .onFinalize((_event, success) => {
-        if (!success && !isCompleting.value) {
+        if (!success && !isCompleting.value && !gestureHandled.value) {
+          const gen = animationGen.value + 1;
+          animationGen.value = gen;
           shuffleProgress.value = withSpring(0, CANCEL_SPRING, (finished) => {
+            if (animationGen.value !== gen) return;
             if (finished) {
               shuffleDir.value = 0;
             }
