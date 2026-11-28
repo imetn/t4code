@@ -540,6 +540,7 @@ function MessageAttachmentImage(props: {
   readonly height?: number;
   readonly handoff?: SentImageHandoff;
   readonly onImageLoad?: (image: SentImageHandoff) => void;
+  readonly onMeasureSize?: (size: { readonly width: number; readonly height: number }) => void;
   readonly onPressPreview: (source: FilePreviewSource) => void;
 }) {
   const gt = useGT();
@@ -590,6 +591,7 @@ function MessageAttachmentImage(props: {
           onPress={() => props.onPressPreview(withGallery({ ...previewSource, sourceIdentifier }))}
           onLoad={(size) => {
             retriedImage.current = false;
+            props.onMeasureSize?.(size);
             if (handoff)
               props.onImageLoad?.({ uri: handoff.uri, aspectRatio: size.width / size.height });
           }}
@@ -829,6 +831,8 @@ function MessageAttachmentFile(props: {
   );
 }
 
+const attachmentAspectRatioCache = new Map<string, number>();
+
 const handoffProps = (handoff: SentImageHandoff | undefined) => (handoff ? { handoff } : {});
 
 function UserMessageMedia(props: {
@@ -842,13 +846,55 @@ function UserMessageMedia(props: {
 }) {
   const attachments = [...props.pendingAttachments, ...props.attachments];
   const collage = attachments.length > 1 && attachments.every(isImageAttachment);
+  const [measuredRatios, setMeasuredRatios] = useState<{
+    readonly messageId: string;
+    readonly ratios: Readonly<Record<number, number>>;
+  }>({ messageId: props.messageId, ratios: {} });
 
   if (collage) {
     const pendingCount = props.pendingAttachments.length;
+    const recordRatio = (index: number, cacheKey: string, width: number, height: number) => {
+      if (!(width > 0 && height > 0)) return;
+      const ratio = width / height;
+      attachmentAspectRatioCache.set(cacheKey, ratio);
+      setMeasuredRatios((current) => {
+        const base = current.messageId === props.messageId ? current.ratios : {};
+        if (base[index] !== undefined && Math.abs(base[index]! - ratio) < 0.01) {
+          return current;
+        }
+        return { messageId: props.messageId, ratios: { ...base, [index]: ratio } };
+      });
+    };
+
+    const resolvedRatios: Record<number, number> = {
+      ...(measuredRatios.messageId === props.messageId ? measuredRatios.ratios : {}),
+    };
+    for (let index = 0; index < attachments.length; index += 1) {
+      if (resolvedRatios[index] !== undefined) continue;
+      const key =
+        index < pendingCount
+          ? (props.pendingAttachments[index]!.uploadedAttachmentId ??
+            props.pendingAttachments[index]!.id)
+          : props.attachments[index - pendingCount]!.id;
+      const cached = attachmentAspectRatioCache.get(key);
+      if (cached !== undefined) {
+        resolvedRatios[index] = cached;
+        continue;
+      }
+      const handoff =
+        index < pendingCount
+          ? sentImageHandoff(props.messageId, index, props.pendingAttachments[index]!.id)
+          : sentImageHandoff(props.messageId, index - pendingCount);
+      if (handoff?.aspectRatio) {
+        resolvedRatios[index] = handoff.aspectRatio;
+      }
+    }
+
     const renderPhotoCard = (index: number, height: number) => {
       if (index < pendingCount) {
         const attachment = props.pendingAttachments[index]!;
         if (attachment.uploadedAttachmentId) {
+          const cacheKey = attachment.uploadedAttachmentId;
           return (
             <MessageAttachmentImage
               environmentId={props.environmentId}
@@ -858,6 +904,7 @@ function UserMessageMedia(props: {
               className="w-full bg-user-bubble-foreground/15"
               height={height}
               {...handoffProps(sentImageHandoff(props.messageId, index, attachment.id))}
+              onMeasureSize={(size) => recordRatio(index, cacheKey, size.width, size.height)}
               onImageLoad={(loaded) => rememberSentImage(props.messageId, index, loaded)}
               onPressPreview={props.onPressPreview}
             />
@@ -869,7 +916,10 @@ function UserMessageMedia(props: {
             className="w-full bg-user-bubble-foreground/15"
             height={height}
             {...handoffProps(sentImageHandoff(props.messageId, index, attachment.id))}
-            onImageLoad={(image) => rememberSentImage(props.messageId, index, image)}
+            onImageLoad={(image) => {
+              rememberSentImage(props.messageId, index, image);
+              recordRatio(index, attachment.id, image.aspectRatio, 1);
+            }}
             onPressPreview={props.onPressPreview}
           />
         );
@@ -885,6 +935,7 @@ function UserMessageMedia(props: {
           className="w-full bg-user-bubble-foreground/15"
           height={height}
           {...handoffProps(sentImageHandoff(props.messageId, settledIndex))}
+          onMeasureSize={(size) => recordRatio(index, attachment.id, size.width, size.height)}
           onPressPreview={props.onPressPreview}
         />
       );
@@ -894,6 +945,7 @@ function UserMessageMedia(props: {
         messageId={props.messageId}
         count={attachments.length}
         maxWidth={props.maxWidth}
+        aspectRatios={resolvedRatios}
         renderCard={renderPhotoCard}
       />
     );

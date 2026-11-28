@@ -128,6 +128,7 @@ function DeckActionPill(props: {
   readonly onPress: () => void;
 }) {
   const { themeAppearance } = useAppearancePreferences();
+  const isDarkMode = themeAppearance === "dark";
   const inner = (
     <>
       {props.icon ? (
@@ -143,6 +144,12 @@ function DeckActionPill(props: {
       </Text>
     </>
   );
+
+  const pillSurfaceStyle = {
+    backgroundColor: isDarkMode ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.06)",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: isDarkMode ? "rgba(255,255,255,0.16)" : "rgba(0,0,0,0.08)",
+  };
 
   return (
     <Pressable
@@ -161,11 +168,15 @@ function DeckActionPill(props: {
           glassEffectStyle="regular"
           colorScheme={themeAppearance}
           className="h-8 flex-row items-center gap-1.5 rounded-full px-3"
+          style={pillSurfaceStyle}
         >
           {inner}
         </DeckGlassPill>
       ) : (
-        <View className="h-8 flex-row items-center gap-1.5 rounded-full border border-border bg-subtle px-3">
+        <View
+          className="h-8 flex-row items-center gap-1.5 rounded-full px-3"
+          style={pillSurfaceStyle}
+        >
           {inner}
         </View>
       )}
@@ -177,6 +188,7 @@ export function StackedPhotoDeck(props: {
   readonly messageId: string;
   readonly count: number;
   readonly maxWidth: number;
+  readonly aspectRatios?: Readonly<Record<number, number>>;
   readonly renderCard: (index: number, height: number) => ReactNode;
 }) {
   const gt = useGT();
@@ -215,9 +227,14 @@ export function StackedPhotoDeck(props: {
     animating.value = false;
   });
 
+  const activeAspectRatio =
+    props.aspectRatios?.[activeIndex] ??
+    props.aspectRatios?.[0] ??
+    (props.aspectRatios ? Object.values(props.aspectRatios)[0] : undefined);
   const { cardWidth, cardHeight, peekTotalWidth } = resolveDeckDimensions(
     props.maxWidth,
     props.count,
+    activeAspectRatio,
   );
   const exitDistance = 240;
 

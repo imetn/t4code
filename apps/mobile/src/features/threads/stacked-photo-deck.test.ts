@@ -33,14 +33,26 @@ describe("stacked-photo-deck", () => {
     ]);
   });
 
-  it("fits stacked deck width plus expand pill within the user bubble maxWidth", () => {
-    const phone = resolveDeckDimensions(310, 4);
-    expect(phone.peekTotalWidth).toBe(24);
-    expect(phone.cardWidth + phone.peekTotalWidth + 86).toBeLessThanOrEqual(310);
-    expect(phone.cardHeight).toBeGreaterThan(phone.cardWidth);
+  it("fits stacked deck width plus expand pill within the user bubble maxWidth and preserves natural aspect ratio", () => {
+    const iphoneScreenshotRatio = 1206 / 2622; // ~0.46 portrait
+    const portrait = resolveDeckDimensions(310, 7, iphoneScreenshotRatio);
+    expect(portrait.peekTotalWidth).toBe(24);
+    expect(portrait.cardWidth + portrait.peekTotalWidth + 86).toBeLessThanOrEqual(310);
+    expect(portrait.cardHeight).toBe(360);
+    expect(Math.abs(portrait.cardWidth / portrait.cardHeight - iphoneScreenshotRatio)).toBeLessThan(
+      0.02,
+    );
 
-    const tablet = resolveDeckDimensions(520, 6);
-    expect(tablet.cardWidth).toBe(204);
+    const landscape = resolveDeckDimensions(320, 4, 16 / 9);
+    expect(landscape.cardWidth).toBeGreaterThan(landscape.cardHeight);
+    expect(landscape.cardHeight).toBeGreaterThanOrEqual(128);
+
+    const square = resolveDeckDimensions(320, 4, 1);
+    expect(square.cardWidth).toBe(square.cardHeight);
+
+    const tablet = resolveDeckDimensions(520, 6, 0.75);
+    expect(tablet.cardWidth).toBe(224);
+    expect(tablet.cardHeight).toBe(Math.round(224 / 0.75));
   });
 
   it("selects expanded grid modes by photo count", () => {
