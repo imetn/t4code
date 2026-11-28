@@ -8,11 +8,16 @@ import {
 } from "../commandPaletteStore";
 import { overlayModeForCommand } from "../components/CommandPalette.logic";
 import { APPEARANCE_OPTIONS, notifyThemeSaveFailure } from "../components/CommandPaletteThemeItems";
+import { readIssueListPreferences } from "../components/issue/issueListPreferences";
+import { readPullRequestListPreferences } from "../components/pullRequest/pullRequestListPreferences";
 import { toggleThemeEditorForTheme } from "../components/settings/themeEditorStore";
+import { closeAppModalWithRouter, getMainAppHref } from "../components/sidebar/mainAppLocation";
 import { toastManager } from "../components/ui/toast";
 import { getThemeSnapshot, setAppearanceMode } from "../hooks/useTheme";
 import { m } from "../i18n/messages";
 import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
+import { appAtomRegistry } from "../rpc/atomRegistry";
+import { environmentSummaries } from "../state/presentation";
 import { type CommandHandler, type CommandScopeOptions, registerCommands } from "./dispatcher";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { resolveThreadRouteTarget } from "../threadRoutes";
@@ -94,6 +99,63 @@ export function installCommandPaletteCommands(
         consume(event);
         const { theme, themeHalves, resolvedTheme } = getThemeSnapshot();
         toggleThemeEditorForTheme({ theme, themeHalves, initialAppearance: resolvedTheme });
+      },
+      "settings.open": (event) => {
+        consume(event);
+        if (event.repeat) return;
+        dispatchCommandPalette({ _tag: "SetOpen", open: false });
+        const pathname = router.state.location.pathname;
+        if (pathname === "/settings" || pathname.startsWith("/settings/")) {
+          void closeAppModalWithRouter(router);
+          return;
+        }
+        void router.navigate({ to: "/settings" });
+      },
+      "board.open": (event) => {
+        consume(event);
+        if (event.repeat) return;
+        dispatchCommandPalette({ _tag: "SetOpen", open: false });
+        if (router.state.location.pathname === "/board") {
+          void router.navigate({ href: getMainAppHref() });
+          return;
+        }
+        void router.navigate({ to: "/board" });
+      },
+      "todos.open": (event) => {
+        if (!appAtomRegistry.get(environmentSummaries.projectTodosSupportedAtom)) return false;
+        consume(event);
+        if (event.repeat) return;
+        dispatchCommandPalette({ _tag: "SetOpen", open: false });
+        if (router.state.location.pathname === "/todos") {
+          void router.navigate({ href: getMainAppHref() });
+          return;
+        }
+        void router.navigate({ to: "/todos" });
+      },
+      "pullRequests.open": (event) => {
+        if (!appAtomRegistry.get(environmentSummaries.pullRequestsSupportedAtom)) return false;
+        consume(event);
+        if (event.repeat) return;
+        dispatchCommandPalette({ _tag: "SetOpen", open: false });
+        if (router.state.location.pathname === "/pull-requests") {
+          void router.navigate({ href: getMainAppHref() });
+          return;
+        }
+        void router.navigate({
+          to: "/pull-requests",
+          search: readPullRequestListPreferences(),
+        });
+      },
+      "issues.open": (event) => {
+        if (!appAtomRegistry.get(environmentSummaries.issuesSupportedAtom)) return false;
+        consume(event);
+        if (event.repeat) return;
+        dispatchCommandPalette({ _tag: "SetOpen", open: false });
+        if (router.state.location.pathname === "/issues") {
+          void router.navigate({ href: getMainAppHref() });
+          return;
+        }
+        void router.navigate({ to: "/issues", search: readIssueListPreferences() });
       },
       "usage.open": (event) => {
         consume(event);

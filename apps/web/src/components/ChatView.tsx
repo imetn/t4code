@@ -186,7 +186,11 @@ import { copyThreadReference } from "../lib/copyThreadReference";
 import { subscribeSnapShotComposerFocus } from "../lib/desktopSnapShot";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { FileMetadataThreadProvider } from "../hooks/FileMetadataThreadProvider";
-import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
+import {
+  RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY,
+  type ThreadPanelPresentation,
+} from "../rightPanelLayout";
+import { requestWorkspaceContentFocus, requestWorkspaceFocus } from "../lib/workspaceFocus";
 import { PopoverCreateHandle } from "./ui/popover";
 import {
   selectActiveRightPanel,
@@ -1233,7 +1237,25 @@ export default function ChatView(props: ChatViewProps) {
   );
   const canReuseTerminal = activeThreadKnownSessionsRaw !== null;
   const previewPanelOpen = activeRightPanelKind === "preview" && browserAvailable;
-  const rightPanelOpen = rightPanelState.isOpen;
+  const storeRightPanelUserActionRevision = useRightPanelStore((state) =>
+    activeThreadRef
+      ? (state.userActionRevisionByThreadKey[scopedThreadKey(activeThreadRef)] ?? 0)
+      : 0,
+  );
+  const [boardRightPanelBaseline] = useState<{
+    readonly threadKey: string | null;
+    readonly revision: number;
+  } | null>(() =>
+    embeddedInBoard
+      ? { threadKey: activeThreadKey, revision: storeRightPanelUserActionRevision }
+      : null,
+  );
+  const boardRightPanelSuppressed =
+    embeddedInBoard &&
+    (boardRightPanelBaseline === null ||
+      boardRightPanelBaseline.threadKey !== activeThreadKey ||
+      storeRightPanelUserActionRevision <= boardRightPanelBaseline.revision);
+  const rightPanelOpen = rightPanelState.isOpen && !boardRightPanelSuppressed;
   const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
     usePanelAnimationSettings();
   const rightPanelPresenceValue = {
@@ -2154,9 +2176,34 @@ export default function ChatView(props: ChatViewProps) {
       ? activePreviewMiniPlayer
       : null;
   const canvasPreview = useThreadPreviewCanvasSource(activeThreadRef, shownPreviewMiniPlayer);
-  const threadPanelInlineOpen = useRightPanelStore((state) =>
+  const [boardThreadPanelState, setBoardThreadPanelState] = useState<{
+    readonly threadKey: string | null;
+    readonly inlineOpen: boolean;
+    readonly popoverOpen: boolean;
+  } | null>(null);
+  const boardThreadPanelInlineOpen =
+    boardThreadPanelState?.threadKey === activeThreadKey ? boardThreadPanelState.inlineOpen : false;
+  const boardThreadPanelPopoverOpen =
+    boardThreadPanelState?.threadKey === activeThreadKey
+      ? boardThreadPanelState.popoverOpen
+      : false;
+  const setBoardThreadPanelOpen = (presentation: ThreadPanelPresentation, open: boolean) => {
+    setBoardThreadPanelState((current) => {
+      const base =
+        current?.threadKey === activeThreadKey
+          ? current
+          : { threadKey: activeThreadKey, inlineOpen: false, popoverOpen: false };
+      return presentation === "inline"
+        ? { ...base, inlineOpen: open }
+        : { ...base, popoverOpen: open };
+    });
+  };
+  const storeThreadPanelInlineOpen = useRightPanelStore((state) =>
     selectThreadPanelOpen(state.threadPanelVisibilityByThreadKey, activeThreadRef, "inline"),
   );
+  const threadPanelInlineOpen = embeddedInBoard
+    ? boardThreadPanelInlineOpen
+    : storeThreadPanelInlineOpen;
   // Selects only the mode, so canvas resizes rerender the chat view only when the
   // card switches presentation.
   const threadPanelPresentation = useStore(
@@ -2170,13 +2217,18 @@ export default function ChatView(props: ChatViewProps) {
         detailsCardInlineOpen: threadPanelInlineOpen,
       }).detailsCardMode,
   );
-  const threadPanelOpen = useRightPanelStore((state) =>
+  const storeThreadPanelOpen = useRightPanelStore((state) =>
     selectThreadPanelOpen(
       state.threadPanelVisibilityByThreadKey,
       activeThreadRef,
       threadPanelPresentation,
     ),
   );
+  const threadPanelOpen = embeddedInBoard
+    ? threadPanelPresentation === "inline"
+      ? boardThreadPanelInlineOpen
+      : boardThreadPanelPopoverOpen
+    : storeThreadPanelOpen;
   const supportsThreadPullRequests = serverConfig !== null;
   const visiblePullRequests = visibleThreadPullRequests(
     (activeThreadShell ?? activeThread)?.pullRequests ?? [],
@@ -2635,6 +2687,28 @@ export default function ChatView(props: ChatViewProps) {
     onDiffPanelOpen,
     closeRightPanelSurface,
   });
+  const effectiveToggleThreadPanel = useStableCallback(() => {
+    if (!embeddedInBoard) {
+      toggleThreadPanelStable();
+      return;
+    }
+    if (threadPanelPresentation === "inline") {
+      const next = !boardThreadPanelInlineOpen;
+      if (next) requestWorkspaceFocus({ area: "details" });
+      else if (document.activeElement?.closest('[data-workspace-area="details"]'))
+        requestWorkspaceContentFocus();
+      setBoardThreadPanelOpen("inline", next);
+      return;
+    }
+    setBoardThreadPanelOpen("popover", !boardThreadPanelPopoverOpen);
+  });
+  const effectiveToggleRightPanel = useStableCallback(() => {
+    if (embeddedInBoard && boardRightPanelSuppressed && rightPanelState.isOpen && activeThreadRef) {
+      useRightPanelStore.getState().markUserAction(activeThreadRef);
+      return;
+    }
+    toggleRightPanelStable();
+  });
   const pullRequestSurfaceAvailable = supportsPullRequests && pullRequestPanelTarget !== null;
   const {
     acknowledgeActiveThreadWoke,
@@ -3014,6 +3088,13 @@ export default function ChatView(props: ChatViewProps) {
     commands: {
       ...terminalShortcuts,
       ...rightPanelShortcuts,
+      ...(embeddedInBoard
+        ? {
+            "threadPanel.toggle": ({ event }) => {
+              if (!event.repeat) effectiveToggleThreadPanel();
+            },
+          }
+        : {}),
       ...threadLifecycleShortcuts,
       "thread.copyReference": ({ event }) => {
         if (!event.repeat) copyActiveThreadReference();
@@ -3579,8 +3660,8 @@ export default function ChatView(props: ChatViewProps) {
     rightPanelOpen,
     rightPanelShortcutLabel: shortcutLabelForCommand(keybindings, "rightPanel.toggle"),
     onToggleTerminal: toggleTerminalVisibilityStable,
-    onToggleThreadPanel: toggleThreadPanelStable,
-    onToggleRightPanel: toggleRightPanelStable,
+    onToggleThreadPanel: effectiveToggleThreadPanel,
+    onToggleRightPanel: effectiveToggleRightPanel,
   } satisfies PanelLayoutControlsProps;
   const panelToggleControls = (
     <PanelLayoutControls
@@ -3711,6 +3792,9 @@ export default function ChatView(props: ChatViewProps) {
             threadRef={activeThreadRef}
             preview={canvasPreview}
             detailsCardTopInset={isThreadFindActive ? THREAD_FIND_BAR_RESERVED_HEIGHT : 0}
+            {...(embeddedInBoard
+              ? { detailsCardInlineOpenOverride: boardThreadPanelInlineOpen }
+              : {})}
             composerOverlayElement={isDraftHeroState ? null : composerOverlayElement}
             data-chat-workspace-drop-target="true"
             onDragEnter={workspaceFileDropHandlers.onDragEnter}
@@ -4227,6 +4311,15 @@ export default function ChatView(props: ChatViewProps) {
                 <ThreadDetailsPanel
                   anchor={threadPanelPopoverAnchorRef}
                   handle={threadPanelPopoverHandle}
+                  {...(embeddedInBoard
+                    ? {
+                        threadPanelOverride: {
+                          inlineOpen: boardThreadPanelInlineOpen,
+                          popoverOpen: boardThreadPanelPopoverOpen,
+                          onSetOpen: setBoardThreadPanelOpen,
+                        },
+                      }
+                    : {})}
                   forceNewWorktree={multipleModelSelections !== null}
                   environmentId={activeThread.environmentId}
                   threadId={activeThread.id}

@@ -42,6 +42,7 @@ function Card({
   threadRef,
   inline,
   fixture,
+  threadPanelOverride,
   rows = 1,
   automationRows = 0,
   serverOverflowRows = 0,
@@ -49,6 +50,7 @@ function Card({
   threadRef: ScopedThreadRef;
   inline: boolean;
   fixture: ReturnType<typeof setup>;
+  threadPanelOverride?: Parameters<typeof ThreadDetailsCard>[0]["threadPanelOverride"];
   /** Rows of 100px shown at full density. Compact always takes 50px. */
   rows?: number;
   /** Rows of 100px in an automations list shown at full density. */
@@ -76,6 +78,7 @@ function Card({
           threadRef={threadRef}
           anchor={fixture.anchor}
           handle={fixture.handle}
+          {...(threadPanelOverride ? { threadPanelOverride } : {})}
           contentKey={String(rows)}
         >
           {(density) => (
@@ -106,6 +109,37 @@ it("stays open once opened", async () => {
   await act(() => useRightPanelStore.getState().setThreadPanelOpen(threadB, "popover", true));
   await expect.element(page.getByText("Details for thread-b")).toBeVisible();
   expect(popoverOpen(threadB)).toBe(true);
+});
+
+it("keeps inline details hidden by default when overridden for board split view", async () => {
+  using fixture = setup();
+  const onSetOpen = () => {};
+  await using screen = await render(
+    <Card
+      threadRef={threadA}
+      inline
+      fixture={fixture}
+      threadPanelOverride={{ inlineOpen: false, popoverOpen: false, onSetOpen }}
+    />,
+  );
+  await expect.element(page.getByText("Details for thread-a")).not.toBeInTheDocument();
+  expect(
+    selectThreadPanelOpen(
+      useRightPanelStore.getState().threadPanelVisibilityByThreadKey,
+      threadA,
+      "inline",
+    ),
+  ).toBe(true);
+
+  await screen.rerender(
+    <Card
+      threadRef={threadA}
+      inline
+      fixture={fixture}
+      threadPanelOverride={{ inlineOpen: true, popoverOpen: false, onSetOpen }}
+    />,
+  );
+  await expect.element(page.getByText("Details for thread-a")).toBeVisible();
 });
 
 it("closes a popup left open when the card switches inline, and reopens from the flag", async () => {

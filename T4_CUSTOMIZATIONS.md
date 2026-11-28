@@ -67,16 +67,19 @@ Each entry uses `<!-- t4-lock: <id> -->` and explicit path prefixes/files so `sc
 - **Non-Negotiable Invariants**:
   - Isolated per-project todos & pinned notes with dedicated MCP tools (`project_todo_list`, `project_todo_read`, `project_todo_add`, `project_todo_update`), full-screen month calendar view, timeline view, and native header integration.
 
-### 3. Task Board (`/board`) Split-Pane Chat & Citation Badges
+### 3. Task Board (`/board`) Split-Pane Chat, Utility Shortcuts & Citation Badges
 <!-- t4-lock: task-board -->
 - **Status**: `Locked` (`52017e3524`, `55f2e2fc28`, `1b2de0c332`)
-- **Surfaces**: Web, Desktop
+- **Surfaces**: Web, Desktop, Contracts, Shared
 - **Protected Paths**:
   - `apps/web/src/components/board/TaskBoardPage.tsx`
   - `apps/web/src/components/board/TaskBoardThreadPane.tsx`
   - `apps/web/src/components/chat/draftAssistantCitations.ts`
+  - `apps/web/src/components/sidebar/SidebarChrome.tsx`
 - **Non-Negotiable Invariants**:
-  - Left docked Task Board column + right pure-chat split view with "Expand to full thread", card corner clipping fix, and persistent citation badges.
+  - Left main sidebar stays untouched (never auto-collapsed) when opening a Task Board card.
+  - Clicking a Task Board card keeps 1 column docked on the left (~1/4 board width with column tabs) and turns the right 3-column area into a pure-chat split view (`ThreadDetailsPanel` / `会话详情` and right-panel sheet hidden by default on open, toggleable on demand without mutating full-view state), with "Expand to full thread", card corner clipping fix, and persistent citation badges.
+  - Bottom sidebar utility icons expose customizable toggle shortcuts (`settings.open` `⌘,`, `board.open` `⌘⌥K`, `todos.open` `⌘⌥T`, `pullRequests.open` `⌘⌥P`, `issues.open` `⌘⇧I` / `Ctrl+Alt+I`, `usage.open` `⌘U`) in tooltips and Command Palette, and pressing `Esc` from any utility/modal mode (`/board`, `/todos`, `/pull-requests`, `/issues`, `/workflows`, `/settings`, `/usage`) returns cleanly to the normal chat view.
 
 ### 4. Telegram-Style Cross-Device Composer Draft Sync
 <!-- t4-lock: synced-drafts -->

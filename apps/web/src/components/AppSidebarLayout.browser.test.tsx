@@ -130,3 +130,19 @@ describe("sidebar toggle shortcut", () => {
     await vi.waitFor(() => expect(wrapper.getAttribute("data-sidebar-state")).toBe("collapsed"));
   });
 });
+
+describe("utility page Escape exit", () => {
+  it.each(["/pull-requests", "/issues", "/board", "/todos"] as const)(
+    "returns to the main app view when pressing Escape on %s",
+    async (pathname) => {
+      await using screen = await render(<AppSidebarLayout>Utility page</AppSidebarLayout>, {
+        router: pathname,
+      });
+      const navigate = vi.spyOn(screen.router!, "navigate");
+
+      await userEvent.keyboard("{Escape}");
+
+      expect(navigate).toHaveBeenCalledWith({ href: expect.any(String) });
+    },
+  );
+});

@@ -141,7 +141,7 @@ export function useChatShortcuts(input: ChatShortcutsInput) {
       context: input.getShortcutContext(event.target),
     });
     let run: ChatShortcutHandler | undefined;
-    if (command === "chat.find") run = input.commands[command];
+    if (command === "chat.find" || command === "threadPanel.toggle") run = input.commands[command];
     else if (command && event.target instanceof Node && composerElement?.contains(event.target)) {
       run = composerShortcutCommands(input.composerRef, input.branchToolbarRef)[command];
     }

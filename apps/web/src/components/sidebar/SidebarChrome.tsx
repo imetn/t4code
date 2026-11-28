@@ -214,10 +214,12 @@ function SidebarBrandMark({ onBackdrop }: { onBackdrop: boolean }) {
 function SidebarUtilityItem({
   icon,
   label,
+  shortcutLabel,
   onClick,
 }: {
   icon: ReactNode;
   label: string;
+  shortcutLabel?: string | null;
   onClick: () => void;
 }) {
   return (
@@ -230,7 +232,10 @@ function SidebarUtilityItem({
             </SidebarMenuButton>
           }
         />
-        <TooltipPopup side="top">{label}</TooltipPopup>
+        <TooltipPopup side="top">
+          {label}
+          {shortcutLabel ? ` (${shortcutLabel})` : ""}
+        </TooltipPopup>
       </Tooltip>
     </SidebarMenuItem>
   );
@@ -240,6 +245,7 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   const navigate = useNavigate();
   const navigateToMainApp = useNavigateToMainApp();
   const gt = useGT();
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { isMobile, setOpenMobile } = useSidebar();
   const isOnUtilityPage = useLocation({
     select: (location) => isSidebarUtilityPage(location.pathname),
@@ -247,6 +253,12 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   const pullRequestsSupported = usePullRequestsSupported();
   const issuesSupported = useIssuesSupported();
   const projectTodosSupported = useProjectTodosSupported();
+  const settingsShortcutLabel = shortcutLabelForCommand(keybindings, "settings.open");
+  const boardShortcutLabel = shortcutLabelForCommand(keybindings, "board.open");
+  const todosShortcutLabel = shortcutLabelForCommand(keybindings, "todos.open");
+  const pullRequestsShortcutLabel = shortcutLabelForCommand(keybindings, "pullRequests.open");
+  const issuesShortcutLabel = shortcutLabelForCommand(keybindings, "issues.open");
+  const usageShortcutLabel = shortcutLabelForCommand(keybindings, "usage.open");
   const closeMobileSidebar = () => {
     if (isMobile) {
       setOpenMobile(false);
@@ -306,17 +318,20 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
           <SidebarUtilityItem
             icon={<SettingsIcon />}
             label={gt("Settings")}
+            shortcutLabel={settingsShortcutLabel}
             onClick={handleSettingsClick}
           />
           <SidebarUtilityItem
             icon={<KanbanIcon />}
             label={gt("Task board")}
+            shortcutLabel={boardShortcutLabel}
             onClick={handleBoardClick}
           />
           {projectTodosSupported ? (
             <SidebarUtilityItem
               icon={<ListTodoIcon />}
               label={gt("Project todos")}
+              shortcutLabel={todosShortcutLabel}
               onClick={handleTodosClick}
             />
           ) : null}
@@ -324,6 +339,7 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             <SidebarUtilityItem
               icon={<PullRequestGlyph.pullRequest />}
               label={gt("Pull requests")}
+              shortcutLabel={pullRequestsShortcutLabel}
               onClick={handlePullRequestsClick}
             />
           ) : null}
@@ -331,12 +347,14 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             <SidebarUtilityItem
               icon={<IssueGlyph.issue />}
               label={gt("Issues", { $context: "sidebar link to the list of issues" })}
+              shortcutLabel={issuesShortcutLabel}
               onClick={handleIssuesClick}
             />
           ) : null}
           <SidebarUtilityItem
             icon={<ChartNoAxesColumnIcon />}
             label={gt("Usage")}
+            shortcutLabel={usageShortcutLabel}
             onClick={handleUsageClick}
           />
         </>

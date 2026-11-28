@@ -312,7 +312,7 @@ describe("TaskBoardPage", () => {
     expect(document.activeElement?.getAttribute("data-task-board-column")).toBe("active");
   });
 
-  it("auto-collapses an open main sidebar on split view open and restores it on close", async () => {
+  it("keeps an open main sidebar untouched when entering and leaving split view", async () => {
     await page.viewport(1280, 800);
     mocks.navigate.mockReset();
     mocks.chatViewProps = [];
@@ -339,7 +339,8 @@ describe("TaskBoardPage", () => {
       workingCard.click();
     });
 
-    expect(document.querySelector('[data-testid="sidebar-open-probe"]')?.textContent).toBe("false");
+    expect(document.querySelector('[data-testid="sidebar-open-probe"]')?.textContent).toBe("true");
+    expect(document.querySelector('[data-testid="task-board-split-view"]')).not.toBeNull();
 
     const closeButton = document.querySelector<HTMLButtonElement>(
       'button[aria-label="Back to board"]',
@@ -349,5 +350,6 @@ describe("TaskBoardPage", () => {
     });
 
     expect(document.querySelector('[data-testid="sidebar-open-probe"]')?.textContent).toBe("true");
+    expect(document.querySelector('[data-testid="task-board-split-view"]')).toBeNull();
   });
 });

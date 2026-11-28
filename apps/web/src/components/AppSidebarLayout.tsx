@@ -47,7 +47,12 @@ import { BackgroundThreadAnnouncer } from "./BackgroundThreadAnnouncer";
 import { HistorySwipeNavigation } from "./HistorySwipeNavigation";
 import ThreadSidebar from "./Sidebar";
 import { SidebarBrandWidthProbe } from "./sidebar/SidebarChrome";
-import { isAppModalPage } from "./sidebar/mainAppLocation";
+import {
+  closeAppModalWithRouter,
+  getMainAppHref,
+  isAppModalPage,
+  isSidebarUtilityPage,
+} from "./sidebar/mainAppLocation";
 import type { SidebarRouteReveal } from "./sidebar/routeReveal";
 import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
 import {
@@ -204,23 +209,53 @@ function registerWorkspaceFocusCommands(router: AnyRouter): () => void {
   };
 }
 
-// Escape leaves the pull requests page when no scope (a selection, a dialog,
-// a drag) claimed it, so it observes after every other scope.
-function registerPullRequestsEscapeCommand(router: AnyRouter): () => void {
+function isUtilityEscapeBlockedTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  if (
+    target.closest(
+      '[role="dialog"], [role="alertdialog"], [role="menu"], [data-slot="popover-popup"], [data-slot="sheet-popup"], [data-keybinding-capture]',
+    ) !== null
+  ) {
+    return true;
+  }
+  if (target.closest('textarea, select, [contenteditable="true"]') !== null) return true;
+  const input = target.closest("input");
+  if (
+    input !== null &&
+    input.type !== "button" &&
+    input.type !== "submit" &&
+    input.type !== "checkbox" &&
+    input.type !== "radio"
+  ) {
+    return input.value.length > 0;
+  }
+  return false;
+}
+
+// Escape leaves any sidebar utility page back to the main chat view when no inner
+// dialog, sheet, split view, sweep, or non-empty input claimed it.
+function registerUtilityPageEscapeCommand(router: AnyRouter): () => void {
   return registerCommands(
     {},
     {
       observe: (event, consumed) => {
-        if (consumed || event.repeat || event.isComposing || event.key !== "Escape") return;
-        if (router.state.location.pathname !== "/pull-requests") return;
+        if (
+          consumed ||
+          event.defaultPrevented ||
+          event.repeat ||
+          event.isComposing ||
+          event.keyCode === 229 ||
+          event.key !== "Escape"
+        ) {
+          return;
+        }
+        if (isCommandPaletteOpen() || isModelPickerOpen()) return;
+        if (!isSidebarUtilityPage(router.state.location.pathname)) return;
+        if (isUtilityEscapeBlockedTarget(event.target)) return;
         event.preventDefault();
         const activeElement = document.activeElement;
         if (activeElement instanceof HTMLElement) activeElement.blur();
-        if (router.state.location.state.__TSR_index !== 0) {
-          window.history.back();
-          return;
-        }
-        void router.navigate({ to: "/" });
+        void router.navigate({ href: getMainAppHref() });
       },
     },
   );
@@ -307,10 +342,13 @@ function registerAppShellCommands(router: AnyRouter, shellElement: Element): () 
     registerThreadUndoCommands(router, readSidebarVisible),
     registerNavigationHistoryCommands(router),
     registerWorkspaceFocusCommands(router),
-    registerPullRequestsEscapeCommand(router),
+    registerUtilityPageEscapeCommand(router),
     registerMenuAction("open-settings", () => {
-      if (!/^\/settings(\/|$)/.test(router.state.location.pathname))
-        void router.navigate({ to: "/settings" });
+      if (/^\/settings(\/|$)/.test(router.state.location.pathname)) {
+        void closeAppModalWithRouter(router);
+        return;
+      }
+      void router.navigate({ to: "/settings" });
     }),
     registerMenuAction("open-board", () => {
       if (router.state.location.pathname !== "/board") void router.navigate({ to: "/board" });

@@ -42,6 +42,7 @@ import {
   useQuietThreadShells,
 } from "../../state/entities";
 import { useEnvironments } from "../../state/environments";
+import { registerCommands } from "../../shortcuts/dispatcher";
 import { buildThreadRouteParams } from "../../threadRoutes";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem } from "../WorkspaceBreadcrumb";
@@ -51,7 +52,7 @@ import { Button } from "../ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../ui/input-group";
 import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "../ui/menu";
 import { ScrollArea } from "../ui/scroll-area";
-import { SidebarInset, useSidebar } from "../ui/sidebar";
+import { SidebarInset } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   classifyTaskBoardColumn,
@@ -135,7 +136,6 @@ export function TaskBoardPage() {
   const { environments: environmentPresentations } = useEnvironments();
   const { pinThread, unpinThread, settleThread, unsettleThread } = useThreadActions();
   const { handleNewThread, defaultProjectRef } = useHandleNewThread();
-  const { open: sidebarOpen, setOpen: setSidebarOpen, isMobile } = useSidebar();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedEnvironmentId, setSelectedEnvironmentId] = useState<EnvironmentId | null>(null);
@@ -147,7 +147,6 @@ export function TaskBoardPage() {
   const [selectedThreadRef, setSelectedThreadRef] = useState<ScopedThreadRef | null>(null);
   const [dockedColumnId, setDockedColumnId] = useState<TaskBoardColumnId>("working");
   const boardBodyRef = useRef<HTMLDivElement | null>(null);
-  const collapsedSidebarForSplitRef = useRef(false);
   const pendingFocusRef = useRef<
     | { readonly kind: "pane" }
     | { readonly kind: "card"; readonly key: string; readonly columnId: TaskBoardColumnId }
@@ -158,23 +157,6 @@ export function TaskBoardPage() {
   const selectedThreadKey = selectedThreadRef ? scopedThreadKey(selectedThreadRef) : null;
   const activeDockedColumnId = resolveDockedTaskBoardColumn(dockedColumnId, showSettled);
 
-  const restoreSidebarIfCollapsed = () => {
-    if (collapsedSidebarForSplitRef.current) {
-      collapsedSidebarForSplitRef.current = false;
-      setSidebarOpen(true);
-    }
-  };
-
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- restores the main sidebar open state if the board unmounts while split view collapsed it
-  useEffect(() => {
-    return () => {
-      if (collapsedSidebarForSplitRef.current) {
-        collapsedSidebarForSplitRef.current = false;
-        setSidebarOpen(true);
-      }
-    };
-  }, [setSidebarOpen]);
-
   const closeSplitView = () => {
     if (selectedThreadKey !== null) {
       pendingFocusRef.current = {
@@ -183,7 +165,6 @@ export function TaskBoardPage() {
         columnId: activeDockedColumnId,
       };
     }
-    restoreSidebarIfCollapsed();
     setSelectedThreadRef(null);
   };
 
@@ -212,34 +193,35 @@ export function TaskBoardPage() {
     }
   }, [selectedThreadKey]);
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to Escape on window to exit the board split view back to the full board
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to Escape in the command dispatcher so exiting split view runs before the utility-page Escape observer
   useEffect(() => {
     if (selectedThreadKey === null) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (
-        event.key !== "Escape" ||
-        event.defaultPrevented ||
-        event.isComposing ||
-        event.keyCode === 229 ||
-        isEscapeCapturedTarget(event.target)
-      ) {
-        return;
-      }
-      event.preventDefault();
-      pendingFocusRef.current = {
-        kind: "card",
-        key: selectedThreadKey,
-        columnId: activeDockedColumnId,
-      };
-      if (collapsedSidebarForSplitRef.current) {
-        collapsedSidebarForSplitRef.current = false;
-        setSidebarOpen(true);
-      }
-      setSelectedThreadRef(null);
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [activeDockedColumnId, selectedThreadKey, setSidebarOpen]);
+    return registerCommands(
+      {},
+      {
+        onKeyDown: (event) => {
+          if (
+            event.key !== "Escape" ||
+            event.defaultPrevented ||
+            event.repeat ||
+            event.isComposing ||
+            event.keyCode === 229 ||
+            isEscapeCapturedTarget(event.target)
+          ) {
+            return false;
+          }
+          event.preventDefault();
+          pendingFocusRef.current = {
+            kind: "card",
+            key: selectedThreadKey,
+            columnId: activeDockedColumnId,
+          };
+          setSelectedThreadRef(null);
+          return true;
+        },
+      },
+    );
+  }, [activeDockedColumnId, selectedThreadKey]);
 
   const environments = environmentPresentations.map((environment) => ({
     id: environment.environmentId,
@@ -294,10 +276,6 @@ export function TaskBoardPage() {
     }
     if (event) {
       pendingFocusRef.current = null;
-    }
-    if (selectedThreadRef === null && !isMobile && sidebarOpen) {
-      collapsedSidebarForSplitRef.current = true;
-      setSidebarOpen(false);
     }
     setDockedColumnId(item.column);
     setSelectedThreadRef(threadRef);
@@ -706,6 +684,17 @@ export function TaskBoardPage() {
             <InputGroupInput
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (
+                  event.key === "Escape" &&
+                  !event.nativeEvent.isComposing &&
+                  event.keyCode !== 229 &&
+                  searchQuery.length > 0
+                ) {
+                  event.preventDefault();
+                  setSearchQuery("");
+                }
+              }}
               placeholder={gt("Filter tasks...")}
               aria-label={gt("Filter tasks")}
               size="sm"
@@ -831,7 +820,12 @@ export function TaskBoardPage() {
           >
             <div
               data-testid="task-board-docked-column"
-              className="hidden min-h-0 w-[clamp(17.5rem,23%,21rem)] shrink-0 flex-col gap-2 md:flex"
+              className={cn(
+                "hidden min-h-0 shrink-0 flex-col gap-2 md:flex",
+                showSettled
+                  ? "w-[clamp(16rem,calc((100%-2.25rem)/4),21rem)]"
+                  : "w-[clamp(16rem,calc((100%-1.5rem)/3),21rem)]",
+              )}
             >
               <div
                 role="tablist"
@@ -882,6 +876,7 @@ export function TaskBoardPage() {
             </div>
 
             <TaskBoardThreadPane
+              key={selectedThreadKey ?? undefined}
               threadRef={selectedThreadRef}
               project={selectedProject}
               environmentLabel={environmentLabelById.get(selectedThreadRef.environmentId) ?? null}

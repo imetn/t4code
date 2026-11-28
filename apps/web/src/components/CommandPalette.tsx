@@ -1802,6 +1802,7 @@ function OpenCommandPaletteDialog(props: {
       ],
       title: gt("Open pull requests"),
       icon: <PullRequestGlyph.pullRequest className={ITEM_ICON_CLASS} />,
+      shortcutCommand: "pullRequests.open",
       run: async () => {
         await navigate({ to: "/pull-requests", search: readPullRequestListPreferences() });
       },
@@ -1819,6 +1820,7 @@ function OpenCommandPaletteDialog(props: {
       searchTerms: ["issues", "issue", "bugs", "tracker", "github", "triage"],
       title: gt("Open issues"),
       icon: <IssueGlyph.issue className={ITEM_ICON_CLASS} />,
+      shortcutCommand: "issues.open",
       run: async () => {
         await navigate({ to: "/issues", search: readIssueListPreferences() });
       },
@@ -1872,6 +1874,7 @@ function OpenCommandPaletteDialog(props: {
     searchTerms: ["board", "kanban", "tasks", "task board", "orca", "overview", "status"],
     title: gt("Open task board"),
     icon: <KanbanIcon className={ITEM_ICON_CLASS} />,
+    shortcutCommand: "board.open",
     run: async () => {
       await navigate({ to: "/board" });
     },
@@ -1898,6 +1901,7 @@ function OpenCommandPaletteDialog(props: {
       ],
       title: gt("Open project todos"),
       icon: <ListTodoIcon className={ITEM_ICON_CLASS} />,
+      shortcutCommand: "todos.open",
       run: async () => {
         await navigate({ to: "/todos" });
       },
@@ -1962,6 +1966,7 @@ function OpenCommandPaletteDialog(props: {
     searchTerms: ["settings", "preferences", "configuration", "keybindings"],
     title: gt("Open settings"),
     icon: <SettingsIcon className={ITEM_ICON_CLASS} />,
+    shortcutCommand: "settings.open",
     run: async () => {
       await navigate({ to: "/settings" });
     },

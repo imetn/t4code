@@ -11,6 +11,7 @@ import type { ScopedThreadRef } from "@t3tools/contracts";
 import { ScrollArea } from "../ui/scroll-area";
 import { cn } from "../../lib/utils";
 import { Popover, PopoverPopup, PopoverCreateHandle } from "../ui/popover";
+import type { ThreadPanelPresentation } from "../../rightPanelLayout";
 import { selectThreadPanelOpen, useRightPanelStore } from "../../rightPanelStore";
 import { useChatCanvas } from "./ChatCanvasContext";
 import {
@@ -20,11 +21,18 @@ import {
 import { observeResize } from "../../lib/observeResize";
 import { requestWorkspaceFocus } from "../../lib/workspaceFocus";
 
+export interface ThreadDetailsPanelOverride {
+  readonly inlineOpen: boolean;
+  readonly popoverOpen: boolean;
+  readonly onSetOpen: (presentation: ThreadPanelPresentation, open: boolean) => void;
+}
+
 export function ThreadDetailsCard({
   threadRef,
   anchor,
   handle,
   contentKey,
+  threadPanelOverride,
   onContextMenu,
   children,
 }: {
@@ -33,6 +41,7 @@ export function ThreadDetailsCard({
   handle: ReturnType<typeof PopoverCreateHandle>;
   /** Changes when the set of rendered items changes, so cached heights are measured again. */
   contentKey: string;
+  threadPanelOverride?: ThreadDetailsPanelOverride;
   onContextMenu?: MouseEventHandler<HTMLDivElement>;
   children: (density: "full" | "compact" | "essential") => ReactNode;
 }) {
@@ -43,12 +52,21 @@ export function ThreadDetailsCard({
   const placement = canvas?.detailsCardPlacement ?? null;
   const mode = placement ? "inline" : "popover";
   const topInset = canvas?.detailsCardTopInset ?? 0;
-  const inlineOpen = useRightPanelStore((state) =>
+  const storeInlineOpen = useRightPanelStore((state) =>
     selectThreadPanelOpen(state.threadPanelVisibilityByThreadKey, threadRef, "inline"),
   );
-  const popoverOpen = useRightPanelStore((state) =>
+  const storePopoverOpen = useRightPanelStore((state) =>
     selectThreadPanelOpen(state.threadPanelVisibilityByThreadKey, threadRef, "popover"),
   );
+  const inlineOpen = threadPanelOverride ? threadPanelOverride.inlineOpen : storeInlineOpen;
+  const popoverOpen = threadPanelOverride ? threadPanelOverride.popoverOpen : storePopoverOpen;
+  const setPopoverOpen = (open: boolean) => {
+    if (threadPanelOverride) {
+      threadPanelOverride.onSetOpen("popover", open);
+      return;
+    }
+    useRightPanelStore.getState().setThreadPanelOpen(threadRef, "popover", open);
+  };
   const measurementKey = `${threadRef.environmentId}:${threadRef.threadId}:${preferredPlacement?.width ?? "popup"}:${contentKey}`;
   const [measurements, setMeasurements] = useState({
     key: measurementKey,
@@ -66,9 +84,11 @@ export function ThreadDetailsCard({
   // when the card returns to popover mode.
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- closes the popover flag in the right panel store when the derived mode turns inline
   useLayoutEffect(() => {
-    if (mode === "inline" && popoverOpen)
-      useRightPanelStore.getState().setThreadPanelOpen(threadRef, "popover", false);
-  }, [mode, popoverOpen, threadRef]);
+    if (mode === "inline" && popoverOpen) {
+      if (threadPanelOverride) threadPanelOverride.onSetOpen("popover", false);
+      else useRightPanelStore.getState().setThreadPanelOpen(threadRef, "popover", false);
+    }
+  }, [mode, popoverOpen, threadPanelOverride, threadRef]);
   const [contentElement, setContentElement] = useState<HTMLDivElement | null>(null);
   const { environmentId, threadId } = threadRef;
   // Re-measures when the density or measurement key changes, so each density's
@@ -145,7 +165,7 @@ export function ThreadDetailsCard({
           details.cancel();
           return;
         }
-        useRightPanelStore.getState().setThreadPanelOpen(threadRef, "popover", open);
+        setPopoverOpen(open);
       }}
     >
       {placement && inlineOpen ? (
