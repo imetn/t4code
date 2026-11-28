@@ -906,6 +906,7 @@ function ThreadSettingsTopBar(props: {
           {
             id: "show-legacy",
             title: gt("Show legacy models"),
+            image: Platform.OS === "ios" ? "clock.arrow.circlepath" : undefined,
             state: session.showLegacy ? ("on" as const) : ("off" as const),
           },
         ]
@@ -913,6 +914,7 @@ function ThreadSettingsTopBar(props: {
     {
       id: "manage-hidden",
       title: gt("Manage hidden models"),
+      image: Platform.OS === "ios" ? "eye.slash" : undefined,
       state: session.manageHidden ? ("on" as const) : ("off" as const),
     },
     ...(session.environmentId
