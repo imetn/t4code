@@ -171,6 +171,10 @@ function adjacentModelPickerProvider(input: {
 
 const EMPTY_MODEL_JUMP_LABELS = new Map<string, string>();
 const MODEL_LIST_ESTIMATED_ITEM_SIZE = 32;
+const MODEL_LIST_ROW_STRIDE = 34;
+const MODEL_LIST_VERTICAL_PADDING = 12;
+// 8 full 34px rows + 6px top padding = 278px; 314px frames the 9th row right inside the bottom blur-fade cue with zero dead gap.
+const MODEL_LIST_MAX_HEIGHT = 314;
 export const MODEL_PICKER_LAST_TAB_STORAGE_KEY = "t4code:model-picker-last-tab:v1";
 
 function readLastModelPickerTab(): string | null {
@@ -296,24 +300,54 @@ function ModelPickerList({
   extraData: unknown;
   renderItem: (props: { item: string; index: number }) => ReactNode;
 }) {
-  const [showBottomScrollFade, setShowBottomScrollFade] = useState(false);
-  const updateScrollFades = () => {
+  const listKeySignature = `${itemKeys.length}:${itemKeys[0] ?? ""}:${itemKeys.at(-1) ?? ""}`;
+  const [measured, setMeasured] = useState<{
+    readonly signature: string;
+    readonly contentHeight: number;
+    readonly isAtEnd: boolean;
+  } | null>(null);
+
+  const updateScrollMetrics = () => {
     const metrics = listRef.current?.getState();
     if (!metrics) return;
-    setShowBottomScrollFade(!metrics.isAtEnd);
+    const rawContentHeight = Math.ceil(metrics.contentLength);
+    if (rawContentHeight <= 0) return;
+    // LegendList's contentLength sums item + separator heights; add py-1.5 container padding.
+    const contentHeight = rawContentHeight + MODEL_LIST_VERTICAL_PADDING;
+    const viewportHeight = Math.min(MODEL_LIST_MAX_HEIGHT, contentHeight);
+    const isAtEnd =
+      contentHeight <= MODEL_LIST_MAX_HEIGHT + 2 ||
+      metrics.isAtEnd ||
+      metrics.scroll + viewportHeight >= contentHeight - 4;
+    setMeasured((prev) =>
+      prev &&
+      prev.signature === listKeySignature &&
+      prev.contentHeight === contentHeight &&
+      prev.isAtEnd === isAtEnd
+        ? prev
+        : { signature: listKeySignature, contentHeight, isAtEnd },
+    );
   };
-  const scrollRef = useLegendListRef(listRef, updateScrollFades);
+  const scrollRef = useLegendListRef(listRef, updateScrollMetrics);
 
+  const activeMeasured = measured?.signature === listKeySignature ? measured : null;
+  const estimatedContentHeight =
+    itemKeys.length > 0
+      ? itemKeys.length * MODEL_LIST_ROW_STRIDE - 2 + MODEL_LIST_VERTICAL_PADDING
+      : 0;
+  const contentHeight = activeMeasured?.contentHeight ?? estimatedContentHeight;
   const listHeight =
-    itemKeys.length > 0 ? Math.min(320, Math.max(120, itemKeys.length * 38 + 12)) : 0;
+    itemKeys.length > 0 ? Math.min(MODEL_LIST_MAX_HEIGHT, Math.max(44, contentHeight)) : 0;
+  const isOverflowing = contentHeight > MODEL_LIST_MAX_HEIGHT + 2;
+  const showBottomScrollFade = isOverflowing && !(activeMeasured?.isAtEnd ?? false);
 
   return (
     <div
-      data-scroll-bottom={showBottomScrollFade && itemKeys.length > 8 ? "true" : undefined}
+      data-scroll-bottom={showBottomScrollFade ? "true" : undefined}
       style={itemKeys.length > 0 ? { height: listHeight } : undefined}
       className={cn(
         "model-picker-list-fade relative min-h-0 overflow-hidden",
-        itemKeys.length > 0 ? "max-h-80 shrink-0" : "h-0",
+        itemKeys.length > 0 ? "shrink-0" : "h-0",
       )}
     >
       <ComboboxListVirtualized>
@@ -328,9 +362,9 @@ function ModelPickerList({
           recycleItems
           contentContainerClassName="px-2 py-1.5"
           ItemSeparatorComponent={ModelListSeparator}
-          onLayout={updateScrollFades}
-          onScroll={updateScrollFades}
-          onReady={updateScrollFades}
+          onLayout={updateScrollMetrics}
+          onScroll={updateScrollMetrics}
+          onReady={updateScrollMetrics}
           className="model-picker-scrollbar-none h-full overflow-x-hidden overscroll-y-contain"
         />
       </ComboboxListVirtualized>

@@ -412,7 +412,7 @@ it("displays Favorites in the saved cross-provider order without a selected back
   expect(document.querySelector('[aria-label^="Drag to reorder"]')).toBeNull();
 });
 
-it("gives the desktop model list a taller 320px viewport so more models fit without scrolling", async () => {
+it("fits short model lists tightly and caps long lists at 314px with a bottom scroll-blur cue", async () => {
   const instanceId = ProviderInstanceId.make("codex");
   const entries = deriveProviderInstanceEntries([
     {
@@ -429,38 +429,58 @@ it("gives the desktop model list a taller 320px viewport so more models fit with
       skills: [],
     },
   ]);
-  const options = new Map([
-    [
-      instanceId,
-      Array.from({ length: 10 }, (_, index) => ({
-        slug: `model-${index + 1}`,
-        name: `Model ${index + 1}`,
-      })),
-    ],
-  ]);
 
-  window.localStorage.clear();
-  await using screen = await render(
-    <ProviderModelPicker
-      environmentId={null}
-      activeInstanceId={instanceId}
-      model="model-1"
-      lockedProvider={null}
-      instanceEntries={entries}
-      modelOptionsByInstance={options}
-      triggerAriaLabel="Choose model"
-      onInstanceModelChange={() => {}}
-      effortColumn={
-        <div className="h-24" data-effort-row>
-          Effort
-        </div>
-      }
-    />,
-  );
-  await screen.getByRole("button", { name: "Choose model" }).click();
-  await expect.element(page.getByRole("option", { name: /Model 9/ })).toBeVisible();
+  const renderWithCount = async (count: number) => {
+    window.localStorage.clear();
+    const options = new Map([
+      [
+        instanceId,
+        Array.from({ length: count }, (_, index) => ({
+          slug: `model-${index + 1}`,
+          name: `Model ${index + 1}`,
+        })),
+      ],
+    ]);
+    return await render(
+      <ProviderModelPicker
+        environmentId={null}
+        activeInstanceId={instanceId}
+        model="model-1"
+        lockedProvider={null}
+        instanceEntries={entries}
+        modelOptionsByInstance={options}
+        triggerAriaLabel="Choose model"
+        onInstanceModelChange={() => {}}
+        effortColumn={
+          <div className="h-24" data-effort-row>
+            Effort
+          </div>
+        }
+      />,
+    );
+  };
 
-  const list = document.querySelector<HTMLElement>(".model-picker-list-fade");
-  expect(list).not.toBeNull();
-  expect(list!.offsetHeight).toBe(320);
+  {
+    await using screen = await renderWithCount(5);
+    await screen.getByRole("button", { name: "Choose model" }).click();
+    await expect.element(page.getByRole("option", { name: /Model 5/ })).toBeVisible();
+
+    const list = document.querySelector<HTMLElement>(".model-picker-list-fade");
+    expect(list).not.toBeNull();
+    expect(list!.offsetHeight).toBeLessThan(240);
+    expect(list!.dataset.scrollBottom).toBeUndefined();
+  }
+
+  {
+    await using screen = await renderWithCount(12);
+    await screen.getByRole("button", { name: "Choose model" }).click();
+    await expect.element(page.getByRole("option", { name: /Model 9/ })).toBeVisible();
+
+    const list = document.querySelector<HTMLElement>(".model-picker-list-fade");
+    expect(list).not.toBeNull();
+    await vi.waitFor(() => {
+      expect(list!.offsetHeight).toBe(314);
+      expect(list!.dataset.scrollBottom).toBe("true");
+    });
+  }
 });

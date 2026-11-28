@@ -2853,17 +2853,33 @@ code {
   position: relative;
 }
 
+.model-picker-list-fade[data-scroll-bottom="true"]::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: 36px;
+  z-index: 10;
+  pointer-events: none;
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  mask-image: linear-gradient(to bottom, transparent 0%, black 65%, black 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 65%, black 100%);
+}
+
 .model-picker-list-fade[data-scroll-bottom="true"]::after {
   content: "";
   position: absolute;
   inset-inline: 0;
   bottom: 0;
-  height: 24px;
+  height: 40px;
+  z-index: 11;
   pointer-events: none;
   background: linear-gradient(
     to bottom,
     transparent 0%,
-    color-mix(in srgb, var(--popover) 78%, transparent) 62%,
+    color-mix(in srgb, var(--popover) 45%, transparent) 45%,
+    color-mix(in srgb, var(--popover) 88%, transparent) 84%,
     var(--popover) 100%
   );
 }
