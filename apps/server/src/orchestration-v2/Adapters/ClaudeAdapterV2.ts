@@ -978,6 +978,10 @@ export interface ClaudeAgentSdkSubagentLookupInput {
   readonly providerSessionId: OrchestrationV2ProviderSession["id"];
 }
 
+// Older CLIs omit `source`; plugin servers are always named `plugin:<plugin>:<server>`.
+const isClaudePluginMcpServer = (server: { readonly name: string; readonly source?: string }) =>
+  server.source === "plugin" || server.name.startsWith("plugin:");
+
 const isClaudeAgentSdkQueryRunnerError = Schema.is(ClaudeAgentSdkQueryRunnerError);
 
 const isClaudeConversationNotFound = (cause: Cause.Cause<ClaudeAgentSdkQueryRunnerError>) => {
@@ -9173,8 +9177,14 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           for (const status of statuses) {
             const key = mcpSignInKey(liveQuery.nativeThreadId, status.name);
             if (status.status === "connected") announcedMcpSignIns.delete(key);
-            // Every claude.ai connector the user never connected reports this too.
-            if (status.status !== "needs-auth" || status.scope === "claudeai") continue;
+            // Unconnected claude.ai connectors and plugin-bundled servers report this too.
+            if (
+              status.status !== "needs-auth" ||
+              status.scope === "claudeai" ||
+              isClaudePluginMcpServer(status)
+            ) {
+              continue;
+            }
             if (announcedMcpSignIns.has(key)) continue;
             announcedMcpSignIns.add(key);
             const nativeItemId = `mcp-sign-in:${context.providerTurnId}:${status.name}`;
@@ -14001,8 +14011,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     context.checkMcpSignIns = (message.mcp_servers ?? []).some(
                       (server) =>
                         (server.status === "pending" || server.status === "needs-auth") &&
-                        // claude.ai connectors the user never connected need a sign-in too.
-                        !server.name.startsWith("claude.ai "),
+                        // Unconnected claude.ai connectors and plugin servers are never announced.
+                        !server.name.startsWith("claude.ai ") &&
+                        !isClaudePluginMcpServer(server),
                     );
                   }
                   if (

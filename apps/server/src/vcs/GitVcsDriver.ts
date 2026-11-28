@@ -1071,14 +1071,16 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
   // Set fsync first: Git 2.36 ignores unknown batch without resetting the method.
   // Batch fully flushes refs and equals fsync on macOS HFS+/APFS and Windows NTFS/ReFS.
   // Keep per-object fsync elsewhere; VcsProcess retries unsupported macOS full flushes with plain fsync.
-  const durableWrite = [
+  const perObjectFsync = [
     "-c",
     "core.fsync=objects,reference",
     "-c",
     "core.fsyncMethod=fsync",
-    ...(hostPlatform === "darwin" || hostPlatform === "win32"
-      ? ["-c", "core.fsyncMethod=batch"]
-      : []),
+  ] as const;
+  const batchFsync = hostPlatform === "darwin" || hostPlatform === "win32";
+  const durableWrite = [
+    ...perObjectFsync,
+    ...(batchFsync ? ["-c", "core.fsyncMethod=batch"] : []),
   ] as const;
 
   // Checkpoints must handle existing paths beyond Windows MAX_PATH, even when
@@ -1665,13 +1667,17 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
           }
         }
 
-        const stageFiles = (exclusions: ReadonlyArray<string>, ignoreErrors = false) =>
+        const stageFiles = (
+          exclusions: ReadonlyArray<string>,
+          ignoreErrors = false,
+          fsync: ReadonlyArray<string> = durableWrite,
+        ) =>
           execute({
             operation,
             cwd: input.cwd,
             args: [
               ...indexConfig,
-              ...durableWrite,
+              ...fsync,
               ...longPaths,
               // safecrlf=true refuses LF files under CRLF conversion; capture them as Git's default does.
               "-c",
@@ -1697,6 +1703,11 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
             ),
           );
         yield* stageFiles([]).pipe(
+          // Git 2.43-2.56.1 under batch fsync loses a big file's pack when a loose object precedes it.
+          Effect.catchTags({
+            VcsProcessExitError: (error) =>
+              batchFsync ? stageFiles([], false, perObjectFsync) : Effect.fail(error),
+          }),
           Effect.catchTags({
             VcsProcessExitError: (error) =>
               Effect.gen(function* () {
@@ -1747,7 +1758,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
                     exclusions.push(`:(exclude,literal)${entry}`);
                   }
                 }
-                return yield* stageFiles(exclusions, true);
+                return yield* stageFiles(exclusions, true, perObjectFsync);
               }).pipe(
                 Effect.timeoutOrElse({
                   duration: CHECKPOINT_RECOVERY_TIMEOUT,
