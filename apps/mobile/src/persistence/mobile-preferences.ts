@@ -204,6 +204,7 @@ export interface Preferences {
   readonly issueSavedViews?: ReadonlyArray<IssueSavedView>;
   readonly usageLimitsProviderOrder?: readonly string[];
   readonly usageLimitsViewMode?: "compact" | "standard";
+  readonly modelPickerLastTab?: string;
   readonly hiddenUsageLimitWindows?: readonly string[];
   readonly antigravityIncludeThirdPartyLimits?: boolean;
 }
@@ -303,6 +304,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     issueSavedViews?: ReadonlyArray<IssueSavedView>;
     usageLimitsProviderOrder?: readonly string[];
     usageLimitsViewMode?: "compact" | "standard";
+    modelPickerLastTab?: string;
     hiddenUsageLimitWindows?: readonly string[];
     antigravityIncludeThirdPartyLimits?: boolean;
   } = {};
@@ -314,6 +316,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (parsed.usageLimitsViewMode === "compact" || parsed.usageLimitsViewMode === "standard") {
     preferences.usageLimitsViewMode = parsed.usageLimitsViewMode;
+  }
+  if (typeof parsed.modelPickerLastTab === "string" && parsed.modelPickerLastTab.length > 0) {
+    preferences.modelPickerLastTab = parsed.modelPickerLastTab;
   }
   if (Array.isArray(parsed.hiddenUsageLimitWindows)) {
     preferences.hiddenUsageLimitWindows = parsed.hiddenUsageLimitWindows.filter(

@@ -107,7 +107,7 @@ import { useSelectedThreadWorktree } from "../../state/use-selected-thread-workt
 import { providerWorkspaceSnapshotRefresh } from "../../state/provider-workspace-snapshot-refresh";
 import { threadAllowsProviderSwitch } from "../../state/thread-provider-switching";
 import { environmentServerConfigsAtom, serverEnvironment } from "../../state/server";
-import { mobilePreferencesAtom } from "../../state/preferences";
+import { mobilePreferencesAtom, saveMobilePreferences } from "../../state/preferences";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useNewTaskFlow } from "./new-task-flow-provider";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
@@ -144,6 +144,7 @@ const EMPTY_MODEL_FAVORITES: ReadonlyArray<{
   readonly model: string;
 }> = [];
 const attemptedMigrationGenerations = new Map<EnvironmentId, number>();
+let lastModelPickerTabInMemory: string | null = null;
 
 type SelectDescriptor = Extract<ProviderOptionDescriptor, { type: "select" }>;
 type BooleanDescriptor = Extract<ProviderOptionDescriptor, { type: "boolean" }>;
@@ -456,7 +457,20 @@ function ThreadSettingsSessionProvider(
   };
 
   const [showLegacyToggle, setShowLegacyToggle] = useState(false);
-  const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
+  const savePreferences = useAtomCommand(saveMobilePreferences, "model picker last tab");
+  const savedLastTab = AsyncResult.isSuccess(preferences)
+    ? (preferences.value.modelPickerLastTab ?? lastModelPickerTabInMemory)
+    : lastModelPickerTabInMemory;
+  const [activeTab, setActiveTabState] = useState<ActiveTab>(() => {
+    if (props.lockedProviderInstanceId !== undefined) {
+      return props.lockedProviderInstanceId;
+    }
+    if (savedLastTab === "favorites") {
+      return "favorites";
+    }
+    if (savedLastTab && props.providerGroups.some((group) => group.providerKey === savedLastTab)) {
+      return savedLastTab;
+    }
     const initialProviderKey =
       props.providerGroups.find((group) =>
         group.models.some(
@@ -469,6 +483,13 @@ function ThreadSettingsSessionProvider(
       props.providerGroups[0]?.providerKey;
     return initialProviderKey ?? "favorites";
   });
+  const setActiveTab = (nextTab: ActiveTab) => {
+    setActiveTabState(nextTab);
+    if (props.lockedProviderInstanceId === undefined) {
+      lastModelPickerTabInMemory = nextTab;
+      void savePreferences({ modelPickerLastTab: nextTab });
+    }
+  };
   const [searchQuery, setSearchQuery] = useState("");
   const [providerExpansionOverrides, setProviderExpansionOverrides] = useState<ReadonlySet<string>>(
     () => new Set(),

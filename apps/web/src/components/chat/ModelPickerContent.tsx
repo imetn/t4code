@@ -171,6 +171,24 @@ function adjacentModelPickerProvider(input: {
 
 const EMPTY_MODEL_JUMP_LABELS = new Map<string, string>();
 const MODEL_LIST_ESTIMATED_ITEM_SIZE = 36;
+export const MODEL_PICKER_LAST_TAB_STORAGE_KEY = "t4code:model-picker-last-tab:v1";
+
+function readLastModelPickerTab(): string | null {
+  try {
+    const raw = window.localStorage.getItem(MODEL_PICKER_LAST_TAB_STORAGE_KEY);
+    return raw && raw.length > 0 ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeLastModelPickerTab(tab: string): void {
+  try {
+    window.localStorage.setItem(MODEL_PICKER_LAST_TAB_STORAGE_KEY, tab);
+  } catch {
+    // Ignore storage quota or private-browsing failures.
+  }
+}
 
 function ModelListSeparator() {
   return <div className="h-0.5" />;
@@ -426,6 +444,20 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       ) {
         return props.activeInstanceId;
       }
+      const savedTab = readLastModelPickerTab();
+      if (savedTab === "favorites") {
+        return "favorites";
+      }
+      if (savedTab !== null) {
+        const savedEntry = instanceEntries.find((entry) => entry.instanceId === savedTab);
+        if (
+          savedEntry !== undefined &&
+          (isProviderInstancePickerReady(savedEntry) ||
+            savedEntry.instanceId === props.activeInstanceId)
+        ) {
+          return savedEntry.instanceId;
+        }
+      }
       const hasPickableFavorite = favorites.some((favorite) => {
         const entry = instanceEntries.find((entry) => entry.instanceId === favorite.provider);
         return (
@@ -469,6 +501,9 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
 
   const handleSelectInstance = (instanceId: ProviderInstanceId | "favorites") => {
     setSelectedInstanceId(instanceId);
+    if (props.lockedProvider === null) {
+      writeLastModelPickerTab(instanceId);
+    }
     if (window.matchMedia("(pointer: coarse)").matches) return;
     window.requestAnimationFrame(() => {
       focusSearchInput();
