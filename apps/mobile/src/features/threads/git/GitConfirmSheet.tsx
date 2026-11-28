@@ -136,6 +136,7 @@ export function GitConfirmSheet(props: GitConfirmSheetProps) {
 
   return (
     <FitSheet
+      glass
       header={<SheetHeader title={gt("Confirm action")} onClose={() => navigation.goBack()} />}
       showsVerticalScrollIndicator={false}
     >

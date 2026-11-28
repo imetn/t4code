@@ -1,6 +1,7 @@
 import { Platform } from "react-native";
 
 import { GLASS_HEADER_OPTIONS, type AppScreenOptions } from "../../native/glass-header-options";
+import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import { formSheetDetents } from "../../native/sheet-surface";
 
 /**
@@ -84,6 +85,8 @@ export interface SheetRouteOptions {
   readonly android?: "sheet" | "card" | "fullScreen";
   /** The sheet spans the Duo's rail, and its content insets itself. */
   readonly spansRail?: boolean;
+  /** Lets iOS 26's native Liquid Glass sheet backdrop show through partial detents. */
+  readonly glass?: boolean;
   readonly itemStyle?: "editor" | "standard";
   readonly duoMinimize?: "never" | "onScrollUp";
 }
@@ -121,6 +124,9 @@ export function sheetRoute(options: SheetRouteOptions): AppScreenOptions {
       Platform.OS === "android" && options.androidFit ? "fitToContents" : sheetDetents(options),
     ...(Platform.OS === "android" ? { sheetCornerRadius: 28 } : undefined),
     ...(options.spansRail ? { nativeContentInsetHorizontally: false } : undefined),
+    ...(options.glass && NATIVE_LIQUID_GLASS_SUPPORTED
+      ? { contentStyle: { backgroundColor: "transparent" } }
+      : undefined),
   } as AppScreenOptions;
 }
 

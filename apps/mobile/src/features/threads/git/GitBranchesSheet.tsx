@@ -63,6 +63,7 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
 
   return (
     <FitSheet
+      glass
       header={
         <SheetHeader title={gt("Branches & worktrees")} onClose={() => navigation.goBack()} />
       }

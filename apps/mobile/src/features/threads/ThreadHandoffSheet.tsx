@@ -10,6 +10,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText as Text } from "../../components/ui/AppText";
 import { ScreenContent } from "../../components/ui/ScreenContent";
 import { SheetHeader } from "../../components/ui/SheetHeader";
+import { NATIVE_GLASS_SHEET_BG_CLASS } from "../../native/sheet-surface";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import { useEnvironmentQuery } from "../../state/query";
 import { threadHandoffEnvironment } from "../../state/threadHandoff";
@@ -125,7 +126,7 @@ export function ThreadHandoffSheet({ route }: StaticScreenProps<HandoffTarget>) 
   );
 
   return (
-    <View collapsable={false} className="flex-1 bg-sheet">
+    <View collapsable={false} className={`flex-1 ${NATIVE_GLASS_SHEET_BG_CLASS}`}>
       <SheetHeader title={gt("Continue on…")} onClose={() => navigation.goBack()} />
       <ScreenContent>{content}</ScreenContent>
     </View>

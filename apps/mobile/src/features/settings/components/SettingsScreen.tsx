@@ -7,6 +7,7 @@ import { AppBar } from "../../../components/ui/AppBar";
 import { ScreenContent as SettingsScreenContent } from "../../../components/ui/ScreenContent";
 import { useWorkspaceTabs } from "../../layout/workspace/WorkspaceTabsContext";
 import { useDeviceType } from "../../../native/native-layout-metrics";
+import { NATIVE_GLASS_SHEET_BG_CLASS } from "../../../native/sheet-surface";
 import { useCompactWorkspaceTabs } from "../../layout/workspace/useSystemWorkspaceTabBar";
 import { useSettingsPageBack } from "../useSettingsPageBack";
 import {
@@ -23,6 +24,7 @@ export function SettingsScreen(
   > & {
     readonly children: ReactNode;
     readonly workspaceRoot?: boolean;
+    readonly glass?: boolean;
   },
 ) {
   const route = useRoute();
@@ -34,7 +36,11 @@ export function SettingsScreen(
   // Opened as a workspace tab, the Settings list has nothing to go back to.
   const workspaceRoot = props.workspaceRoot || (workspace !== null && route.name === "Settings");
 
-  const surfaceClassName = workspaceRoot || cover ? "bg-screen" : "bg-sheet";
+  const surfaceClassName = props.glass
+    ? NATIVE_GLASS_SHEET_BG_CLASS
+    : workspaceRoot || cover
+      ? "bg-screen"
+      : "bg-sheet";
 
   return (
     <View collapsable={false} className={`flex-1 ${surfaceClassName}`}>

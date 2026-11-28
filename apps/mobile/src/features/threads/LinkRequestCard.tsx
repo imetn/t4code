@@ -41,6 +41,7 @@ import { ListChoiceRow as SettingsChoiceRow } from "../../components/ui/ListChoi
 import { SettingsSection } from "../settings/components/SettingsSection";
 import { Button } from "../../components/ui/Button";
 import { Sheet } from "../../components/ui/Sheet";
+import { NATIVE_GLASS_SHEET_SOLID_BG_CLASS } from "../../native/sheet-surface";
 import { RUNTIME_MODE_CHOICES } from "./thread-settings-options";
 
 /** The same five levels as web's access picker: read-only, then the runtime modes. */
@@ -307,7 +308,7 @@ function LinkRequestSheet(props: {
     >
       <ScrollView
         nestedScrollEnabled
-        className="flex-1 bg-sheet-solid"
+        className={`flex-1 ${NATIVE_GLASS_SHEET_SOLID_BG_CLASS}`}
         contentInsetAdjustmentBehavior="automatic"
         contentContainerClassName="gap-5 p-5"
         contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}

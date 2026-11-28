@@ -8,6 +8,7 @@ import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppBar } from "../../components/ui/AppBar";
+import { NATIVE_GLASS_SHEET_BG_CLASS } from "../../native/sheet-surface";
 import { useRemoteConnections } from "../../state/use-remote-environment-registry";
 import { LocalEnvironmentList } from "./LocalEnvironmentList";
 import { PullRequestRoutingSettings } from "./PullRequestRoutingSettings";
@@ -32,7 +33,7 @@ export function ConnectionsRouteScreen() {
   };
 
   return (
-    <View collapsable={false} className="flex-1 bg-sheet">
+    <View collapsable={false} className={`flex-1 ${NATIVE_GLASS_SHEET_BG_CLASS}`}>
       <AppBar
         title={gt("Environments")}
         onClose={() => navigation.goBack()}

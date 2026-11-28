@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 export interface SheetPaneProps {
-  /** The iOS surface under the bar: a sheet's, or the screen's where the pane sits in a column. */
-  readonly surface?: "sheet" | "screen";
+  /** The iOS surface under the bar: a sheet's, native glass, or the screen's in a column. */
+  readonly surface?: "sheet" | "screen" | "glass";
   readonly children: ReactNode;
 }

@@ -27,6 +27,7 @@ import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import { ListChoiceRow } from "../../components/ui/ListChoiceRow";
 import { Sheet } from "../../components/ui/Sheet";
+import { NATIVE_GLASS_SHEET_SOLID_BG_CLASS } from "../../native/sheet-surface";
 import { useEnvironmentServerConfig } from "../../state/entities";
 import { useEnvironments } from "../../state/environments";
 import { peerLinkEnvironment, useLinkableMachines } from "../../state/peerLinks";
@@ -160,7 +161,7 @@ function LinkSeveralSheet(props: {
     >
       <ScrollView
         nestedScrollEnabled
-        className="flex-1 bg-sheet-solid"
+        className={`flex-1 ${NATIVE_GLASS_SHEET_SOLID_BG_CLASS}`}
         contentInsetAdjustmentBehavior="automatic"
         contentContainerClassName="gap-5 p-5"
         contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}

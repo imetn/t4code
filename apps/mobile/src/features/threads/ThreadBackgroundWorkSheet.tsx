@@ -15,6 +15,7 @@ import { SheetHeader } from "../../components/ui/SheetHeader";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { ScreenContent } from "../../components/ui/ScreenContent";
+import { NATIVE_GLASS_SHEET_BG_CLASS } from "../../native/sheet-surface";
 import { environmentThreadShells } from "../../state/threads";
 
 const KIND_LABELS = {
@@ -63,7 +64,7 @@ export function ThreadBackgroundWorkSheet({ route }: StaticScreenProps<Backgroun
     </ScrollView>
   );
   return (
-    <View collapsable={false} className="flex-1 bg-sheet">
+    <View collapsable={false} className={`flex-1 ${NATIVE_GLASS_SHEET_BG_CLASS}`}>
       <SheetHeader title={gt("Background work")} onClose={() => navigation.goBack()} />
       <ScreenContent>{content}</ScreenContent>
     </View>

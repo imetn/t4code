@@ -5,7 +5,8 @@ import { FormSheet, ScreenStack } from "react-native-screens";
 import { useResolveClassNames } from "uniwind";
 
 import { nativeHeaderScrollEdgeEffects } from "../../native/StackHeader";
-import { formSheetDetents } from "../../native/sheet-surface";
+import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
+import { formSheetDetents, NATIVE_GLASS_SHEET_BG_CLASS } from "../../native/sheet-surface";
 import { NativeHeader, NativeScreen } from "../../native/ThemedScreenStack";
 
 const HEADER_SCROLL_EDGE_EFFECTS = nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version);
@@ -16,7 +17,7 @@ import type { SheetProps } from "./Sheet.types";
 /** Native presentation. Scrollable children use automatic insets beneath the iOS header. */
 export function Sheet(props: SheetProps) {
   const gt = useGT();
-  const containerStyle = useResolveClassNames("bg-sheet");
+  const containerStyle = useResolveClassNames(NATIVE_GLASS_SHEET_BG_CLASS);
   const screenId = useId();
   const [isOpen, setIsOpen] = useState(true);
   const close = () => {
@@ -31,12 +32,14 @@ export function Sheet(props: SheetProps) {
       preventNativeDismiss={props.dismissDisabled}
       // The header holds the close button, so the Duo needs no rail inside this sheet.
       prefersHorizontalBars
-      nativeContainerStyle={containerStyle}
+      nativeContainerStyle={
+        NATIVE_LIQUID_GLASS_SUPPORTED ? { backgroundColor: "transparent" } : containerStyle
+      }
       onDismiss={props.onClose}
       onNativeDismiss={props.onClose}
     >
       {/* Flex children are not bounded by the FormSheet host, so pin to its edges. */}
-      <View collapsable={false} className="absolute inset-0 bg-sheet">
+      <View collapsable={false} className={`absolute inset-0 ${NATIVE_GLASS_SHEET_BG_CLASS}`}>
         <ScreenStack style={{ flex: 1 }}>
           <NativeScreen
             activityState={2}
@@ -44,7 +47,7 @@ export function Sheet(props: SheetProps) {
             isNativeStack
             screenId={`app-sheet-${screenId}`}
             scrollEdgeEffects={HEADER_SCROLL_EDGE_EFFECTS}
-            className="flex-1 bg-sheet"
+            className={`flex-1 ${NATIVE_GLASS_SHEET_BG_CLASS}`}
           >
             {props.children}
             <NativeHeader

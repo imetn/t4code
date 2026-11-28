@@ -29,6 +29,7 @@ import { useVisibleSecondClock } from "./use-visible-second-clock";
 import { SubagentStopButton } from "./SubagentStopButton";
 import { ThreadWorkflowGroup } from "./ThreadWorkflowGroup";
 import { ScreenContent } from "../../components/ui/ScreenContent";
+import { NATIVE_GLASS_SHEET_BG_CLASS } from "../../native/sheet-surface";
 import { subagentThreadTarget, type SubagentThreadTarget } from "./threadAgentsPresentation";
 import { useLinkedThreadReach } from "../../state/linkedThread";
 
@@ -136,7 +137,7 @@ export function ThreadAgentsSheet({ route }: StaticScreenProps<AgentsTarget>) {
   );
 
   return (
-    <View collapsable={false} className="flex-1 bg-sheet">
+    <View collapsable={false} className={`flex-1 ${NATIVE_GLASS_SHEET_BG_CLASS}`}>
       <SheetHeader title={gt("Agents")} onClose={() => navigation.goBack()} />
       <ScreenContent>{content}</ScreenContent>
     </View>

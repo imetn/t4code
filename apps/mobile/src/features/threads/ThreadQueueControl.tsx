@@ -22,8 +22,11 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import ReanimatedSwipeable, {
   type SwipeableMethods,
 } from "react-native-gesture-handler/ReanimatedSwipeable";
+import Animated, { useAnimatedStyle, type SharedValue } from "react-native-reanimated";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
+import { NATIVE_GLASS_SHEET_BG_CLASS } from "../../native/sheet-surface";
 
 import { Button } from "../../components/ui/Button";
 import * as Dialog from "../../components/ui/Dialog";
@@ -296,10 +299,13 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
           controls.displayText ||
           (attachments.length > 0 ? gt("Attachments") : gt("Queued message"));
         return (
-          <View key={run.id} className="flex-row items-center border-b border-border bg-sheet">
+          <View
+            key={run.id}
+            className={`flex-row items-center border-b border-border ${NATIVE_GLASS_SHEET_BG_CLASS}`}
+          >
             <QueueRowSwipeable
               enabled={busyRunId === null && controls.canDismiss}
-              background={theme["--color-sheet"]}
+              background={NATIVE_LIQUID_GLASS_SUPPORTED ? "transparent" : theme["--color-sheet"]}
               onRemove={() => void act(run.id, "remove")}
             >
               <View className="flex-row items-center">
@@ -416,7 +422,7 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <View collapsable={false} className="flex-1 bg-sheet">
+      <View collapsable={false} className={`flex-1 ${NATIVE_GLASS_SHEET_BG_CLASS}`}>
         <SheetHeader
           title={gt("Queued", { $context: "title of the queued messages sheet" })}
           onClose={() => navigation.goBack()}
@@ -453,27 +459,48 @@ function QueueRowSwipeable(props: {
         swipeableRef.current?.close();
         props.onRemove();
       }}
-      renderRightActions={() => (
-        <Pressable
-          accessibilityRole="button"
+      renderRightActions={(progress) => (
+        <QueueRowRemoveAction
+          progress={progress}
+          enabled={props.enabled}
           accessibilityLabel={m(REMOVE_QUEUED_MESSAGE_ACCESSIBILITY_LABEL)}
-          disabled={!props.enabled}
+          label={gt("Remove", { $context: "verb, menu action" })}
           onPress={() => {
             swipeableRef.current?.close();
             props.onRemove();
           }}
-          className="items-center justify-center bg-danger active:opacity-70 disabled:opacity-40"
-          style={{ width: REMOVE_ACTION_WIDTH }}
-        >
-          <SymbolView name="trash" size={16} tintColorClassName="accent-danger-foreground" />
-          <Text className="pt-1 text-2xs font-t3-medium text-danger-foreground">
-            {gt("Remove", { $context: "verb, menu action" })}
-          </Text>
-        </Pressable>
+        />
       )}
     >
       {props.children}
     </ReanimatedSwipeable>
+  );
+}
+
+function QueueRowRemoveAction(props: {
+  readonly progress: SharedValue<number>;
+  readonly enabled: boolean;
+  readonly accessibilityLabel: string;
+  readonly label: string;
+  readonly onPress: () => void;
+}) {
+  // Keep the delete action invisible at rest so transparent Liquid Glass rows don't show it through.
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: props.progress.value > 0.01 ? Math.min(1, props.progress.value * 3) : 0,
+  }));
+  return (
+    <Animated.View style={[{ width: REMOVE_ACTION_WIDTH }, animatedStyle]}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={props.accessibilityLabel}
+        disabled={!props.enabled}
+        onPress={props.onPress}
+        className="flex-1 items-center justify-center bg-danger active:opacity-70 disabled:opacity-40"
+      >
+        <SymbolView name="trash" size={16} tintColorClassName="accent-danger-foreground" />
+        <Text className="pt-1 text-2xs font-t3-medium text-danger-foreground">{props.label}</Text>
+      </Pressable>
+    </Animated.View>
   );
 }
 

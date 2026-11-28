@@ -19,6 +19,7 @@ import { Button } from "../../components/ui/Button";
 import * as Dialog from "../../components/ui/Dialog";
 import { ScreenContent } from "../../components/ui/ScreenContent";
 import { SheetHeader } from "../../components/ui/SheetHeader";
+import { NATIVE_GLASS_SHEET_BG_CLASS } from "../../native/sheet-surface";
 import { useDeadlinePassed } from "../../lib/clock";
 import { tryCopyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
@@ -243,7 +244,7 @@ export function ThreadGuestShareSheet({ route }: StaticScreenProps<GuestShareTar
 
   if (Platform.OS === "ios") {
     return (
-      <View collapsable={false} className="flex-1 bg-sheet">
+      <View collapsable={false} className={`flex-1 ${NATIVE_GLASS_SHEET_BG_CLASS}`}>
         <SheetHeader
           presentation="native"
           title={m(TITLE)}

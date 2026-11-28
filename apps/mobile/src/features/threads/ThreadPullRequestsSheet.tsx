@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText as Text } from "../../components/ui/AppText";
 import { ScreenContent } from "../../components/ui/ScreenContent";
 import { SheetHeader } from "../../components/ui/SheetHeader";
+import { NATIVE_GLASS_SHEET_BG_CLASS } from "../../native/sheet-surface";
 import { useOpenPullRequest } from "../../native/useOpenPullRequest";
 import { useThreadSelection } from "../../state/use-thread-selection";
 import {
@@ -95,7 +96,7 @@ export function ThreadPullRequestsSheet(
   );
 
   return (
-    <View collapsable={false} className="flex-1 bg-sheet">
+    <View collapsable={false} className={`flex-1 ${NATIVE_GLASS_SHEET_BG_CLASS}`}>
       <SheetHeader
         title={title}
         onClose={() => navigation.goBack()}

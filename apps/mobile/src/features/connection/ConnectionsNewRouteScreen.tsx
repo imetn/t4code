@@ -204,6 +204,7 @@ function PairingForm({
 
   return (
     <SettingsScreen
+      glass
       title={
         linked
           ? gt("Connect to {environment}", { environment: linked.label })

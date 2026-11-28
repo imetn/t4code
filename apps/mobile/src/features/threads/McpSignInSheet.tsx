@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import { Sheet } from "../../components/ui/Sheet";
+import { NATIVE_GLASS_SHEET_SOLID_BG_CLASS } from "../../native/sheet-surface";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -114,7 +115,7 @@ export function McpSignInSheet(props: {
   return (
     <Sheet title={gt("Sign in to {server}", { server })} onClose={close}>
       <ScrollView
-        className="flex-1 bg-sheet-solid"
+        className={`flex-1 ${NATIVE_GLASS_SHEET_SOLID_BG_CLASS}`}
         contentInsetAdjustmentBehavior="automatic"
         contentContainerClassName="gap-5 p-5"
         contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}

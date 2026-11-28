@@ -503,7 +503,7 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
   };
 
   return (
-    <SheetPane surface={isInspector ? "screen" : "sheet"}>
+    <SheetPane surface={isInspector ? "screen" : "glass"}>
       <AppBar
         title={currentBranchLabel}
         subtitle={currentStatusSummary}

@@ -18,7 +18,6 @@ import { Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions } from
 import { useResolveClassNames } from "uniwind";
 
 import { AppText as Text } from "./components/ui/AppText";
-import { NATIVE_LIQUID_GLASS_SUPPORTED } from "./native/native-glass";
 import { androidWorkspaceDestinationAnimation } from "./lib/android-workspace-navigation";
 import { getCompactBrandHeaderOptions } from "./features/layout/workspace/brand-header-options";
 import { WorkspaceConnectionStatusProvider } from "./features/home/WorkspaceConnectionTitle";
@@ -223,18 +222,14 @@ const ROUTE_TITLES: Readonly<Record<string, string>> = {
 
 // Thread settings keep the Duo's vertical bar so cancel, search, filter and confirm sit in the
 // rail. The picker stack spans the sheet so its header reaches the rail, and insets its content.
-const THREAD_SETTINGS_ROUTE = {
-  ...sheetRoute({
-    detent: 0.58,
-    maxDetent: 0.9,
-    header: "none",
-    android: "card",
-    spansRail: true,
-  }),
-  ...(NATIVE_LIQUID_GLASS_SUPPORTED
-    ? { contentStyle: { backgroundColor: "transparent" } }
-    : undefined),
-};
+const THREAD_SETTINGS_ROUTE = sheetRoute({
+  detent: 0.58,
+  maxDetent: 0.9,
+  header: "none",
+  android: "card",
+  spansRail: true,
+  glass: true,
+});
 
 // Search sheets push on Android like the branch picker; a formSheet there leaves the list's
 // header peeking above it once the keyboard opens.
@@ -793,7 +788,7 @@ const RootStackConfig = createWorkspaceStackNavigator({
     }),
     ThreadQueue: createNativeStackScreen({
       screen: ThreadQueueSheet,
-      options: sheetRoute({ detent: 0.65, androidMaxDetent: 0.95 }),
+      options: sheetRoute({ detent: 0.65, androidMaxDetent: 0.95, glass: true }),
     }),
     WorkflowRun: createNativeStackScreen({
       screen: WorkflowRunRouteScreen,
@@ -802,19 +797,19 @@ const RootStackConfig = createWorkspaceStackNavigator({
     }),
     WorkflowStep: createNativeStackScreen({
       screen: WorkflowStepSheet,
-      options: sheetRoute({ detent: 0.6, androidMaxDetent: 0.95 }),
+      options: sheetRoute({ detent: 0.6, androidMaxDetent: 0.95, glass: true }),
     }),
     ThreadBackgroundWork: createNativeStackScreen({
       screen: ThreadBackgroundWorkSheet,
-      options: sheetRoute({ detent: 0.5, androidMaxDetent: 0.9 }),
+      options: sheetRoute({ detent: 0.5, androidMaxDetent: 0.9, glass: true }),
     }),
     ThreadAgents: createNativeStackScreen({
       screen: ThreadAgentsSheet,
-      options: sheetRoute({ detent: 0.5, androidMaxDetent: 0.9 }),
+      options: sheetRoute({ detent: 0.5, androidMaxDetent: 0.9, glass: true }),
     }),
     ThreadHandoff: createNativeStackScreen({
       screen: ThreadHandoffSheet,
-      options: sheetRoute({ detent: 0.5, androidMaxDetent: 0.9 }),
+      options: sheetRoute({ detent: 0.5, androidMaxDetent: 0.9, glass: true }),
     }),
     LinkedThread: createNativeStackScreen({
       screen: LinkedThreadSheet,
@@ -827,17 +822,17 @@ const RootStackConfig = createWorkspaceStackNavigator({
     }),
     ThreadGuestShare: createNativeStackScreen({
       screen: ThreadGuestShareSheet,
-      options: sheetRoute({ detent: 0.5 }),
+      options: sheetRoute({ detent: 0.5, glass: true }),
     }),
     GitOverview: createNativeStackScreen({
       screen: GitOverviewSheet,
       linking: `${THREAD_LINKING_PREFIX}/git`,
-      options: sheetRoute({ detent: 0.55 }),
+      options: sheetRoute({ detent: 0.55, glass: true }),
     }),
     ThreadPullRequests: createNativeStackScreen({
       screen: ThreadPullRequestsSheet,
       linking: `${THREAD_LINKING_PREFIX}/pull-requests`,
-      options: sheetRoute({ detent: 0.55 }),
+      options: sheetRoute({ detent: 0.55, glass: true }),
     }),
     GitCommit: createNativeStackScreen({
       screen: GitCommitSheet,
@@ -847,12 +842,12 @@ const RootStackConfig = createWorkspaceStackNavigator({
     GitBranches: createNativeStackScreen({
       screen: GitBranchesSheet,
       linking: `${THREAD_LINKING_PREFIX}/git/branches`,
-      options: sheetRoute({ detent: 0.55, androidFit: true }),
+      options: sheetRoute({ detent: 0.55, androidFit: true, glass: true }),
     }),
     GitConfirm: createNativeStackScreen({
       screen: GitConfirmSheet,
       linking: `${THREAD_LINKING_PREFIX}/git-confirm`,
-      options: sheetRoute({ detent: 0.55, maxDetent: 0.7, androidFit: true }),
+      options: sheetRoute({ detent: 0.55, maxDetent: 0.7, androidFit: true, glass: true }),
     }),
     ...SETTINGS_SCREENS,
     SettingsLegal: createNativeStackScreen({
@@ -872,12 +867,12 @@ const RootStackConfig = createWorkspaceStackNavigator({
     Connections: createNativeStackScreen({
       screen: ConnectionsRouteScreen,
       linking: "connections",
-      options: sheetRoute({ detent: 0.55, maxDetent: 0.7, android: "card" }),
+      options: sheetRoute({ detent: 0.55, maxDetent: 0.7, android: "card", glass: true }),
     }),
     ConnectionsNew: createNativeStackScreen({
       screen: ConnectionsNewRouteScreen,
       linking: "connections/new",
-      options: sheetRoute({ detent: 0.55, maxDetent: 0.7 }),
+      options: sheetRoute({ detent: 0.55, maxDetent: 0.7, glass: true }),
     }),
     NotFound: createNativeStackScreen({
       screen: NotFoundScreen,
