@@ -65,7 +65,7 @@ export function WorkspaceInspectorSheet(props: {
           {/* The sheet starts below the status bar. */}
           <SafeAreaInsetsContext value={{ ...insets, top: 0 }}>
             <PaneContext value="inspector">
-              <InspectorPanes content={props.content} onClose={() => close()} />
+              <InspectorPanes content={props.content} onClose={() => close()} glass />
             </PaneContext>
           </SafeAreaInsetsContext>
         </RoutedFormSheetContext>

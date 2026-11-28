@@ -36,6 +36,7 @@ function PaneContent(props: {
 export function InspectorPanes(props: {
   readonly content: InspectorContent | undefined;
   readonly onClose: () => void;
+  readonly glass?: boolean;
 }) {
   const panes = useMountedInspectorPanes(props.content);
   return (

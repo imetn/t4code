@@ -5,6 +5,7 @@ import { Split, Stack } from "react-native-screens";
 import { RenderErrorBoundary, RenderFailureView } from "../../components/RenderErrorBoundary";
 import { PaneContext } from "../../components/ui/Pane";
 import { GLASS_HEADER_OPTIONS } from "../../native/glass-header-options";
+import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import { NativeColumnContent } from "../../native/NativeColumnContent.ios";
 import { V5StackHeader } from "../../native/V5StackHeader.ios";
 import { WorkspaceSlotOptionsContext } from "../../native/v5-workspace-context";
@@ -38,6 +39,7 @@ function PaneScreenContent(props: {
   readonly pane: InspectorPane;
   readonly resetKeys: ReadonlyArray<unknown> | undefined;
   readonly onClose: () => void;
+  readonly glass?: boolean;
 }) {
   const gt = useGT();
   const { store, slot } = useInspectorBarSlot();
@@ -57,7 +59,11 @@ function PaneScreenContent(props: {
     <InspectorCloseContext value={props.onClose}>
       <PaneContext value="inspector">
         <PaneHeader store={store} />
-        <NativeColumnContent>{content}</NativeColumnContent>
+        <NativeColumnContent
+          backgroundColor={props.glass && NATIVE_LIQUID_GLASS_SUPPORTED ? "transparent" : undefined}
+        >
+          {content}
+        </NativeColumnContent>
       </PaneContext>
     </InspectorCloseContext>
   );
@@ -104,6 +110,7 @@ export function InspectorColumnScreens(props: {
 export function InspectorPanes(props: {
   readonly content: InspectorContent | undefined;
   readonly onClose: () => void;
+  readonly glass?: boolean;
 }) {
   const panes = useMountedInspectorPanes(props.content);
   if (panes.length === 0) return null;
@@ -119,6 +126,7 @@ export function InspectorPanes(props: {
             pane={pane}
             resetKeys={props.content?.resetKeys}
             onClose={props.onClose}
+            glass={props.glass}
           />
         </Stack.Screen>
       ))}

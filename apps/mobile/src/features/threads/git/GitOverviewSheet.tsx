@@ -27,6 +27,7 @@ import { ListRow } from "../../../components/ui/ListRow";
 import { ListSection } from "../../../components/ui/ListSection";
 import { groupedListInsets } from "../../../components/ui/listMetrics";
 import { ScreenContent } from "../../../components/ui/ScreenContent";
+import { BottomSheetContext } from "../../../components/ui/BottomSheetContext";
 import { SheetPane } from "../../../components/ui/SheetPane";
 import { InspectorSheetContext } from "../../layout/workspace-inspector-sheet";
 import { AppText as Text } from "../../../components/ui/AppText";
@@ -83,6 +84,7 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
   const insets = useSafeAreaInsets();
   const presentation = props.presentation ?? "sheet";
   const isInspector = presentation === "inspector";
+  const inBottomSheet = use(BottomSheetContext);
   const closeInspectorSheet = use(InspectorSheetContext);
   const presentRoute = (present: () => void) =>
     closeInspectorSheet ? closeInspectorSheet(present) : present();
@@ -503,7 +505,7 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
   };
 
   return (
-    <SheetPane surface={isInspector ? "screen" : "glass"}>
+    <SheetPane surface={isInspector && !inBottomSheet ? "screen" : "glass"}>
       <AppBar
         title={currentBranchLabel}
         subtitle={currentStatusSummary}
