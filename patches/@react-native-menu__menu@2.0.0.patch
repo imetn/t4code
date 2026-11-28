@@ -404,21 +404,102 @@ index 5c4e0da4292b15d3a27b5ea1555f11452a470815..381aa8e2900aeb0d2453dba514360304
 +    }
  }
 diff --git a/ios/Shared/RCTMenuItem.swift b/ios/Shared/RCTMenuItem.swift
-index bb6bb2b7ad56135089f267587c974b166760539d..5675067ecb2db0239b74c66ff2e095471a721699 100644
+index bb6bb2b..93f3e4e 100644
 --- a/ios/Shared/RCTMenuItem.swift
 +++ b/ios/Shared/RCTMenuItem.swift
-@@ -27,7 +27,9 @@ class RCTMenuAction {
+@@ -10,6 +10,63 @@ import UIKit;
+ @available(iOS 13.0, *)
+ class RCTMenuAction {
+ 
++    private static let remoteIconCache = NSCache<NSString, UIImage>()
++    private static var pendingRemoteUrls = Set<String>()
++    private static let remoteLock = NSLock()
++
++    private static func renderMenuIcon(_ image: UIImage) -> UIImage {
++        let size = CGSize(width: 20, height: 20)
++        let format = UIGraphicsImageRendererFormat()
++        format.scale = UIScreen.main.scale
++        format.opaque = false
++        let renderer = UIGraphicsImageRenderer(size: size, format: format)
++        let rendered = renderer.image { _ in
++            let rect = CGRect(origin: .zero, size: size)
++            UIBezierPath(roundedRect: rect, cornerRadius: 4.5).addClip()
++            image.draw(in: rect)
++        }
++        return rendered.withRenderingMode(.alwaysOriginal)
++    }
++
++    private static func loadCustomMenuImage(from raw: String) -> UIImage? {
++        if raw.hasPrefix("data:image/"), let comma = raw.firstIndex(of: ",") {
++            let base64 = String(raw[raw.index(after: comma)...])
++            if let data = Data(base64Encoded: base64, options: .ignoreUnknownCharacters),
++               let decoded = UIImage(data: data) {
++                return renderMenuIcon(decoded)
++            }
++            return nil
++        }
++        if raw.hasPrefix("file://"), let url = URL(string: raw),
++           let decoded = UIImage(contentsOfFile: url.path) {
++            return renderMenuIcon(decoded)
++        }
++        if raw.hasPrefix("http://") || raw.hasPrefix("https://") {
++            let key = raw as NSString
++            if let cached = remoteIconCache.object(forKey: key) {
++                return cached
++            }
++            guard let url = URL(string: raw) else { return nil }
++            remoteLock.lock()
++            let shouldFetch = pendingRemoteUrls.insert(raw).inserted
++            remoteLock.unlock()
++            if shouldFetch {
++                URLSession.shared.dataTask(with: url) { data, _, _ in
++                    defer {
++                        remoteLock.lock()
++                        pendingRemoteUrls.remove(raw)
++                        remoteLock.unlock()
++                    }
++                    if let data = data, let decoded = UIImage(data: data) {
++                        remoteIconCache.setObject(renderMenuIcon(decoded), forKey: key)
++                    }
++                }.resume()
++            }
++            return nil
++        }
++        return nil
++    }
++
+     var identifier: UIAction.Identifier?;
+     var title: String;
+     var subtitle: String?
+@@ -27,13 +84,20 @@ class RCTMenuAction {
              self.identifier = UIAction.Identifier(rawValue: identifier as String);
          }
  
 -        if let image = details["image"] as? NSString {
+-            self.image = UIImage(systemName: image as String);
+-            if self.image === nil {
+-                self.image = UIImage(named: image as String)
+-            }
+-            if let imageColor = details["imageColor"] {
+-                self.image = self.image?.withTintColor(RCTConvert.uiColor(imageColor), renderingMode: .alwaysOriginal)
 +        // Fabric sends an absent image as "", and every asset lookup for "" logs a
 +        // CoreUI fault with a backtrace.
 +        if let image = details["image"] as? NSString, image.length > 0 {
-             self.image = UIImage(systemName: image as String);
-             if self.image === nil {
-                 self.image = UIImage(named: image as String)
-@@ -103,10 +105,18 @@ class RCTMenuAction {
++            let imageStr = image as String
++            if let custom = Self.loadCustomMenuImage(from: imageStr) {
++                self.image = custom
++            } else if !(imageStr.hasPrefix("data:") || imageStr.hasPrefix("file:") || imageStr.hasPrefix("http://") || imageStr.hasPrefix("https://")) {
++                self.image = UIImage(systemName: imageStr);
++                if self.image === nil {
++                    self.image = UIImage(named: imageStr)
++                }
++                if let imageColor = details["imageColor"] {
++                    self.image = self.image?.withTintColor(RCTConvert.uiColor(imageColor), renderingMode: .alwaysOriginal)
++                }
+             }
+         }
+ 
+@@ -103,10 +167,18 @@ class RCTMenuAction {
                  subMenuActions.append(subaction.createUIMenuElement(handler))
              }
              var menu: UIMenu;
