@@ -86,7 +86,7 @@ Each entry uses `<!-- t4-lock: <id> -->` and explicit path prefixes/files so `sc
   - `apps/web/src/components/sidebar/SidebarChrome.tsx`
 - **Non-Negotiable Invariants**:
   - Left main sidebar stays untouched (never auto-collapsed) when opening a Task Board card.
-  - Clicking a Task Board card keeps 1 column docked on the left (~1/4 board width with column tabs) and turns the right 3-column area into a pure-chat split view (`ThreadDetailsPanel` / `会话详情` and right-panel sheet hidden by default on open, toggleable on demand without mutating full-view state), with "Expand to full thread", card corner clipping fix, and persistent citation badges.
+  - Clicking a Task Board card keeps 1 column docked on the left (~1/4 board width with column tabs) rendering session cards directly without an outer column card wrapper or duplicate column header (while the full 4-column board view preserves column card containers), and turns the right 3-column area into a pure-chat split view (`ThreadDetailsPanel` / `会话详情` and right-panel sheet hidden by default on open, toggleable on demand without mutating full-view state), with "Expand to full thread", card corner clipping fix, and persistent citation badges.
   - Bottom sidebar utility icons expose customizable toggle shortcuts (`settings.open` `⌘,`, `board.open` `⌘⌥K`, `todos.open` `⌘⌥T`, `pullRequests.open` `⌘⌥P`, `issues.open` `⌘⇧I` / `Ctrl+Alt+I`, `usage.open` `⌘U`) in tooltips and Command Palette, and pressing `Esc` from any utility/modal mode (`/board`, `/todos`, `/pull-requests`, `/issues`, `/workflows`, `/settings`, `/usage`) returns cleanly to the normal chat view.
 
 ### 4. Telegram-Style Cross-Device Composer Draft Sync
@@ -249,4 +249,16 @@ Each entry uses `<!-- t4-lock: <id> -->` and explicit path prefixes/files so `sc
   - `apps/mobile/src/features/threads/ThreadFeed.tsx`
 - **Non-Negotiable Invariants**:
   - Multi-image user messages (`>= 2` images) render by default as an interactive stacked photo deck with up to 3 layered cards, horizontal swipe cycling with haptic feedback, single-tap full-screen gallery preview, and a left-side `Expand N` (`展开 N`) pill that toggles into an expanded 2/3-column photo grid with a `Collapse` (`收起`) button.
+
+### 14. Global Hidden Scrollbars (Web / Desktop)
+
+<!-- t4-lock: global-hidden-scrollbars -->
+
+- **Status**: `Locked`
+- **Surfaces**: Web, Desktop
+- **Protected Paths**:
+  - `apps/web/src/components/ui/scroll-area.tsx`
+  - `apps/web/src/index.css`
+- **Non-Negotiable Invariants**:
+  - Native scrollbars are hidden globally (`scrollbar-width: none`, `::-webkit-scrollbar { display: none; width: 0; height: 0 }`, `--app-scrollbar-width: 0px`) across all scrollable containers, and `ScrollArea`'s overlay `ScrollBar` stays invisible (`pointer-events-none opacity-0`) during idle, hover, and scroll while preserving full scrolling behavior and Base UI thumb geometry.
 

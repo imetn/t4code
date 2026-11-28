@@ -430,26 +430,27 @@ export function TaskBoardPage() {
         }}
         onDrop={(event) => handleColumnDrop(event, column.id)}
         className={cn(
-          "flex min-h-0 flex-col rounded-xl border p-2.5 transition-colors focus:outline-hidden",
-          docked && "flex-1",
-          column.accentClass,
+          "flex min-h-0 flex-col transition-colors focus:outline-hidden",
+          docked ? "flex-1 rounded-lg" : cn("rounded-xl border p-2.5", column.accentClass),
           isDropTarget && "ring-2 ring-primary/60",
         )}
       >
-        <div className="mb-2 flex shrink-0 items-center justify-between gap-2 px-1">
-          <div className="flex min-w-0 items-center gap-1.5">
-            {column.icon}
-            <h2 className="truncate text-xs font-semibold tracking-wide text-foreground/90 uppercase">
-              {column.title}
-            </h2>
+        {!docked ? (
+          <div className="mb-2 flex shrink-0 items-center justify-between gap-2 px-1">
+            <div className="flex min-w-0 items-center gap-1.5">
+              {column.icon}
+              <h2 className="truncate text-xs font-semibold tracking-wide text-foreground/90 uppercase">
+                {column.title}
+              </h2>
+            </div>
+            <Badge size="sm" variant="secondary">
+              {column.totalCount}
+            </Badge>
           </div>
-          <Badge size="sm" variant="secondary">
-            {column.totalCount}
-          </Badge>
-        </div>
+        ) : null}
 
-        <ScrollArea radius="none" className="min-h-0 flex-1">
-          <div className="flex flex-col gap-2 py-0.5 pr-1">
+        <ScrollArea radius="none" hideScrollbars className="min-h-0 flex-1">
+          <div className="flex flex-col gap-2 py-0.5">
             {column.items.length === 0 ? (
               <div className="rounded-lg border border-dashed border-border/60 px-3 py-6 text-center text-xs text-muted-foreground">
                 <T>No tasks here</T>

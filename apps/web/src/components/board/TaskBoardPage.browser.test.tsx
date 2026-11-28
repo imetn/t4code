@@ -219,11 +219,14 @@ describe("TaskBoardPage", () => {
 
     expect(mocks.navigate).not.toHaveBeenCalled();
     expect(document.querySelector('[data-testid="task-board-split-view"]')).not.toBeNull();
-    expect(
-      document.querySelector(
-        '[data-testid="task-board-docked-column"] [data-task-board-column="active"]',
-      ),
-    ).not.toBeNull();
+    const dockedSection = document.querySelector<HTMLElement>(
+      '[data-testid="task-board-docked-column"] [data-task-board-column="active"]',
+    );
+    expect(dockedSection).not.toBeNull();
+    // Docked split-view renders session cards directly without a nested outer column card or duplicate header.
+    expect(dockedSection?.className.split(/\s+/)).not.toContain("border");
+    expect(dockedSection?.querySelector("h2")).toBeNull();
+    expect(dockedSection?.querySelector('[data-slot="scroll-area-scrollbar"]')).toBeNull();
     expect(
       document
         .querySelector(`[data-task-board-card="${envId}:t-active"]`)

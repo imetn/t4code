@@ -89,7 +89,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 }
 
 :root {
-  --app-scrollbar-width: 6px;
+  --app-scrollbar-width: 0px;
   --appearance-contrast-base: 100%;
   --appearance-contrast-boost: 0%;
   --appearance-contrast-border-boost: 0%;
@@ -1876,21 +1876,15 @@ code {
 }
 
 /* Keep parent scrollbar styles off iframe owners to avoid WebKit resize loops: https://webkit.org/b/324485 */
+:where(:not(iframe)) {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
 :where(:not(iframe))::-webkit-scrollbar {
-  width: var(--app-scrollbar-width);
-}
-
-:where(:not(iframe))::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-:where(:not(iframe))::-webkit-scrollbar-thumb {
-  background: var(--app-scrollbar-thumb);
-  border-radius: 3px;
-}
-
-:where(:not(iframe))::-webkit-scrollbar-thumb:hover {
-  background: var(--app-scrollbar-thumb-hover);
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 /* Chat markdown rendering */
@@ -2218,23 +2212,12 @@ code {
   border-radius: 0.5rem;
   background: var(--muted);
   padding: 0.8rem 0.9rem;
-  scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--contrast-border) 78%, transparent) transparent;
 }
 
 .chat-markdown pre code {
   border: none;
   background: transparent;
   padding: 0;
-}
-
-.chat-markdown pre::-webkit-scrollbar {
-  height: var(--app-scrollbar-width);
-}
-
-.chat-markdown pre::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--contrast-border) 78%, transparent);
 }
 
 :is(.chat-markdown, .composer-tiptap) .chat-markdown-codeblock-header {
@@ -2360,15 +2343,6 @@ code {
 /* Formula cells keep their natural width and scroll with the table. */
 .chat-markdown :is(th, td):has([data-markdown-math]) {
   max-width: none;
-}
-
-/* Keep overflow discoverable when the edge fade falls between columns. */
-.chat-markdown
-  .chat-markdown-table-container
-  [data-slot="scroll-area-scrollbar"][data-orientation="horizontal"] {
-  opacity: 1;
-  --app-scrollbar-thumb: color-mix(in srgb, var(--muted-foreground) 60%, transparent);
-  --app-scrollbar-thumb-hover: color-mix(in srgb, var(--muted-foreground) 80%, transparent);
 }
 
 :root {
