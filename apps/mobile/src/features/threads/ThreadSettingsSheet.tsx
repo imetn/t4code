@@ -31,6 +31,7 @@ import {
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { type NativeStackNavigationProp } from "@react-navigation/native-stack";
 import * as Haptics from "expo-haptics";
+import { GlassView } from "expo-glass-effect";
 import { AsyncResult } from "effect/reactivity";
 import {
   createContext,
@@ -46,17 +47,23 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  type ScrollViewInstance,
   TextInput,
   type TextInputInstance,
   View,
 } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { withUniwind } from "uniwind";
 import { READABLE_WIDTH_STYLE, ROW_MIN_HEIGHT } from "../../components/ui/listMetrics";
 import { RefreshControl } from "../../components/ui/RefreshControl";
 import Animated, {
   FadeIn,
   FadeOut,
   LinearTransition,
+  useAnimatedStyle,
   useReducedMotion,
+  useSharedValue,
+  withSpring,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
@@ -65,6 +72,7 @@ import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Menu } from "../../components/ui/Menu";
 import { ProviderIcon } from "../../components/ProviderIcon";
+import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import { cn } from "../../lib/cn";
 import { useReduceMotionEnabled } from "../../lib/appState";
 import {
@@ -754,7 +762,38 @@ function buildThreadSettingsCatalogItems(
   ];
 }
 
-function modelSheetSurface(isDarkMode: boolean) {
+const SheetGlass = withUniwind(GlassView, {
+  style: { fromClassName: "className" },
+});
+
+function modelSheetSurface(isDarkMode: boolean, useNativeGlass = NATIVE_LIQUID_GLASS_SUPPORTED) {
+  if (useNativeGlass) {
+    return isDarkMode
+      ? {
+          canvas: "transparent",
+          card: "rgba(28,28,32,0.58)",
+          cardBorder: "rgba(255,255,255,0.12)",
+          activeTab: "rgba(255,255,255,0.14)",
+          activeTabBorder: "rgba(255,255,255,0.18)",
+          actionBtn: "rgba(255,255,255,0.10)",
+          selectedRow: "rgba(255,255,255,0.13)",
+          divider: "rgba(255,255,255,0.10)",
+          pill: "rgba(255,255,255,0.11)",
+          speedActive: "rgba(255,255,255,0.22)",
+        }
+      : {
+          canvas: "transparent",
+          card: "rgba(255,255,255,0.68)",
+          cardBorder: "rgba(255,255,255,0.82)",
+          activeTab: "rgba(255,255,255,0.86)",
+          activeTabBorder: "rgba(255,255,255,0.92)",
+          actionBtn: "rgba(255,255,255,0.60)",
+          selectedRow: "rgba(24,24,27,0.075)",
+          divider: "rgba(0,0,0,0.08)",
+          pill: "rgba(24,24,27,0.065)",
+          speedActive: "rgba(255,255,255,0.94)",
+        };
+  }
   return isDarkMode
     ? {
         canvas: "#111114",
@@ -837,67 +876,94 @@ function ThreadSettingsTopBar(props: {
 
   const topPadding = Platform.OS === "ios" ? 20 : insets.top + 10;
   const surface = modelSheetSurface(isDarkMode);
-  const activeTabShadow = isDarkMode
-    ? undefined
-    : {
-        shadowColor: "#000000",
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.08,
-        shadowRadius: 3,
-        elevation: 1,
-      };
+  const useNativeGlass = NATIVE_LIQUID_GLASS_SUPPORTED;
+  const tabsScrollRef = useRef<ScrollViewInstance>(null);
+  const tabLayoutsRef = useRef(new Map<string, { readonly x: number; readonly width: number }>());
+  const tabsViewportWidthRef = useRef(0);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the active provider tab centered in the horizontal ScrollView after swipe switches
+  useEffect(() => {
+    const layout = tabLayoutsRef.current.get(session.activeTab);
+    if (!layout || tabsViewportWidthRef.current <= 0) return;
+    const targetX = Math.max(0, layout.x + layout.width / 2 - tabsViewportWidthRef.current / 2);
+    tabsScrollRef.current?.scrollTo({ x: targetX, animated: true });
+  }, [session.activeTab]);
+  const activeTabShadow =
+    isDarkMode || useNativeGlass
+      ? undefined
+      : {
+          shadowColor: "#000000",
+          shadowOffset: { width: 0, height: 1 },
+          shadowOpacity: 0.08,
+          shadowRadius: 3,
+          elevation: 1,
+        };
 
   if (showSearch) {
+    const searchFieldContent = (
+      <>
+        <SymbolView
+          name="magnifyingglass"
+          size={14}
+          tintColorClassName="accent-foreground-muted"
+          type="monochrome"
+        />
+        <TextInput
+          ref={searchRef}
+          autoFocus
+          autoCapitalize="none"
+          autoCorrect={false}
+          returnKeyType="search"
+          placeholder={gt("Find a model")}
+          placeholderTextColorClassName="accent-placeholder"
+          className="min-w-0 flex-1 py-1 font-sans text-sm text-foreground"
+          value={session.searchQuery}
+          onChangeText={session.setSearchQuery}
+        />
+        {session.searchQuery.length > 0 ? (
+          <Pressable
+            accessibilityLabel={gt("Clear model search")}
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={() => {
+              session.setSearchQuery("");
+              searchRef.current?.focus();
+            }}
+          >
+            <SymbolView
+              name="xmark.circle.fill"
+              size={16}
+              tintColorClassName="accent-foreground-muted"
+              type="monochrome"
+            />
+          </Pressable>
+        ) : null}
+      </>
+    );
     return (
       <View
         className="flex-row items-center gap-2 px-3.5 pb-2.5"
         style={{ paddingTop: topPadding }}
       >
-        <View
-          className="h-[36px] min-w-0 flex-1 flex-row items-center gap-2 rounded-full px-3"
-          style={{
-            backgroundColor: surface.card,
-            borderWidth: 0.5,
-            borderColor: surface.cardBorder,
-          }}
-        >
-          <SymbolView
-            name="magnifyingglass"
-            size={14}
-            tintColorClassName="accent-foreground-muted"
-            type="monochrome"
-          />
-          <TextInput
-            ref={searchRef}
-            autoFocus
-            autoCapitalize="none"
-            autoCorrect={false}
-            returnKeyType="search"
-            placeholder={gt("Find a model")}
-            placeholderTextColorClassName="accent-placeholder"
-            className="min-w-0 flex-1 py-1 font-sans text-sm text-foreground"
-            value={session.searchQuery}
-            onChangeText={session.setSearchQuery}
-          />
-          {session.searchQuery.length > 0 ? (
-            <Pressable
-              accessibilityLabel={gt("Clear model search")}
-              accessibilityRole="button"
-              hitSlop={8}
-              onPress={() => {
-                session.setSearchQuery("");
-                searchRef.current?.focus();
-              }}
-            >
-              <SymbolView
-                name="xmark.circle.fill"
-                size={16}
-                tintColorClassName="accent-foreground-muted"
-                type="monochrome"
-              />
-            </Pressable>
-          ) : null}
-        </View>
+        {useNativeGlass ? (
+          <SheetGlass
+            glassEffectStyle="regular"
+            colorScheme={themeAppearance}
+            className="h-[36px] min-w-0 flex-1 flex-row items-center gap-2 rounded-full px-3"
+          >
+            {searchFieldContent}
+          </SheetGlass>
+        ) : (
+          <View
+            className="h-[36px] min-w-0 flex-1 flex-row items-center gap-2 rounded-full px-3"
+            style={{
+              backgroundColor: surface.card,
+              borderWidth: 0.5,
+              borderColor: surface.cardBorder,
+            }}
+          >
+            {searchFieldContent}
+          </View>
+        )}
         <Pressable
           accessibilityRole="button"
           className="px-1 py-1.5 active:opacity-60"
@@ -912,15 +978,35 @@ function ThreadSettingsTopBar(props: {
     );
   }
 
+  const favoritesActive = session.activeTab === "favorites";
+  const favoritesInner = (
+    <>
+      <SymbolView
+        name="star.fill"
+        size={17}
+        tintColor={favoritesActive ? "#f59e0b" : undefined}
+        tintColorClassName={favoritesActive ? undefined : "accent-foreground-muted"}
+        type="monochrome"
+      />
+      {favoritesActive ? (
+        <Text className="text-xs font-t3-bold text-foreground">{gt("Favorites")}</Text>
+      ) : null}
+    </>
+  );
+
   return (
     <View
       className="flex-row items-center justify-between gap-2 px-3.5 pb-2.5"
       style={{ paddingTop: topPadding }}
     >
       <ScrollView
+        ref={tabsScrollRef}
         horizontal
         showsHorizontalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        onLayout={(event) => {
+          tabsViewportWidthRef.current = event.nativeEvent.layout.width;
+        }}
         contentContainerStyle={{
           alignItems: "center",
           gap: 4,
@@ -929,67 +1015,39 @@ function ThreadSettingsTopBar(props: {
         }}
         className="min-w-0 flex-1"
       >
-        {/* Optically matched Favorites tab: calm transparent resting icon, elevated pill when active */}
         <Pressable
           accessibilityLabel={gt("Favorites")}
           accessibilityRole="tab"
-          accessibilityState={{ selected: session.activeTab === "favorites" }}
+          accessibilityState={{ selected: favoritesActive }}
+          onLayout={(event) => {
+            tabLayoutsRef.current.set("favorites", {
+              x: event.nativeEvent.layout.x,
+              width: event.nativeEvent.layout.width,
+            });
+          }}
           onPress={() => {
             void Haptics.selectionAsync();
             session.setActiveTab("favorites");
           }}
-          className={cn(
-            "h-[34px] flex-row items-center justify-center rounded-full active:opacity-75",
-            session.activeTab === "favorites" ? "gap-1.5 px-3" : "w-[34px]",
-          )}
-          style={
-            session.activeTab === "favorites"
-              ? {
-                  backgroundColor: surface.activeTab,
-                  borderWidth: 0.5,
-                  borderColor: surface.activeTabBorder,
-                  ...activeTabShadow,
-                }
-              : undefined
-          }
+          className="active:opacity-75"
         >
-          <SymbolView
-            name="star.fill"
-            size={17}
-            tintColor={session.activeTab === "favorites" ? "#f59e0b" : undefined}
-            tintColorClassName={
-              session.activeTab === "favorites" ? undefined : "accent-foreground-muted"
-            }
-            type="monochrome"
-          />
-          {session.activeTab === "favorites" ? (
-            <Text className="text-xs font-t3-bold text-foreground">{gt("Favorites")}</Text>
-          ) : null}
-        </Pressable>
-
-        {/* Crisp hairline separator between Favorites and Providers */}
-        <View className="mx-0.5 h-4 w-px" style={{ backgroundColor: surface.divider }} />
-
-        {session.providerGroups.map((group) => {
-          const isActive = session.activeTab === group.providerKey;
-          const driver = group.models[0]?.providerDriver ?? group.providerKey;
-          const iconUrl = group.models[0]?.providerIconUrl;
-          return (
-            <Pressable
-              key={group.providerKey}
-              accessibilityLabel={group.providerLabel}
-              accessibilityRole="tab"
-              accessibilityState={{ selected: isActive }}
-              onPress={() => {
-                void Haptics.selectionAsync();
-                session.setActiveTab(group.providerKey);
-              }}
+          {favoritesActive && useNativeGlass ? (
+            <SheetGlass
+              isInteractive
+              glassEffectStyle="regular"
+              colorScheme={themeAppearance}
+              className="h-[34px] flex-row items-center justify-center gap-1.5 rounded-full px-3"
+            >
+              {favoritesInner}
+            </SheetGlass>
+          ) : (
+            <View
               className={cn(
-                "h-[34px] flex-row items-center justify-center rounded-full active:opacity-75",
-                isActive ? "gap-1.5 px-3" : "w-[34px]",
+                "h-[34px] flex-row items-center justify-center rounded-full",
+                favoritesActive ? "gap-1.5 px-3" : "w-[34px]",
               )}
               style={
-                isActive
+                favoritesActive
                   ? {
                       backgroundColor: surface.activeTab,
                       borderWidth: 0.5,
@@ -999,12 +1057,74 @@ function ThreadSettingsTopBar(props: {
                   : undefined
               }
             >
+              {favoritesInner}
+            </View>
+          )}
+        </Pressable>
+
+        <View className="mx-0.5 h-4 w-px" style={{ backgroundColor: surface.divider }} />
+
+        {session.providerGroups.map((group) => {
+          const isActive = session.activeTab === group.providerKey;
+          const driver = group.models[0]?.providerDriver ?? group.providerKey;
+          const iconUrl = group.models[0]?.providerIconUrl;
+          const tabInner = (
+            <>
               <ProviderIcon iconUrl={iconUrl} provider={driver} size={16} />
               {isActive ? (
                 <Text className="text-xs font-t3-bold text-foreground" numberOfLines={1}>
                   {group.providerLabel}
                 </Text>
               ) : null}
+            </>
+          );
+          return (
+            <Pressable
+              key={group.providerKey}
+              accessibilityLabel={group.providerLabel}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: isActive }}
+              onLayout={(event) => {
+                tabLayoutsRef.current.set(group.providerKey, {
+                  x: event.nativeEvent.layout.x,
+                  width: event.nativeEvent.layout.width,
+                });
+              }}
+              onPress={() => {
+                void Haptics.selectionAsync();
+                session.setActiveTab(group.providerKey);
+              }}
+              className="active:opacity-75"
+            >
+              {isActive && useNativeGlass ? (
+                <SheetGlass
+                  isInteractive
+                  glassEffectStyle="regular"
+                  colorScheme={themeAppearance}
+                  className="h-[34px] flex-row items-center justify-center gap-1.5 rounded-full px-3"
+                >
+                  {tabInner}
+                </SheetGlass>
+              ) : (
+                <View
+                  className={cn(
+                    "h-[34px] flex-row items-center justify-center rounded-full",
+                    isActive ? "gap-1.5 px-3" : "w-[34px]",
+                  )}
+                  style={
+                    isActive
+                      ? {
+                          backgroundColor: surface.activeTab,
+                          borderWidth: 0.5,
+                          borderColor: surface.activeTabBorder,
+                          ...activeTabShadow,
+                        }
+                      : undefined
+                  }
+                >
+                  {tabInner}
+                </View>
+              )}
             </Pressable>
           );
         })}
@@ -1018,15 +1138,35 @@ function ThreadSettingsTopBar(props: {
             void Haptics.selectionAsync();
             props.onOpenSearch();
           }}
-          className="size-[32px] items-center justify-center rounded-full active:opacity-70"
-          style={{ backgroundColor: surface.actionBtn }}
+          className="active:opacity-70"
         >
-          <SymbolView
-            name="magnifyingglass"
-            size={14}
-            tintColorClassName="accent-foreground-muted"
-            type="monochrome"
-          />
+          {useNativeGlass ? (
+            <SheetGlass
+              isInteractive
+              glassEffectStyle="regular"
+              colorScheme={themeAppearance}
+              className="size-[34px] items-center justify-center rounded-full"
+            >
+              <SymbolView
+                name="magnifyingglass"
+                size={14}
+                tintColorClassName="accent-foreground-muted"
+                type="monochrome"
+              />
+            </SheetGlass>
+          ) : (
+            <View
+              className="size-[32px] items-center justify-center rounded-full"
+              style={{ backgroundColor: surface.actionBtn }}
+            >
+              <SymbolView
+                name="magnifyingglass"
+                size={14}
+                tintColorClassName="accent-foreground-muted"
+                type="monochrome"
+              />
+            </View>
+          )}
         </Pressable>
 
         {moreActions.length > 0 ? (
@@ -1034,15 +1174,35 @@ function ThreadSettingsTopBar(props: {
             <Pressable
               accessibilityLabel={gt("Model options")}
               accessibilityRole="button"
-              className="size-[32px] items-center justify-center rounded-full active:opacity-70"
-              style={{ backgroundColor: surface.actionBtn }}
+              className="active:opacity-70"
             >
-              <SymbolView
-                name="ellipsis"
-                size={14}
-                tintColorClassName="accent-foreground-muted"
-                type="monochrome"
-              />
+              {useNativeGlass ? (
+                <SheetGlass
+                  isInteractive
+                  glassEffectStyle="regular"
+                  colorScheme={themeAppearance}
+                  className="size-[34px] items-center justify-center rounded-full"
+                >
+                  <SymbolView
+                    name="ellipsis"
+                    size={14}
+                    tintColorClassName="accent-foreground-muted"
+                    type="monochrome"
+                  />
+                </SheetGlass>
+              ) : (
+                <View
+                  className="size-[32px] items-center justify-center rounded-full"
+                  style={{ backgroundColor: surface.actionBtn }}
+                >
+                  <SymbolView
+                    name="ellipsis"
+                    size={14}
+                    tintColorClassName="accent-foreground-muted"
+                    type="monochrome"
+                  />
+                </View>
+              )}
             </Pressable>
           </Menu>
         ) : null}
@@ -1482,18 +1642,41 @@ function ThreadSettingsThumbDeck() {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={gt("Runtime: {mode}", { mode: currentRuntimeLabel })}
-              className="h-[30px] shrink-0 flex-row items-center gap-1.5 rounded-full px-3 active:opacity-75"
-              style={{ backgroundColor: surface.pill }}
+              className="shrink-0 active:opacity-75"
             >
-              <Text className="text-xs font-t3-bold text-foreground" numberOfLines={1}>
-                {currentRuntimeLabel}
-              </Text>
-              <SymbolView
-                name="chevron.down"
-                size={10}
-                tintColorClassName="accent-foreground-muted"
-                type="monochrome"
-              />
+              {NATIVE_LIQUID_GLASS_SUPPORTED ? (
+                <SheetGlass
+                  isInteractive
+                  glassEffectStyle="regular"
+                  colorScheme={themeAppearance}
+                  className="h-[30px] flex-row items-center gap-1.5 rounded-full px-3"
+                >
+                  <Text className="text-xs font-t3-bold text-foreground" numberOfLines={1}>
+                    {currentRuntimeLabel}
+                  </Text>
+                  <SymbolView
+                    name="chevron.down"
+                    size={10}
+                    tintColorClassName="accent-foreground-muted"
+                    type="monochrome"
+                  />
+                </SheetGlass>
+              ) : (
+                <View
+                  className="h-[30px] flex-row items-center gap-1.5 rounded-full px-3"
+                  style={{ backgroundColor: surface.pill }}
+                >
+                  <Text className="text-xs font-t3-bold text-foreground" numberOfLines={1}>
+                    {currentRuntimeLabel}
+                  </Text>
+                  <SymbolView
+                    name="chevron.down"
+                    size={10}
+                    tintColorClassName="accent-foreground-muted"
+                    type="monochrome"
+                  />
+                </View>
+              )}
             </Pressable>
           </Menu>
         </View>
@@ -1593,6 +1776,41 @@ function ThreadSettingsSheetBody(props: { readonly onClose: () => void }) {
     catalogItems.length === 0 ? [{ kind: "empty", key: "empty" }] : catalogItems;
 
   const isSearching = session.searchQuery.trim().length > 0;
+  const tabKeys: readonly ActiveTab[] = [
+    "favorites",
+    ...session.providerGroups.map((group) => group.providerKey),
+  ];
+  const swipeTranslateX = useSharedValue(0);
+  const stepTab = useEffectEvent((delta: -1 | 1) => {
+    if (isSearching || tabKeys.length <= 1) return;
+    const currentIndex = tabKeys.indexOf(session.activeTab);
+    if (currentIndex < 0) return;
+    const nextTab = tabKeys[currentIndex + delta];
+    if (!nextTab) return;
+    void Haptics.selectionAsync();
+    session.setActiveTab(nextTab);
+  });
+  const [swipeGesture] = useState(() =>
+    Gesture.Pan()
+      .activeOffsetX([-24, 24])
+      .failOffsetY([-14, 14])
+      .onUpdate((event) => {
+        const clamped = Math.max(-28, Math.min(28, event.translationX * 0.25));
+        swipeTranslateX.value = clamped;
+      })
+      .onEnd((event) => {
+        if (Math.abs(event.translationX) >= 36 || Math.abs(event.velocityX) >= 360) {
+          stepTab(event.translationX < 0 ? 1 : -1);
+        }
+      })
+      .onFinalize(() => {
+        swipeTranslateX.value = withSpring(0, { damping: 24, stiffness: 320 });
+      })
+      .runOnJS(true),
+  );
+  const swipeCardStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: swipeTranslateX.value }],
+  }));
 
   const renderCatalogItem = (itemProps: LegendListRenderItemProps<ThreadSettingsCatalogItem>) => {
     const item = itemProps.item;
@@ -1656,72 +1874,77 @@ function ThreadSettingsSheetBody(props: { readonly onClose: () => void }) {
         onClose={props.onClose}
       />
 
-      {/* Elevated grouped model list card with bottom half-row peek fade */}
-      <View
-        className="relative mx-3 min-h-0 flex-1 overflow-hidden rounded-[20px]"
-        style={{
-          backgroundColor: surface.card,
-          borderWidth: 0.5,
-          borderColor: surface.cardBorder,
-          ...(isDarkMode
-            ? undefined
-            : {
-                shadowColor: "#000000",
-                shadowOffset: { width: 0, height: 1 },
-                shadowOpacity: 0.04,
-                shadowRadius: 2,
-                elevation: 1,
-              }),
-        }}
-      >
-        {/* oxlint-disable-next-line t3code/require-registered-list-scroll -- Sheet content; sits above the sticky thumb deck. */}
-        <AnimatedLegendList
-          alwaysBounceVertical
-          className="flex-1"
-          style={[READABLE_WIDTH_STYLE, { backgroundColor: surface.card }]}
-          contentContainerStyle={{ paddingTop: 5, paddingBottom: 22 }}
-          data={listItems}
-          estimatedItemSize={ROW_MIN_HEIGHT.item}
-          extraData={[
-            animationsReady,
-            session.activeTab,
-            session.displayedModelSelection?.model,
-            isDarkMode,
-          ]}
-          getItemType={(item) => item.kind}
-          itemLayoutAnimation={THREAD_SETTINGS_CATALOG_LAYOUT_TRANSITION}
-          keyExtractor={(item) => item.key}
-          keyboardDismissMode="on-drag"
-          keyboardShouldPersistTaps="handled"
-          maintainVisibleContentPosition={THREAD_SETTINGS_MAINTAIN_VISIBLE_CONTENT_POSITION}
-          recycleItems
-          refreshControl={
-            session.environmentId ? (
-              <RefreshControl refreshing={isRefreshingProviders} onRefresh={refreshProviders} />
-            ) : undefined
-          }
-          onLoad={() => setListLoaded(true)}
-          renderItem={renderCatalogItem}
-          showsVerticalScrollIndicator={false}
-        />
-
-        {/* Smooth bottom fade hinting scrollability inside the grouped card */}
+      {/* Elevated grouped model list card with horizontal tab swipe */}
+      <GestureDetector gesture={swipeGesture}>
         <View
-          pointerEvents="none"
-          style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 24 }}
+          className="relative mx-3 min-h-0 flex-1 overflow-hidden rounded-[20px]"
+          style={{
+            backgroundColor: surface.card,
+            borderWidth: 0.5,
+            borderColor: surface.cardBorder,
+            ...(isDarkMode || NATIVE_LIQUID_GLASS_SUPPORTED
+              ? undefined
+              : {
+                  shadowColor: "#000000",
+                  shadowOffset: { width: 0, height: 1 },
+                  shadowOpacity: 0.04,
+                  shadowRadius: 2,
+                  elevation: 1,
+                }),
+          }}
         >
-          <Svg width="100%" height={24}>
-            <Defs>
-              <LinearGradient id={fadeGradientId} x1="0" y1="0" x2="0" y2="1">
-                <Stop offset="0%" stopColor={surface.card} stopOpacity={0} />
-                <Stop offset="70%" stopColor={surface.card} stopOpacity={0.85} />
-                <Stop offset="100%" stopColor={surface.card} stopOpacity={1} />
-              </LinearGradient>
-            </Defs>
-            <Rect x={0} y={0} width="100%" height={24} fill={`url(#${fadeGradientId})`} />
-          </Svg>
+          <Animated.View style={[{ flex: 1 }, swipeCardStyle]}>
+            {/* oxlint-disable-next-line t3code/require-registered-list-scroll -- Sheet content; sits above the sticky thumb deck. */}
+            <AnimatedLegendList
+              alwaysBounceVertical
+              className="flex-1"
+              style={[READABLE_WIDTH_STYLE, { backgroundColor: "transparent" }]}
+              contentContainerStyle={{ paddingTop: 5, paddingBottom: 22 }}
+              data={listItems}
+              estimatedItemSize={ROW_MIN_HEIGHT.item}
+              extraData={[
+                animationsReady,
+                session.activeTab,
+                session.displayedModelSelection?.model,
+                isDarkMode,
+              ]}
+              getItemType={(item) => item.kind}
+              itemLayoutAnimation={THREAD_SETTINGS_CATALOG_LAYOUT_TRANSITION}
+              keyExtractor={(item) => item.key}
+              keyboardDismissMode="on-drag"
+              keyboardShouldPersistTaps="handled"
+              maintainVisibleContentPosition={THREAD_SETTINGS_MAINTAIN_VISIBLE_CONTENT_POSITION}
+              recycleItems
+              refreshControl={
+                session.environmentId ? (
+                  <RefreshControl refreshing={isRefreshingProviders} onRefresh={refreshProviders} />
+                ) : undefined
+              }
+              onLoad={() => setListLoaded(true)}
+              renderItem={renderCatalogItem}
+              showsVerticalScrollIndicator={false}
+            />
+          </Animated.View>
+
+          {!NATIVE_LIQUID_GLASS_SUPPORTED ? (
+            <View
+              pointerEvents="none"
+              style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 24 }}
+            >
+              <Svg width="100%" height={24}>
+                <Defs>
+                  <LinearGradient id={fadeGradientId} x1="0" y1="0" x2="0" y2="1">
+                    <Stop offset="0%" stopColor={surface.card} stopOpacity={0} />
+                    <Stop offset="70%" stopColor={surface.card} stopOpacity={0.85} />
+                    <Stop offset="100%" stopColor={surface.card} stopOpacity={1} />
+                  </LinearGradient>
+                </Defs>
+                <Rect x={0} y={0} width="100%" height={24} fill={`url(#${fadeGradientId})`} />
+              </Svg>
+            </View>
+          ) : null}
         </View>
-      </View>
+      </GestureDetector>
 
       {/* Permanently pinned thumb-zone bottom deck */}
       <ThreadSettingsThumbDeck />

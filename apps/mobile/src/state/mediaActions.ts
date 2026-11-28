@@ -1,3 +1,4 @@
+import { assetUrlStateFromResult } from "@t3tools/client-runtime/state/assets";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { errorDisplayMessage } from "@t3tools/client-runtime/errors";
 import * as Dialog from "../components/ui/Dialog";
@@ -16,12 +17,13 @@ import {
   type SessionGrantInput,
 } from "@t3tools/contracts";
 import { imageMimeType } from "@t3tools/shared/image";
+import { assetImageCacheKey } from "../lib/assetImageSource";
 import { normalizeNativeMarkdownUrl } from "../lib/markdownLinks";
 import { AsyncResult } from "effect/reactivity";
 import * as Haptics from "expo-haptics";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 
-import { useRefreshAssetUrl } from "./assets";
+import { assetEnvironment, useRefreshAssetUrl } from "./assets";
 import { appAtomRegistry } from "./atom-registry";
 import { useEnvironmentQuery } from "./query";
 import { environmentSession } from "./session";
@@ -116,8 +118,89 @@ export function useMediaActions(
       });
   };
 
-  const hostUri = async (source: MediaActionsSource, signal: AbortSignal) => {
-    const uri = "uri" in source ? normalizeNativeMarkdownUrl(source.uri) : await refresh();
+  const cachedHostUrl = (source: MediaActionsSource): string | null => {
+    if (!("environmentId" in source && "resource" in source)) return null;
+    try {
+      if (!assetEnvironment?.createUrl || !environmentSession?.preparedConnectionValueAtom) {
+        return null;
+      }
+      const queryResult = appAtomRegistry.get(
+        assetEnvironment.createUrl({
+          environmentId: source.environmentId,
+          input: { resource: source.resource },
+        }),
+      );
+      if (!AsyncResult.isSuccess(queryResult)) return null;
+      if (queryResult.value.expiresAt <= Date.now() + 30_000) return null;
+      const connection = appAtomRegistry.get(
+        environmentSession.preparedConnectionValueAtom(source.environmentId),
+      );
+      if (connection._tag !== "Some") return null;
+      const state = assetUrlStateFromResult(queryResult, connection.value.httpBaseUrl);
+      return state._tag === "Success" ? state.url : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const resolveCachedImageFile = async (source: MediaActionsSource) => {
+    try {
+      const [{ Image }, { File }] = await Promise.all([
+        import("expo-image"),
+        import("expo-file-system"),
+      ]);
+      const candidates: string[] = [];
+      if ("uri" in source) {
+        const normalized = normalizeNativeMarkdownUrl(source.uri);
+        if (normalized) candidates.push(normalized);
+      } else if ("environmentId" in source && "resource" in source) {
+        const staticKey = assetImageCacheKey(source.environmentId, source.resource);
+        if (staticKey) candidates.push(staticKey);
+        const queryResult = appAtomRegistry.get(
+          assetEnvironment.createUrl({
+            environmentId: source.environmentId,
+            input: { resource: source.resource },
+          }),
+        );
+        if (AsyncResult.isSuccess(queryResult)) {
+          const revKey = assetImageCacheKey(
+            source.environmentId,
+            source.resource,
+            queryResult.value.fileRevision,
+          );
+          if (revKey && revKey !== staticKey) candidates.push(revKey);
+          const connection = appAtomRegistry.get(
+            environmentSession.preparedConnectionValueAtom(source.environmentId),
+          );
+          if (connection._tag === "Some") {
+            const state = assetUrlStateFromResult(queryResult, connection.value.httpBaseUrl);
+            if (state._tag === "Success") candidates.push(state.url);
+          }
+        }
+      }
+      for (const candidate of candidates) {
+        const path = await Image.getCachePathAsync(candidate);
+        if (!path) continue;
+        const uri = path.startsWith("file:") ? path : `file://${path}`;
+        if (new File(uri).exists) {
+          return { uri, dispose: () => {} };
+        }
+      }
+    } catch {
+      // Cache inspection is best-effort; fall back to downloading the asset.
+    }
+    return null;
+  };
+
+  const hostUri = async (
+    source: MediaActionsSource,
+    signal: AbortSignal,
+    options?: { readonly preferCachedUrl?: boolean },
+  ) => {
+    const uri =
+      "uri" in source
+        ? normalizeNativeMarkdownUrl(source.uri)
+        : ((options?.preferCachedUrl ? cachedHostUrl(source) : null) ?? (await refresh()));
     if (signal.aborted || !canReadHostMedia(hostEnvironmentId)) return null;
     if (uri === null) {
       throw new Error(m(msg("The file could not be loaded. Reconnect and try again.")));
@@ -146,9 +229,13 @@ export function useMediaActions(
       else await downloadAndShareAttachment({ ...input, url: uri });
     });
 
-  const localImageFile = async (source: MediaActionsSource, signal: AbortSignal) => {
+  const localImageFile = async (
+    source: MediaActionsSource,
+    signal: AbortSignal,
+    options?: { readonly preferCachedUrl?: boolean },
+  ) => {
     if ("attachment" in source) return loadLocalAttachmentPreview(source.attachment, signal);
-    const uri = await hostUri(source, signal);
+    const uri = await hostUri(source, signal, options);
     if (uri === null) return null;
     if (/^(file|content):/i.test(uri)) return { uri, dispose: () => {} };
     return downloadAttachmentForPreview({
@@ -174,7 +261,9 @@ export function useMediaActions(
   const quoteImage = () =>
     run("quote-image", async (source, signal) => {
       if (!onQuoteImage) return;
-      const file = await localImageFile(source, signal);
+      const file =
+        ("attachment" in source ? null : await resolveCachedImageFile(source)) ??
+        (await localImageFile(source, signal, { preferCachedUrl: true }));
       if (!file) return;
       const quoted = signal.aborted
         ? null
@@ -218,7 +307,7 @@ export function useMediaActions(
             ? [
                 {
                   id: "copy-full-path" as const,
-                  title: gt("Copy full path"),
+                  title: relativePath ? gt("Copy full path") : gt("Copy path"),
                   run: () => copyTextWithHaptic(formatFilePathForClipboard(reference.path)),
                 },
               ]

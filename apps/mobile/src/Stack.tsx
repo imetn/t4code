@@ -18,6 +18,7 @@ import { Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions } from
 import { useResolveClassNames } from "uniwind";
 
 import { AppText as Text } from "./components/ui/AppText";
+import { NATIVE_LIQUID_GLASS_SUPPORTED } from "./native/native-glass";
 import { androidWorkspaceDestinationAnimation } from "./lib/android-workspace-navigation";
 import { getCompactBrandHeaderOptions } from "./features/layout/workspace/brand-header-options";
 import { WorkspaceConnectionStatusProvider } from "./features/home/WorkspaceConnectionTitle";
@@ -222,12 +223,17 @@ const ROUTE_TITLES: Readonly<Record<string, string>> = {
 
 // Thread settings keep the Duo's vertical bar so cancel, search, filter and confirm sit in the
 // rail. The picker stack spans the sheet so its header reaches the rail, and insets its content.
-const THREAD_SETTINGS_ROUTE = sheetRoute({
-  detent: 0.78,
-  header: "none",
-  android: "card",
-  spansRail: true,
-});
+const THREAD_SETTINGS_ROUTE = {
+  ...sheetRoute({
+    detent: 0.78,
+    header: "none",
+    android: "card",
+    spansRail: true,
+  }),
+  ...(NATIVE_LIQUID_GLASS_SUPPORTED
+    ? { contentStyle: { backgroundColor: "transparent" } }
+    : undefined),
+};
 
 // Search sheets push on Android like the branch picker; a formSheet there leaves the list's
 // header peeking above it once the keyboard opens.

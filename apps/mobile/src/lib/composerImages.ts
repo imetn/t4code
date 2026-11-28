@@ -679,10 +679,11 @@ export async function convertPastedImagesToAttachments(input: {
         continue;
       }
       const file = new File(uri);
+      const preferredName = input.names?.[index]?.trim();
       const reportedMimeType = file.type;
       const sourceMimeType = reportedMimeType?.startsWith("image/")
         ? reportedMimeType
-        : mimeTypeFromUri(uri);
+        : mimeTypeFromUri(/\.[a-z0-9]{1,8}$/i.test(uri) ? uri : (preferredName ?? uri));
       let mimeType = isProviderSendTurnSupportedImageMimeType(sourceMimeType)
         ? sourceMimeType
         : "image/jpeg";
@@ -712,7 +713,6 @@ export async function convertPastedImagesToAttachments(input: {
             : m(msg("Could not read a pasted image."));
         continue;
       }
-      const preferredName = input.names?.[index]?.trim();
       const extension = mimeType.split("/")[1] ?? "png";
       const name = preferredName
         ? /\.[a-z0-9]{1,8}$/i.test(preferredName)

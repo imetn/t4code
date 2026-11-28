@@ -488,7 +488,12 @@ index bb6bb2b..93f3e4e 100644
 +            let imageStr = image as String
 +            if let custom = Self.loadCustomMenuImage(from: imageStr) {
 +                self.image = custom
-+            } else if !(imageStr.hasPrefix("data:") || imageStr.hasPrefix("file:") || imageStr.hasPrefix("http://") || imageStr.hasPrefix("https://")) {
++            } else if imageStr.hasPrefix("data:") || imageStr.hasPrefix("file:") || imageStr.hasPrefix("http://") || imageStr.hasPrefix("https://") {
++                self.image = UIImage(systemName: "folder")
++                if let imageColor = details["imageColor"] {
++                    self.image = self.image?.withTintColor(RCTConvert.uiColor(imageColor), renderingMode: .alwaysOriginal)
++                }
++            } else {
 +                self.image = UIImage(systemName: imageStr);
 +                if self.image === nil {
 +                    self.image = UIImage(named: imageStr)

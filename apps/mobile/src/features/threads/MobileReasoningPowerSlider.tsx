@@ -11,7 +11,7 @@ import Animated, {
   withRepeat,
   withTiming,
 } from "react-native-reanimated";
-import Svg, { Circle, Defs, G, Line, LinearGradient, Rect, Stop } from "react-native-svg";
+import Svg, { Circle, Defs, G, LinearGradient, Rect, Stop } from "react-native-svg";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import { useReduceMotionEnabled } from "../../lib/appState";
@@ -356,36 +356,9 @@ export function MobileReasoningPowerSlider(props: {
                       ) : null}
                       {showHigh ? (
                         <>
-                          <Line
-                            x1={58}
-                            y1={12}
-                            x2={74}
-                            y2={12}
-                            stroke="#ffffff"
-                            strokeOpacity={0.34}
-                            strokeWidth={1.1}
-                            strokeLinecap="round"
-                          />
-                          <Line
-                            x1={156}
-                            y1={23}
-                            x2={176}
-                            y2={23}
-                            stroke="#ffffff"
-                            strokeOpacity={0.42}
-                            strokeWidth={1.15}
-                            strokeLinecap="round"
-                          />
-                          <Line
-                            x1={232}
-                            y1={11}
-                            x2={250}
-                            y2={11}
-                            stroke="#ffffff"
-                            strokeOpacity={0.38}
-                            strokeWidth={1.1}
-                            strokeLinecap="round"
-                          />
+                          <Circle cx={64} cy={12} r={1.25} fill="#ffffff" opacity={0.78} />
+                          <Circle cx={166} cy={23} r={1.3} fill="#ffffff" opacity={0.82} />
+                          <Circle cx={242} cy={11} r={1.2} fill="#ffffff" opacity={0.76} />
                           <Circle cx={94} cy={19} r={1.35} fill="#ffffff" opacity={0.86} />
                           <Circle cx={192} cy={10} r={1.4} fill="#ffffff" opacity={0.88} />
                           <Circle cx={284} cy={22} r={1.25} fill="#ffffff" opacity={0.82} />
@@ -393,41 +366,13 @@ export function MobileReasoningPowerSlider(props: {
                       ) : null}
                       {showMax ? (
                         <>
-                          <Line
-                            x1={16}
-                            y1={24}
-                            x2={36}
-                            y2={24}
-                            stroke="#ffffff"
-                            strokeOpacity={0.46}
-                            strokeWidth={1.2}
-                            strokeLinecap="round"
-                          />
-                          <Line
-                            x1={104}
-                            y1={15}
-                            x2={126}
-                            y2={15}
-                            stroke="#ffffff"
-                            strokeOpacity={0.52}
-                            strokeWidth={1.25}
-                            strokeLinecap="round"
-                          />
-                          <Line
-                            x1={198}
-                            y1={20}
-                            x2={222}
-                            y2={20}
-                            stroke="#ffffff"
-                            strokeOpacity={0.56}
-                            strokeWidth={1.3}
-                            strokeLinecap="round"
-                          />
                           <Circle cx={38} cy={24} r={1.5} fill="#ffffff" opacity={0.95} />
                           <Circle cx={128} cy={15} r={1.6} fill="#ffffff" opacity={0.96} />
                           <Circle cx={224} cy={20} r={1.65} fill="#ffffff" opacity={0.98} />
                           <Circle cx={152} cy={10} r={1.3} fill="#ffffff" opacity={0.86} />
                           <Circle cx={260} cy={26} r={1.35} fill="#ffffff" opacity={0.9} />
+                          <Circle cx={18} cy={18} r={1.2} fill="#ffffff" opacity={0.84} />
+                          <Circle cx={106} cy={25} r={1.3} fill="#ffffff" opacity={0.88} />
                         </>
                       ) : null}
                     </G>

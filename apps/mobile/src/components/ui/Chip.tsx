@@ -53,17 +53,13 @@ export function Chip(props: {
     </>
   );
   const body =
-    props.glass && NATIVE_LIQUID_GLASS_SUPPORTED ? (
-      <ChipGlass
-        isInteractive
-        colorScheme={props.colorScheme}
-        tintColorClassName={props.selected ? "accent-primary" : undefined}
-        className={layout}
-      >
+    props.glass && NATIVE_LIQUID_GLASS_SUPPORTED && !props.selected ? (
+      <ChipGlass key="glass" isInteractive colorScheme={props.colorScheme} className={layout}>
         {content}
       </ChipGlass>
     ) : (
       <View
+        key={props.selected ? "selected" : "plain"}
         className={cn(
           layout,
           props.selected ? "bg-primary" : small ? "bg-grouped-card" : "bg-subtle",

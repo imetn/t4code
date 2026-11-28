@@ -1126,11 +1126,6 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     !threadRuntimeIsActive(thread.runtime);
   const titleMenuItems = useMemo<MenuAction[]>(
     () => [
-      {
-        id: "rename",
-        title: gt("Rename", { $context: "verb, thread action" }),
-        image: "square.and.pencil",
-      },
       ...buildThreadTitleRegenerationMenuItems(
         {
           supported: props.titleRegenerationSupported,
@@ -1204,6 +1199,11 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         ? [{ id: "share-guest", title: gt("Share with guest"), image: "person.badge.plus" }]
         : []),
     ];
+    direct.splice(Math.min(1, direct.length), 0, {
+      id: "rename",
+      title: gt("Rename", { $context: "verb, thread action" }),
+      image: "pencil",
+    });
     if (snoozedRow) {
       return layoutThreadListV2RowMenuActions(
         {
